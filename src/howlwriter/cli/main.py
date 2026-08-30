@@ -1,0 +1,42 @@
+"""HowlWriter CLI entry point.
+
+A thin argparse wrapper: every subcommand module parses its own arguments
+and calls straight into the corresponding howlwriter.<domain> function. No
+business logic lives in the CLI package itself.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+from howlwriter.cli.commands import cite, lint, voice
+from howlwriter.integration.model_role import ModelRoleNotConfiguredError
+
+_COMMAND_MODULES = (lint, cite, voice)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="howlwriter",
+        description="A controlled writing, editing, humanization, research, citation, "
+        "provenance, and verification system.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    for module in _COMMAND_MODULES:
+        module.add_subparser(subparsers)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        return args.handler(args)
+    except ModelRoleNotConfiguredError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
