@@ -7,12 +7,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date
 from pathlib import Path
 
 from howlwriter.citations.apa7 import CitationResult
 from howlwriter.citations.styles import CitationStyle, get_formatter
-from howlwriter.domain.source import Source, SourceType
+from howlwriter.domain.source import Source, source_from_dict
 
 
 def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
@@ -31,17 +30,7 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
 
 def _load_sources(path: str) -> list[Source]:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    sources = []
-    for entry in raw:
-        entry = dict(entry)
-        if entry.get("publication_date"):
-            entry["publication_date"] = date.fromisoformat(entry["publication_date"])
-        if entry.get("access_date"):
-            entry["access_date"] = date.fromisoformat(entry["access_date"])
-        if entry.get("source_type"):
-            entry["source_type"] = SourceType(entry["source_type"])
-        sources.append(Source.from_dict(entry))
-    return sources
+    return [source_from_dict(entry) for entry in raw]
 
 
 def _print_warnings(result: CitationResult) -> None:

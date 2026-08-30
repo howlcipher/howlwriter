@@ -10,10 +10,38 @@ from __future__ import annotations
 import argparse
 import sys
 
-from howlwriter.cli.commands import cite, lint, voice
+from howlwriter.cli.commands import (
+    cite,
+    editor,
+    factcheck,
+    finalize,
+    howl,
+    humanize,
+    lint,
+    redpen,
+    references,
+    research,
+    sources,
+    voice,
+    writer,
+)
 from howlwriter.integration.model_role import ModelRoleNotConfiguredError
 
-_COMMAND_MODULES = (lint, cite, voice)
+_COMMAND_MODULES = (
+    writer,
+    editor,
+    humanize,
+    voice,
+    factcheck,
+    research,
+    sources,
+    cite,
+    references,
+    redpen,
+    lint,
+    finalize,
+    howl,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:

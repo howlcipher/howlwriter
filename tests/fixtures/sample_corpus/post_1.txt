@@ -1,0 +1,3 @@
+Okay so I finally shipped the thing. Took way longer than I said it would -- shocking, I know. The last mile was mostly renaming variables and staring at a failing test that turned out to be a typo. Classic.
+
+Anyway. If you're waiting on the follow-up post, it's coming. Probably this week. No promises though.

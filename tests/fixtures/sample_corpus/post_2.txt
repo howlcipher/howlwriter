@@ -1,0 +1,3 @@
+Someone asked me today why I still write these updates instead of just posting a changelog. Fair question. I don't have a great answer. Maybe it's that a changelog can't tell you which parts were annoying.
+
+This week was mostly annoying parts. A migration that should've taken an hour took most of a day. I'm not mad about it anymore. I was mad about it at the time.

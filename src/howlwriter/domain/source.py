@@ -54,3 +54,17 @@ class Evidence(DataClassSerializationMixin):
     snippet: str
     supports: bool
     notes: str = ""
+
+
+def source_from_dict(entry: dict) -> Source:
+    """Builds a Source from a plain JSON-decoded dict, parsing its date
+    fields. Shared by every CLI command that reads a sources.json file, so
+    the parsing rules live in exactly one place."""
+    entry = dict(entry)
+    if entry.get("publication_date"):
+        entry["publication_date"] = date.fromisoformat(entry["publication_date"])
+    if entry.get("access_date"):
+        entry["access_date"] = date.fromisoformat(entry["access_date"])
+    if entry.get("source_type"):
+        entry["source_type"] = SourceType(entry["source_type"])
+    return Source.from_dict(entry)

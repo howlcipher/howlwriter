@@ -1,0 +1,21 @@
+[
+  {
+    "id": "s1",
+    "title": "Remote Team Communication Patterns",
+    "authors": ["Maria Chen", "David Okoye"],
+    "publisher": "Journal of Workplace Studies",
+    "publication_date": "2023-06-15",
+    "url": "https://example.org/remote-communication-patterns",
+    "source_type": "journal_article",
+    "retrieved_text": "Teams that adopted structured async check-ins reported higher trust scores.",
+    "access_date": "2024-01-10"
+  },
+  {
+    "id": "s2",
+    "title": "State of Distributed Work",
+    "authors": [],
+    "publisher": "Distributed Work Institute",
+    "url": "https://example.org/state-of-distributed-work",
+    "source_type": "report"
+  }
+]
