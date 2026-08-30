@@ -25,14 +25,16 @@ _NOT_X_BUT_Y = re.compile(
     re.IGNORECASE,
 )
 
-_EMPTY_TRANSITION_PHRASES = (
+# Public (not underscore-prefixed): reused by redpen/critic.py so filler
+# detection doesn't grow a second, drifting phrase list.
+EMPTY_TRANSITION_PHRASES = (
     "at its core",
     "in today's rapidly evolving",
     "whether you're",
     "whether you are",
 )
 
-_CANNED_CONCLUSION_PHRASES = (
+CANNED_CONCLUSION_PHRASES = (
     "this highlights the importance of",
     "the reality is",
 )
@@ -70,7 +72,7 @@ def check_empty_transition(document: Document, config: HowlWriterConfig) -> list
         return []
     matches: list[RuleMatch] = []
     for p_index, s_index, sentence in document.all_sentences():
-        for phrase in _phrase_matches(sentence.text, _EMPTY_TRANSITION_PHRASES):
+        for phrase in _phrase_matches(sentence.text, EMPTY_TRANSITION_PHRASES):
             matches.append(
                 RuleMatch(
                     rule_code=AI_STYLE_EMPTY_TRANSITION,
@@ -88,7 +90,7 @@ def check_canned_conclusion(document: Document, config: HowlWriterConfig) -> lis
         return []
     matches: list[RuleMatch] = []
     for p_index, s_index, sentence in document.all_sentences():
-        for phrase in _phrase_matches(sentence.text, _CANNED_CONCLUSION_PHRASES):
+        for phrase in _phrase_matches(sentence.text, CANNED_CONCLUSION_PHRASES):
             matches.append(
                 RuleMatch(
                     rule_code=AI_STYLE_CANNED_CONCLUSION,
