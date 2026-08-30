@@ -1,0 +1,40 @@
+# HowlPlane project manifest (schema_version 1). See
+# https://github.com/howlcipher/howlplane/blob/main/documentation/PROJECT_MANIFEST_SPEC.md
+#
+# This is the only committed artifact that couples this repository to
+# HowlPlane. [routing] below describes engineering task routing for work
+# done ON this codebase (which coding agent implements/reviews a change
+# here) -- it is unrelated to HowlWriter's own internal WritingRole
+# capability roles (WRITER, HUMANIZER, FACT_CHECKER, ...), which have no
+# manifest-level routing concept yet; see docs/howlplane-integration.md.
+
+schema_version = 1
+name = "howlwriter"
+project_type = ["python", "writing", "tool"]
+skills = ["python", "technical_writing", "software_development"]
+
+[context]
+include = [
+    "src/**/*.py",
+    "tests/**/*.py",
+    "pyproject.toml",
+    "setup.cfg",
+    "docs/**/*.md",
+    "README.md",
+    "ROADMAP.md",
+]
+exclude = ["**/__pycache__/**", "*.howled.md"]
+
+[commands]
+test = ["pytest", "tests/"]
+lint = ["flake8", "src/"]
+
+[security]
+# The MVP CLI only ever reads/writes local files and runs its own test/lint
+# commands. No network, git, database, or secrets grants -- writer/research
+# raise ModelRoleNotConfiguredError rather than reaching the network.
+capabilities = ["filesystem:repository", "process:project_commands"]
+
+[routing]
+implementation = ["claude", "codex"]
+review = ["claude", "gemini"]
