@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+    <rect width="1200" height="630" fill="#14191C" />
+    <circle cx="200" cy="150" r="400" fill="#102A43" opacity="0.6" />
+    <circle cx="1000" cy="500" r="400" fill="#1B2226" opacity="0.8" />
+    
+    <pattern id="scanlines" width="10" height="4" patternUnits="userSpaceOnUse">
+        <rect width="10" height="2" fill="rgba(255,255,255,0.03)" />
+    </pattern>
+    <rect width="1200" height="630" fill="url(#scanlines)" />
+
+    <rect x="50" y="50" width="1100" height="530" fill="none" stroke="#28B7D8" stroke-width="3" />
+    <rect x="54" y="54" width="1092" height="522" fill="none" stroke="#102A43" stroke-width="1" />
+    
+    <rect x="50" y="50" width="1100" height="50" fill="#102A43" />
+    <text x="80" y="82" font-family="'Noto Sans Mono', 'SF Mono', monospace" font-size="18" font-weight="bold" fill="#28B7D8">HOWL // ECOSYSTEM</text>
+    <text x="1110" y="82" font-family="'Noto Sans Mono', 'SF Mono', monospace" font-size="16" fill="#827C68" text-anchor="end">SYS_ID: HWR-PROSE-06</text>
+
+    <text x="90" y="165" font-family="'Noto Sans Mono', 'SF Mono', monospace" font-size="52" font-weight="bold" fill="#E7E1CE">HOWLWRITER<tspan fill="#E21D68">_</tspan></text>
+    <text x="90" y="205" font-family="'Noto Sans Mono', 'SF Mono', monospace" font-size="22" fill="#B0A894">// writing control system · voice preservation · independent review</text>
+
+    <g transform="translate(90, 255)" font-family="'Noto Sans Mono', 'SF Mono', monospace" font-size="18" font-weight="bold">
+        <rect x="0" y="0" width="120" height="42" fill="#1B2226" stroke="#827C68" stroke-width="1.5" />
+        <text x="60" y="27" fill="#E7E1CE" text-anchor="middle">INPUT</text>
+        <text x="138" y="27" fill="#28B7D8">→</text>
+
+        <rect x="160" y="0" width="125" height="42" fill="#1B2226" stroke="#087FAF" stroke-width="1.5" />
+        <text x="222" y="27" fill="#E7E1CE" text-anchor="middle">HUMANIZE</text>
+        <text x="302" y="27" fill="#28B7D8">→</text>
+
+        <rect x="320" y="0" width="105" height="42" fill="#1B2226" stroke="#E21D68" stroke-width="1.5" />
+        <text x="372" y="27" fill="#E7E1CE" text-anchor="middle">LINT</text>
+        <text x="442" y="27" fill="#28B7D8">→</text>
+
+        <rect x="460" y="0" width="125" height="42" fill="#1B2226" stroke="#D94732" stroke-width="1.5" />
+        <text x="522" y="27" fill="#E7E1CE" text-anchor="middle">RED PEN</text>
+        <text x="602" y="27" fill="#28B7D8">→</text>
+
+        <rect x="620" y="0" width="135" height="42" fill="#1B2226" stroke="#F2A91B" stroke-width="1.5" />
+        <text x="687" y="27" fill="#E7E1CE" text-anchor="middle">REVIEW</text>
+        <text x="772" y="27" fill="#28B7D8">→</text>
+
+        <rect x="790" y="0" width="130" height="42" fill="#102A43" stroke="#28B7D8" stroke-width="2" />
+        <text x="855" y="27" fill="#28B7D8" text-anchor="middle">OUTPUT</text>
+    </g>
+
+    <rect x="90" y="340" width="1020" height="135" fill="#0E1214" stroke="#353B3D" stroke-width="1.5" />
+    <rect x="90" y="340" width="8" height="135" fill="#087FAF" />
+    <text x="120" y="380" font-family="'Noto Sans Mono', 'SF Mono', monospace" font-size="18" font-weight="bold" fill="#087FAF">AXIOM // INTENT IS NOT AUTHORITY</text>
+    <text x="120" y="415" font-family="'Noto Sans Mono', 'SF Mono', monospace" font-size="17" fill="#E7E1CE">Probabilistic models propose text; deterministic machinery inspects constraints;</text>
+    <text x="120" y="445" font-family="'Noto Sans Mono', 'SF Mono', monospace" font-size="17" fill="#B0A894">independent reviewers verify meaning; human authors retain ultimate editorial authority.</text>
+
+    <text x="90" y="545" font-family="'Noto Sans Mono', 'SF Mono', monospace" font-size="16" fill="#827C68">CONTROLLED VIA HOWLPLANE</text>
+    <circle cx="1020" cy="540" r="6" fill="#28B7D8" />
+    <text x="1110" y="545" font-family="'Noto Sans Mono', 'SF Mono', monospace" font-size="16" fill="#28B7D8" text-anchor="end">STATUS: ACTIVE // 2026</text>
+</svg>

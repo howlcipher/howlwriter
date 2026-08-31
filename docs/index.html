@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="HowlWriter is a writing control system combining deterministic style linting, authentic voice preservation, claim provenance, and HowlPlane-controlled independent model review.">
+    <link rel="canonical" href="https://howlcipher.github.io/howlwriter/">
+
+    <!-- Open Graph Metadata -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="HowlWriter">
+    <meta property="og:title" content="HowlWriter | Writing Control System, Voice Preservation &amp; Review">
+    <meta property="og:description" content="AI-assisted writing without giving the AI the final word. Deterministic style linting, voice preservation, meaning invariance, and independent model review.">
+    <meta property="og:url" content="https://howlcipher.github.io/howlwriter/">
+    <meta property="og:image" content="https://howlcipher.github.io/howlwriter/social-preview.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="HowlWriter architecture and writing control pipeline">
+
+    <!-- Twitter Card Metadata -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="HowlWriter | Writing Control System, Voice Preservation &amp; Review">
+    <meta name="twitter:description" content="AI-assisted writing without giving the AI the final word. Deterministic style linting, voice preservation, meaning invariance, and independent model review.">
+    <meta name="twitter:image" content="https://howlcipher.github.io/howlwriter/social-preview.png">
+    <meta name="twitter:image:alt" content="HowlWriter architecture and writing control pipeline">
+
+    <title>HowlWriter | Writing Control System, Voice Preservation &amp; Review</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="alternate icon" type="image/png" href="favicon.png">
+</head>
+<body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <!-- Ecosystem Slide-out Drawer Overlay -->
+    <div id="eco-drawer-overlay" class="eco-drawer-overlay" aria-hidden="true"></div>
+
+    <!-- Ecosystem Slide-out Drawer Panel -->
+    <aside id="eco-drawer" class="eco-drawer" aria-label="Howl Ecosystem Directory" aria-hidden="true">
+        <div class="drawer-header">
+            <div class="drawer-title">HOWL // ECOSYSTEM DIRECTORY</div>
+            <button id="eco-drawer-close" class="btn-drawer-close" type="button" aria-label="Close ecosystem directory">[✕ CLOSE]</button>
+        </div>
+        <div class="drawer-body">
+            <a href="https://howlcipher.github.io/howl/" class="drawer-node-card">
+                <div class="node-card-top">
+                    <span class="node-card-name">HOWL // HUB</span>
+                    <span class="node-card-role">[PORTAL]</span>
+                </div>
+                <div class="node-card-desc">Central ecosystem portal, architectural blueprint, and cross-project governance map.</div>
+            </a>
+
+            <a href="https://howlcipher.github.io/howlframe/" class="drawer-node-card">
+                <div class="node-card-top">
+                    <span class="node-card-name">HOWLFRAME</span>
+                    <span class="node-card-role" style="color: var(--color-magenta);">[VM &amp; COMPILER]</span>
+                </div>
+                <div class="node-card-desc">AI-native reasoning language, typed intermediate representation, and sandboxed bytecode VM.</div>
+            </a>
+
+            <a href="https://howlcipher.github.io/howlplane/" class="drawer-node-card">
+                <div class="node-card-top">
+                    <span class="node-card-name">HOWLPLANE</span>
+                    <span class="node-card-role" style="color: var(--color-blue);">[CONTROL PLANE]</span>
+                </div>
+                <div class="node-card-desc">Engineering control plane with deterministic routing, adversarial falsification, and human gates.</div>
+            </a>
+
+            <a href="https://howlcipher.github.io/howlnotes/" class="drawer-node-card">
+                <div class="node-card-top">
+                    <span class="node-card-name">HOWLNOTES</span>
+                    <span class="node-card-role" style="color: var(--color-cyan);">[KNOWLEDGE NOTEBOOK]</span>
+                </div>
+                <div class="node-card-desc">Engineering knowledge notebook &amp; full-stack dogfood consumer proving native persistent storage.</div>
+            </a>
+
+            <a href="https://howlcipher.github.io/howlchangeops/" class="drawer-node-card">
+                <div class="node-card-top">
+                    <span class="node-card-name">HOWLCHANGEOPS</span>
+                    <span class="node-card-role" style="color: var(--color-red);">[AUTHORITY GATE]</span>
+                </div>
+                <div class="node-card-desc">Governed release controller enforcing cryptographic human approvals and bounded Git mutations.</div>
+            </a>
+
+            <a href="https://howlcipher.github.io/howlboard/" class="drawer-node-card">
+                <div class="node-card-top">
+                    <span class="node-card-name">HOWLBOARD</span>
+                    <span class="node-card-role" style="color: var(--color-amber);">[EVALUATION SURFACE]</span>
+                </div>
+                <div class="node-card-desc">Observation console and full-stack deterministic task state machine application.</div>
+            </a>
+
+            <a href="https://howlcipher.github.io/howlwriter/" class="drawer-node-card active-hub">
+                <div class="node-card-top">
+                    <span class="node-card-name">HOWLWRITER</span>
+                    <span class="node-card-role" style="color: var(--color-magenta);">[WRITING CONTROL]</span>
+                </div>
+                <div class="node-card-desc">Writing control system for voice preservation, deterministic style linting, humanization, and review.</div>
+            </a>
+        </div>
+        <div class="drawer-footer">
+            <span>● 6 PRODUCTION NODES</span>
+            <span>AUTH // HOWL 2026</span>
+        </div>
+    </aside>
+
+    <div class="layout-container">
+        <!-- Site Header -->
+        <header class="site-header">
+            <div class="header-top">
+                <div class="header-brand">
+                    <a href="https://howlcipher.github.io/howlwriter/" class="brand-sig">HOWL <span>//</span> HOWLWRITER</a>
+                    <span class="subsystem-tag">SYS_ID: HWR-PROSE-06</span>
+                </div>
+                <div class="header-actions">
+                    <button id="eco-menu-toggle" class="btn-eco-toggle" type="button" aria-expanded="false" aria-controls="eco-drawer" aria-label="Toggle Howl Ecosystem Directory">
+                        <span aria-hidden="true">☰</span> [ECOSYSTEM]
+                    </button>
+                    <button id="theme-toggle" class="btn-theme-toggle" type="button" aria-pressed="false">
+                        <span aria-hidden="true">☾</span> [DARK_MODE]
+                    </button>
+                    <a href="https://github.com/howlcipher/howlwriter" class="btn-tech btn-tech-primary" target="_blank" rel="noreferrer">
+                        [ VIEW ON GITHUB ]
+                    </a>
+                </div>
+            </div>
+
+            <!-- In-Page Section Navigation -->
+            <nav class="section-nav" aria-label="Page sections">
+                <span class="section-nav-label">READ_PATH:</span>
+                <a href="#overview">01_Overview</a>
+                <a href="#pipeline">02_Pipeline</a>
+                <a href="#deterministic">03_DeterministicVsModel</a>
+                <a href="#humanize">04_Humanization</a>
+                <a href="#voice">05_VoiceProfile</a>
+                <a href="#meaning">06_MeaningReview</a>
+                <a href="#howlplane">07_HowlPlane</a>
+                <a href="#provenance">08_Provenance</a>
+                <a href="#cli">09_CLI_Report</a>
+                <a href="#status">10_Status</a>
+            </nav>
+        </header>
+
+        <!-- Main Content Surface -->
+        <main id="main-content">
+            <!-- Hero Panel -->
+            <section class="hero-panel" aria-labelledby="main-title">
+                <div class="hero-banner">
+                    <span>SPEC_VER // 0.1.0-DEV (PROSE CONTROL PLANE)</span>
+                    <span>ARCHITECTURE: DETERMINISTIC LINTING &amp; INDEPENDENT MODEL REVIEW</span>
+                </div>
+                <div class="hero-body">
+                    <div class="hero-header-block">
+                        <p class="hero-kicker">// writing control system / voice preservation &amp; adversarial review</p>
+                        <h1 id="main-title" class="hero-title">HowlWriter <span class="jp-sub">ハウルライター // 2026</span></h1>
+                        <p class="hero-lead">
+                            HowlWriter brings HowlPlane's control-plane philosophy to writing. It combines deterministic style linting, authentic author voice preservation, claim provenance, and adversarial multi-model review to use AI for writing without letting the AI quietly erase the author's voice, alter meaning, or determine quality by itself.
+                        </p>
+                    </div>
+
+                    <div class="axiom-card" role="region" aria-label="Governing Principle">
+                        <strong>AXIOM // INTENT IS NOT AUTHORITY.</strong> Probabilistic language models propose text and revisions; deterministic rules inspect and constrain; independent reviewers falsify meaning loss; human authors retain sovereign editorial authority.
+                    </div>
+
+                    <div class="hero-actions">
+                        <a href="https://github.com/howlcipher/howlwriter" class="btn-tech btn-tech-primary" target="_blank" rel="noreferrer">
+                            [ CLONE REPOSITORY ]
+                        </a>
+                        <a href="#pipeline" class="btn-tech">
+                            [ EXPLORE PIPELINE ]
+                        </a>
+                        <a href="https://howlcipher.github.io/howl/" class="btn-tech">
+                            [ HOWL ECOSYSTEM ]
+                        </a>
+                    </div>
+
+                    <!-- Hero Pipeline Diagram -->
+                    <div class="hero-diagram-wrap" aria-label="HowlWriter Processing Pipeline">
+                        <div class="diagram-header">
+                            <span>PIPELINE // INPUT &rarr; EDIT &rarr; HUMANIZE &rarr; LINT &rarr; RED PEN &rarr; MEANING &rarr; OUTPUT</span>
+                            <span>STATUS: DOGFOODING</span>
+                        </div>
+                        <div class="pipeline-grid">
+                            <div class="pipe-step pipe-input">
+                                <div class="pipe-step-header">01 // INPUT</div>
+                                <div class="pipe-step-body">
+                                    <div class="pipe-step-title">Source Draft</div>
+                                    <div class="pipe-step-desc">Plain text or Markdown document parsed into span-addressable sentences.</div>
+                                    <div class="pipe-step-tag">[SPAN: PARSED]</div>
+                                </div>
+                            </div>
+                            <div class="pipe-step pipe-edit">
+                                <div class="pipe-step-header">02 // EDIT</div>
+                                <div class="pipe-step-body">
+                                    <div class="pipe-step-title">Normalize</div>
+                                    <div class="pipe-step-desc">Whitespace, line-ending, and heading structure normalization.</div>
+                                    <div class="pipe-step-tag">[STRUCTURE: CLEAN]</div>
+                                </div>
+                            </div>
+                            <div class="pipe-step pipe-humanize">
+                                <div class="pipe-step-header">03 // HUMANIZE</div>
+                                <div class="pipe-step-body">
+                                    <div class="pipe-step-title">Pattern Reduction</div>
+                                    <div class="pipe-step-desc">Identifies AI-writing habits and performs controlled rewrite via HUMANIZER.</div>
+                                    <div class="pipe-step-tag">[ROLE: HUMANIZER]</div>
+                                </div>
+                            </div>
+                            <div class="pipe-step pipe-lint">
+                                <div class="pipe-step-header">04 // LINT</div>
+                                <div class="pipe-step-body">
+                                    <div class="pipe-step-title">Style Rules</div>
+                                    <div class="pipe-step-desc">Deterministic check across 10 configurable rule families.</div>
+                                    <div class="pipe-step-tag">[DETERMINISTIC]</div>
+                                </div>
+                            </div>
+                            <div class="pipe-step pipe-redpen">
+                                <div class="pipe-step-header">05 // RED PEN</div>
+                                <div class="pipe-step-body">
+                                    <div class="pipe-step-title">Pure Critique</div>
+                                    <div class="pipe-step-desc">Adversarial commentary identifying weak arguments without rewriting.</div>
+                                    <div class="pipe-step-tag">[CRITIQUE ONLY]</div>
+                                </div>
+                            </div>
+                            <div class="pipe-step pipe-meaning">
+                                <div class="pipe-step-header">06 // MEANING</div>
+                                <div class="pipe-step-body">
+                                    <div class="pipe-step-title">Invariance Check</div>
+                                    <div class="pipe-step-desc">Number, hedge, and attribution diffing + independent model review.</div>
+                                    <div class="pipe-step-tag">[ROLE: REVIEWER]</div>
+                                </div>
+                            </div>
+                            <div class="pipe-step pipe-output">
+                                <div class="pipe-step-header">07 // OUTPUT</div>
+                                <div class="pipe-step-body">
+                                    <div class="pipe-step-title">Verified Text</div>
+                                    <div class="pipe-step-desc">Transformed document alongside durable execution telemetry report.</div>
+                                    <div class="pipe-step-tag">[STATUS: READY]</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 01 Overview & Philosophical Thesis -->
+            <section id="overview" class="tech-panel">
+                <div class="tech-header">
+                    <h2><span class="sec-id">SECTION // 01</span> Overview &amp; Philosophical Thesis</h2>
+                    <span class="subsystem-tag">HWR-MOD-THESIS</span>
+                </div>
+                <div class="tech-body">
+                    <p>
+                        Most AI writing utilities operate as thin wrappers: prompt in, prose out, no verification, no memory of what changed or why, and no mechanism for writing to be rigorously challenged before being declared finished. When models write or edit unconstrained, they produce recognizable synthetic hallmarks: canned transitions, repetitive tricolons, excessive polish that sands away the author's voice, and subtle semantic drift that alters technical facts or drops crucial qualifications.
+                    </p>
+                    <p>
+                        <strong>HowlWriter is not built to "beat AI detectors."</strong> AI detectors are unreliable heuristics and are never treated as a measurement in this codebase. Instead, HowlWriter is engineered to produce writing that reads as authentically human and preserves the voice and exact meaning of the author.
+                    </p>
+                    <div class="grid-2col" style="margin-top: 1.25rem;">
+                        <div class="signal-card">
+                            <strong class="signal-card-title" style="color: var(--color-blue);">01 // AUTHENTIC VOICE PRESERVATION</strong>
+                            <span class="signal-card-desc">Human writing has rhythm, varying sentence lengths, intentional fragments, and unique idioms. HowlWriter learns author quirks rather than forcing text toward generic corporate prose.</span>
+                        </div>
+                        <div class="signal-card">
+                            <strong class="signal-card-title" style="color: var(--color-magenta);">02 // MEANING &amp; HEDGE INVARIANCE</strong>
+                            <span class="signal-card-desc">Rewriting risks sounding polished while becoming false. HowlWriter tracks numbers, dates, attribution, and modal hedging ("may", "approximately") to guarantee fidelity.</span>
+                        </div>
+                        <div class="signal-card">
+                            <strong class="signal-card-title" style="color: var(--color-cyan);">03 // DETERMINISTIC &amp; PROVENANCE TRUTH</strong>
+                            <span class="signal-card-desc">HowlWriter never hallucinates a statistic, citation, author, or URL to fill a gap. Claims start unverifiable until backed by genuine, queryable evidence records.</span>
+                        </div>
+                        <div class="signal-card">
+                            <strong class="signal-card-title" style="color: var(--color-amber);">04 // ADVERSARIAL REVIEWER INDEPENDENCE</strong>
+                            <span class="signal-card-desc">When model execution is configured through HowlPlane, the model reviewing meaning is kept strictly independent from the model that performed the rewrite.</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 02 Pipeline & Architecture -->
+            <section id="pipeline" class="tech-panel">
+                <div class="tech-header">
+                    <h2><span class="sec-id">SECTION // 02</span> Architecture &amp; Execution Pipeline</h2>
+                    <span class="subsystem-tag">HWR-MOD-PIPELINE</span>
+                </div>
+                <div class="tech-body">
+                    <p>
+                        HowlWriter is organized into cleanly separated subsystems. Downstream packages depend on a real, span-addressable domain model:
+                    </p>
+                    <div class="code-container">
+                        <div class="code-header">
+                            <span class="code-title">[SCHEMATIC // PACKAGE_TOPOLOGY]</span>
+                            <span class="subsystem-tag">HOWLWRITER_CORE</span>
+                        </div>
+                        <pre><code>src/howlwriter/
+├── domain/       Document, Paragraph, Sentence, Claim, Source, Evidence,
+│                 ProvenanceGraph, VoiceProfile, WritingReport
+├── config/       Layered config: defaults &rarr; mode &rarr; user &rarr; project &rarr; request
+├── linting/      Deterministic style-rule engine (10 builtin rule families)
+├── humanize/     AI-habit detector + opt-in SafeRewriter + ModelHumanizerRewriter
+├── editing/      PassthroughEditor (whitespace/headings) + model Editor Protocol
+├── redpen/       RedPenEngine (pure critique and argumentation challenge)
+├── facts/        HeuristicClaimExtractor + ClaimVerifier Protocol
+├── research/     Researcher Protocol (search &amp; source discovery seam)
+├── citations/    APA7Formatter with missing-metadata warnings (MLA/Chicago reserved)
+├── voice/        CorpusStatsLearner (deterministic standard library statistics)
+├── review/       MeaningPreservationReviewer (heuristic diff) + ModelMeaningReviewer
+├── integration/  HowlPlaneWritingBridge + WritingRole protocols + ModelRoleNotConfiguredError
+├── pipeline/     run_howl_pipeline (end-to-end orchestration)
+└── cli/          Command line interface (13 capability subcommands)</code></pre>
+                    </div>
+                    <p>
+                        <strong>Span-Addressable Document Model:</strong> <code>Document.parse()</code> breaks prose into structured <code>Paragraph</code> and <code>Sentence</code> spans. This allows Red Pen critique, style linting, and claim extraction to pinpoint "paragraph 3, sentence 2" instead of opaque character offsets.
+                    </p>
+                </div>
+            </section>
+
+            <!-- 03 Deterministic Core vs Model-Backed Execution -->
+            <section id="deterministic" class="tech-panel">
+                <div class="tech-header">
+                    <h2><span class="sec-id">SECTION // 03</span> Deterministic Core vs. Model-Backed Execution</h2>
+                    <span class="subsystem-tag">HWR-MOD-SEPARATION</span>
+                </div>
+                <div class="tech-body">
+                    <p>
+                        HowlWriter does <em>not</em> send every problem to an LLM. Purely mechanical tasks belong to deterministic algorithms, while semantic transformations run under strict control:
+                    </p>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Subsystem</th>
+                                    <th>Deterministic Core (Built &amp; Tested)</th>
+                                    <th>Model-Backed Layer (HowlPlane Bridge)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Style &amp; Linting</strong></td>
+                                    <td>10 rule families, banned patterns, regex token analysis</td>
+                                    <td>None &mdash; linting is 100% deterministic and config-gated</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Humanization</strong></td>
+                                    <td>Deterministic pattern detection &amp; safe literal substitution</td>
+                                    <td><code>HUMANIZER</code> role executes nuanced prose restructuring</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Editorial Critique</strong></td>
+                                    <td>Red Pen rule analysis (clichés, passive voice, filler)</td>
+                                    <td><code>RED_PEN</code> role evaluates argumentation and rhetoric</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Voice Preservation</strong></td>
+                                    <td><code>CorpusStatsLearner</code> (sentence mean, stdev, contraction rate)</td>
+                                    <td><code>VOICE_REVIEWER</code> role evaluates tone, irony, and humor</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Meaning Verification</strong></td>
+                                    <td>Numerical, date, attribution, and modal hedge diffing</td>
+                                    <td><code>FINAL_REVIEWER</code> evaluates semantic drift and scope loss</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Citations &amp; Claims</strong></td>
+                                    <td>APA 7 formatter, metadata warnings, claim span extraction</td>
+                                    <td><code>FACT_CHECKER</code> &amp; <code>RESEARCHER</code> verify external truth</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Failure Handling</strong></td>
+                                    <td>Raises explicit <code>ModelRoleNotConfiguredError</code></td>
+                                    <td>Degrades honestly; never fabricates a mock pass or metric</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 04 Humanization Without Gimmicks -->
+            <section id="humanize" class="tech-panel">
+                <div class="tech-header">
+                    <h2><span class="sec-id">SECTION // 04</span> Humanization: Reducing AI Habits</h2>
+                    <span class="subsystem-tag">HWR-MOD-HUMANIZE</span>
+                </div>
+                <div class="tech-body">
+                    <p>
+                        Large language models default to predictable linguistic patterns. HowlWriter identifies and reduces these generic habits while protecting intentional stylistic choices:
+                    </p>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Rule Code</th>
+                                    <th>Pattern Flagged</th>
+                                    <th>Concrete Example</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><code>AI_STYLE_BANNED_WORD</code></td>
+                                    <td>Configured overused AI buzzwords</td>
+                                    <td><code>"delve"</code>, <code>"tapestry"</code>, <code>"crucial"</code>, <code>"testament"</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>AI_STYLE_NOT_X_BUT_Y</code></td>
+                                    <td>Formulaic contrast constructions</td>
+                                    <td><code>"It's not just a tool; it's a paradigm shift."</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>AI_STYLE_EMPTY_TRANSITION</code></td>
+                                    <td>Canned introductory filler</td>
+                                    <td><code>"At its core,"</code>, <code>"In today's rapidly evolving landscape,"</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>AI_STYLE_CANNED_CONCLUSION</code></td>
+                                    <td>Moralizing wrap-up clichés</td>
+                                    <td><code>"This highlights the undeniable importance of..."</code></td>
+                                </tr>
+                                <tr>
+                                    <td><code>AI_STYLE_REPETITIVE_TRICOLON</code></td>
+                                    <td>Excessive parallel three-item lists</td>
+                                    <td>Three or more tripartite sentences in a single document</td>
+                                </tr>
+                                <tr>
+                                    <td><code>AI_STYLE_EXCESSIVE_EM_DASH</code></td>
+                                    <td>Over-reliance on em dash parentheticals</td>
+                                    <td>Four or more em dashes across brief prose</td>
+                                </tr>
+                                <tr>
+                                    <td><code>AI_STYLE_REPETITIVE_PARAGRAPH</code></td>
+                                    <td>Formulaic paragraph openings</td>
+                                    <td>Three or more paragraphs beginning with the exact same word</td>
+                                </tr>
+                                <tr>
+                                    <td><code>AI_STYLE_EXCESSIVE_RHETORICAL</code></td>
+                                    <td>Interrogative filler questions</td>
+                                    <td>Rhetorical questions comprising &ge; 25% of sentences</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p>
+                        <strong>Findings-First Architecture:</strong> By default, HowlWriter is <em>findings-only</em>. It reports locations and explanations without silently modifying text. Safe literal substitutions (e.g. replacing <code>delve</code> with <code>explore</code>) require the explicit <code>--apply</code> flag or a configured <code>HUMANIZER</code> model pass.
+                    </p>
+                </div>
+            </section>
+
+            <!-- 05 Voice Profile & Author Quirks -->
+            <section id="voice" class="tech-panel">
+                <div class="tech-header">
+                    <h2><span class="sec-id">SECTION // 05</span> Voice Profile &amp; Author Quirks</h2>
+                    <span class="subsystem-tag">HWR-MOD-VOICE</span>
+                </div>
+                <div class="tech-body">
+                    <p>
+                        Generic writing assistants summarize style with simplistic adjectives like <em>"professional"</em> or <em>"conversational."</em> This strips away the idiosyncratic voice of the author. HowlWriter builds a structured <code>VoiceProfile</code> grounded in statistical reality:
+                    </p>
+                    <div class="grid-3col">
+                        <div class="signal-card">
+                            <strong class="signal-card-title" style="color: var(--color-cyan);">SENTENCE DISTRIBUTIONS</strong>
+                            <span class="signal-card-desc">Computes sentence length mean and population standard deviation (&sigma;) to capture sentence pacing and variability.</span>
+                        </div>
+                        <div class="signal-card">
+                            <strong class="signal-card-title" style="color: var(--color-blue);">SYNTAX &amp; CONTRACTIONS</strong>
+                            <span class="signal-card-desc">Measures contraction frequency (<code>n't</code>, <code>'ve</code>, <code>'ll</code>), rhetorical question density, and heuristic fragment rates.</span>
+                        </div>
+                        <div class="signal-card">
+                            <strong class="signal-card-title" style="color: var(--color-magenta);">VERBATIM EXCERPTS</strong>
+                            <span class="signal-card-desc">Samples representative shortest, median, and longest sentences from author corpus as anchor references for model prompts.</span>
+                        </div>
+                    </div>
+                    <p style="margin-top: 1rem;">
+                        <strong>Honest Metric Policy:</strong> Calculating a defensible "voice match percentage" requires a validated comparison distance model. Because approximating this without validation produces misleading results, HowlWriter leaves <code>voice_match</code> as <code>None</code> and omits the line from reports rather than inventing an arbitrary number.
+                    </p>
+                </div>
+            </section>
+
+            <!-- 06 Meaning Preservation & The Red Pen -->
+            <section id="meaning" class="tech-panel">
+                <div class="tech-header">
+                    <h2><span class="sec-id">SECTION // 06</span> Meaning Preservation &amp; The Red Pen</h2>
+                    <span class="subsystem-tag">HWR-MOD-MEANING</span>
+                </div>
+                <div class="tech-body">
+                    <p>
+                        A major hazard in AI editing is <strong>semantic drift</strong>: a rewrite sounds smoother, but subtly alters claims, removes necessary qualifications, drops technical constraints, or changes statistical numbers.
+                    </p>
+                    <div class="diff-compare-wrap">
+                        <div class="diff-card diff-pass">
+                            <div class="diff-card-header">
+                                <span>ORIGINAL AUTHOR DRAFT</span>
+                                <span class="diff-card-tag">[SOURCE]</span>
+                            </div>
+                            <div class="diff-card-body">
+                                "The caching layer <strong>may reduce p99 query latency by approximately 15%</strong> under heavy concurrency, according to preliminary benchmarks."
+                            </div>
+                        </div>
+                        <div class="diff-card diff-fail">
+                            <div class="diff-card-header">
+                                <span>GENERIC AI REWRITE (FLAGGED)</span>
+                                <span class="diff-card-tag">[MEANING VIOLATION]</span>
+                            </div>
+                            <div class="diff-card-body">
+                                "The new caching architecture <strong>cuts query latency by 15%</strong> across all environments."
+                            </div>
+                        </div>
+                    </div>
+                    <div class="diff-analysis">
+                        <strong>HOWLWRITER MEANING REVIEW REPORT:</strong>
+                        <ul style="margin: 0.35rem 0 0 1.25rem;">
+                            <li><strong style="color: var(--color-red);">CRITICAL:</strong> Lost modal hedge <code>"may"</code> &rarr; converted probabilistic possibility into absolute certainty.</li>
+                            <li><strong style="color: var(--color-amber);">WARNING:</strong> Dropped qualification <code>"approximately"</code> and scope <code>"under heavy concurrency"</code>.</li>
+                            <li><strong style="color: var(--color-amber);">WARNING:</strong> Stripped evidentiary attribution <code>"according to preliminary benchmarks"</code>.</li>
+                        </ul>
+                    </div>
+                    <p style="margin-top: 1.25rem;">
+                        <strong>The Red Pen Engine:</strong> Pure criticism without rewriting. The Red Pen flags logical leaps, unsupported assertions, and passive evasions, providing clear editorial commentary while leaving the pen in the author's hand.
+                    </p>
+                </div>
+            </section>
+
+            <!-- 07 HowlPlane Integration & Reviewer Independence -->
+            <section id="howlplane" class="tech-panel">
+                <div class="tech-header">
+                    <h2><span class="sec-id">SECTION // 07</span> HowlPlane Integration &amp; Reviewer Independence</h2>
+                    <span class="subsystem-tag">HWR-MOD-HOWLPLANE</span>
+                </div>
+                <div class="tech-body">
+                    <p>
+                        HowlWriter maintains a strict separation of concerns with HowlPlane:
+                    </p>
+                    <ul>
+                        <li><strong>HowlWriter owns:</strong> Writing semantics, domain roles (<code>HUMANIZER</code>, <code>FINAL_REVIEWER</code>, <code>RED_PEN</code>, <code>WRITER</code>), prompt contracts, deterministic linting, and meaning-preservation rules.</li>
+                        <li><strong>HowlPlane owns:</strong> Model execution, provider resolution (Claude, Codex, local Ollama), routing, timeouts, independent reviewer enforcement, and evidence ledger persistence.</li>
+                    </ul>
+                    <div class="code-container">
+                        <div class="code-header">
+                            <span class="code-title">[SCHEMATIC // INDEPENDENT_REVIEW_TOPOLOGY]</span>
+                            <span class="subsystem-tag">HOWLPLANE_ROUTING</span>
+                        </div>
+                        <pre><code>                              ┌────────────────────────┐
+                              │  HOWLWRITER PIPELINE   │
+                              └───────────┬────────────┘
+                                          │
+                                   WritingRole Request
+                                   (Domain: writing)
+                                          │
+                                          ▼
+                              ┌────────────────────────┐
+                              │   HOWLPLANE CONTROL    │
+                              │ RoleDispatcher Engine  │
+                              └─────┬────────────┬─────┘
+                                    │            │
+            Execute HUMANIZER Role  │            │ Enforce avoid_provider
+            (e.g., Provider: Claude)│            │ (e.g., Provider: Codex)
+                                    ▼            ▼
+                             ┌────────────┐┌────────────┐
+                             │  MODEL A   ││  MODEL B   │
+                             │ Humanize   ││ Review     │
+                             └─────┬──────┘└─────┬──────┘
+                                   │             │
+                                   └──────┬──────┘
+                                          │
+                                   Durable Evidence
+                                 IndependenceStatus
+                                          │
+                                          ▼
+                              ┌────────────────────────┐
+                              │   HOWLWRITER REPORT    │
+                              │ STATUS: READY / REVIEW │
+                              └────────────────────────┘</code></pre>
+                    </div>
+                    <p>
+                        <strong>Observable Reviewer Independence:</strong> When multiple providers are configured, HowlPlane ensures the model evaluating meaning differs from the model that performed the rewrite. The result is transparently recorded as <code>INDEPENDENT</code>, <code>SAME_PROVIDER</code>, <code>NOT_REVIEWED</code>, or <code>UNAVAILABLE</code>.
+                    </p>
+                </div>
+            </section>
+
+            <!-- 08 Provenance Graph & Citations -->
+            <section id="provenance" class="tech-panel">
+                <div class="tech-header">
+                    <h2><span class="sec-id">SECTION // 08</span> Provenance Graph &amp; APA 7 Citations</h2>
+                    <span class="subsystem-tag">HWR-MOD-PROVENANCE</span>
+                </div>
+                <div class="tech-body">
+                    <p>
+                        Appending disconnected URLs at the end of an article fails to establish actual truth. HowlWriter features a queryable in-memory <code>ProvenanceGraph</code> linking claims, sources, and evidence in both directions:
+                    </p>
+                    <div class="grid-2col">
+                        <div>
+                            <h3>Provenance Graph Queries</h3>
+                            <ul>
+                                <li><code>sources_for_claim(claim_id)</code> &mdash; Which sources support a given sentence?</li>
+                                <li><code>claims_for_source(source_id)</code> &mdash; Which claims depend on this source?</li>
+                                <li><code>evidence_for_claim(claim_id)</code> &mdash; Verbatim evidence snippet backing the claim.</li>
+                                <li><code>unsupported_claims()</code> &mdash; Flag claims lacking verified evidence.</li>
+                                <li><code>unaccessed_sources()</code> &mdash; Flag cited sources never actually retrieved.</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h3>APA 7 Citation Formatting</h3>
+                            <ul>
+                                <li><strong>Parenthetical:</strong> <code>(Smith, 2024)</code> / <code>(Smith &amp; Jones, 2024)</code></li>
+                                <li><strong>Narrative:</strong> <code>Smith (2024)</code> / <code>Smith et al. (2024)</code></li>
+                                <li><strong>Reference List:</strong> Alphabetized entries with locator formatting.</li>
+                                <li><strong>Missing Metadata Warnings:</strong> Emits <code>CITATION_METADATA_MISSING</code> warnings instead of fabricating dates or authors.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 09 CLI Usage & Real Execution Report -->
+            <section id="cli" class="tech-panel">
+                <div class="tech-header">
+                    <h2><span class="sec-id">SECTION // 09</span> CLI Usage &amp; Execution Report</h2>
+                    <span class="subsystem-tag">HWR-MOD-CLI</span>
+                </div>
+                <div class="tech-body">
+                    <p>
+                        Every HowlWriter capability is accessible via a standalone CLI subcommand:
+                    </p>
+                    <div class="code-container">
+                        <div class="code-header">
+                            <span class="code-title">[BASH // CLI_WORKFLOWS]</span>
+                            <button class="btn-copy" type="button">[COPY]</button>
+                        </div>
+                        <pre><code># 1. Deterministic style &amp; AI habit linting
+howlwriter lint draft.md
+
+# 2. Humanization findings (and opt-in safe rewrite)
+howlwriter humanize draft.md --deterministic --apply
+
+# 3. Pure Red Pen critique without modifying prose
+howlwriter red-pen draft.md
+
+# 4. Extract factual claims (all claims start UNVERIFIABLE)
+howlwriter fact-check draft.md
+
+# 5. Generate formatted APA 7 citations from source metadata
+howlwriter cite apa7 sources.json --form parenthetical
+howlwriter references apa7 sources.json
+
+# 6. Learn author voice profile from a corpus of real writing
+howlwriter voice learn post1.md post2.md --author "Jane Doe"
+
+# 7. Compare meaning preservation between original and revised drafts
+howlwriter finalize original.md revised.md
+
+# 8. Execute the complete end-to-end pipeline
+howlwriter howl draft.md</code></pre>
+                    </div>
+
+                    <h3>Real Execution Report Output</h3>
+                    <div class="code-container">
+                        <div class="code-header">
+                            <span class="code-title">[TERMINAL // EXECUTION_REPORT]</span>
+                            <span class="subsystem-tag">HOWLWRITER_TELEMETRY</span>
+                        </div>
+                        <pre><code>HOWLWRITER REPORT
+
+Mode:                  TECHNICAL
+Humanizer:             claude_code
+Meaning Reviewer:      codex
+Reviewer Independence: INDEPENDENT
+
+Deterministic Lint:
+  Before:              4 findings
+  After:               0 findings
+
+AI-style warnings           0
+Banned words                0
+Meaning Preservation:
+  Deterministic:       PASS
+  Semantic Review:     PASS
+
+Changes:
+- Restructured passive constructions in paragraph 2
+- Replaced canned transition "At its core" with concrete technical context
+- Preserved author's intentional sentence fragment in paragraph 4
+
+STATUS: READY</code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 10 Current Status & Roadmap -->
+            <section id="status" class="tech-panel">
+                <div class="tech-header">
+                    <h2><span class="sec-id">SECTION // 10</span> Current Status &amp; Transparent Roadmap</h2>
+                    <span class="subsystem-tag">HWR-MOD-STATUS</span>
+                </div>
+                <div class="tech-body">
+                    <p>
+                        HowlWriter is under <strong>active development and dogfooding</strong>. We represent current capabilities transparently:
+                    </p>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Feature Area</th>
+                                    <th>Working Today (v0.1.0-dev)</th>
+                                    <th>Planned / Roadmap</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Style Linting</strong></td>
+                                    <td><span class="chip chip-pass">WORKING NOW</span> 10 built-in rule families, config-gated</td>
+                                    <td>Additional domain rulepacks (Academic, Medical)</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Humanization</strong></td>
+                                    <td><span class="chip chip-pass">WORKING NOW</span> Pattern detection, safe rewrites, HowlPlane model bridge</td>
+                                    <td>Custom author-tuned humanizer models</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Editorial Critique</strong></td>
+                                    <td><span class="chip chip-pass">WORKING NOW</span> Deterministic Red Pen critique engine</td>
+                                    <td>Multi-agent dialectical critique panel</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Voice Learning</strong></td>
+                                    <td><span class="chip chip-pass">WORKING NOW</span> <code>CorpusStatsLearner</code> distributions &amp; representative excerpts</td>
+                                    <td>Validated semantic voice distance metric</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Meaning Verification</strong></td>
+                                    <td><span class="chip chip-pass">WORKING NOW</span> Number/hedge diffing &amp; independent model review</td>
+                                    <td>Fine-grained semantic entailment trees</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Citations</strong></td>
+                                    <td><span class="chip chip-pass">WORKING NOW</span> Full APA 7 formatter &amp; missing metadata warnings</td>
+                                    <td>MLA, Chicago, IEEE, Harvard citation styles</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Fact Verification</strong></td>
+                                    <td><span class="chip chip-pass">WORKING NOW</span> Span claim extraction, queryable ProvenanceGraph</td>
+                                    <td>Automated search engine verification agents</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>File Ingestion</strong></td>
+                                    <td><span class="chip chip-pass">WORKING NOW</span> Plain text &amp; Markdown</td>
+                                    <td>PDF, DOCX, and HTML document ingestion</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 11 Ecosystem Directory -->
+            <section id="ecosystem" class="tech-panel">
+                <div class="tech-header">
+                    <h2><span class="sec-id">SECTION // 11</span> Howl Ecosystem Members</h2>
+                    <span class="subsystem-tag">HWR-MOD-ECOSYSTEM</span>
+                </div>
+                <div class="tech-body">
+                    <p>HowlWriter is part of the unified Howl software ecosystem:</p>
+                    <div class="node-directory-grid">
+                        <!-- Howl Hub -->
+                        <div class="dir-card" style="border-top: 3px solid var(--howl-shell);">
+                            <div class="dir-card-header">
+                                <span class="dir-card-title">Howl Hub</span>
+                                <span class="chip chip-cyan">PORTAL // GOVERNANCE</span>
+                            </div>
+                            <p class="dir-card-desc">Central ecosystem portal, architectural blueprint, and cross-project governance map.</p>
+                            <div class="dir-card-links">
+                                <a href="https://howlcipher.github.io/howl/" class="btn-tech btn-tech-primary">[ LIVE PORTAL ]</a>
+                                <a href="https://github.com/howlcipher/howl" class="btn-tech" target="_blank" rel="noreferrer">[ GITHUB ]</a>
+                            </div>
+                        </div>
+
+                        <!-- HowlFrame -->
+                        <div class="dir-card" style="border-top: 3px solid var(--color-magenta);">
+                            <div class="dir-card-header">
+                                <span class="dir-card-title">HowlFrame</span>
+                                <span class="chip chip-magenta">TIER 0 // VM</span>
+                            </div>
+                            <p class="dir-card-desc">AI DSL compiler, typed HFIR intermediate representation gate, and capability-bounded VM.</p>
+                            <div class="dir-card-links">
+                                <a href="https://howlcipher.github.io/howlframe/" class="btn-tech btn-tech-primary">[ LIVE SITE ]</a>
+                                <a href="https://github.com/howlcipher/howlframe" class="btn-tech" target="_blank" rel="noreferrer">[ GITHUB ]</a>
+                            </div>
+                        </div>
+
+                        <!-- HowlPlane -->
+                        <div class="dir-card" style="border-top: 3px solid var(--color-blue);">
+                            <div class="dir-card-header">
+                                <span class="dir-card-title">HowlPlane</span>
+                                <span class="chip chip-blue">TIER 1 // CONTROL</span>
+                            </div>
+                            <p class="dir-card-desc">Autonomous AI engineering control plane with deterministic routing, adversarial falsification, and human gates.</p>
+                            <div class="dir-card-links">
+                                <a href="https://howlcipher.github.io/howlplane/" class="btn-tech btn-tech-primary">[ LIVE SITE ]</a>
+                                <a href="https://github.com/howlcipher/howlplane" class="btn-tech" target="_blank" rel="noreferrer">[ GITHUB ]</a>
+                            </div>
+                        </div>
+
+                        <!-- HowlChangeOps -->
+                        <div class="dir-card" style="border-top: 3px solid var(--color-red);">
+                            <div class="dir-card-header">
+                                <span class="dir-card-title">HowlChangeOps</span>
+                                <span class="chip chip-red">TIER 1 // AUTHORITY</span>
+                            </div>
+                            <p class="dir-card-desc">Governed release controller enforcing cryptographic human approvals and bounded Git mutations.</p>
+                            <div class="dir-card-links">
+                                <a href="https://howlcipher.github.io/howlchangeops/" class="btn-tech btn-tech-primary">[ LIVE SITE ]</a>
+                                <a href="https://github.com/howlcipher/howlchangeops" class="btn-tech" target="_blank" rel="noreferrer">[ GITHUB ]</a>
+                            </div>
+                        </div>
+
+                        <!-- HowlNotes -->
+                        <div class="dir-card" style="border-top: 3px solid var(--color-cyan);">
+                            <div class="dir-card-header">
+                                <span class="dir-card-title">HowlNotes</span>
+                                <span class="chip chip-cyan">TIER 2 // KNOWLEDGE</span>
+                            </div>
+                            <p class="dir-card-desc">Engineering knowledge notebook and full-stack dogfood consumer proving native persistent storage.</p>
+                            <div class="dir-card-links">
+                                <a href="https://howlcipher.github.io/howlnotes/" class="btn-tech btn-tech-primary">[ LIVE SITE ]</a>
+                                <a href="https://github.com/howlcipher/howlnotes" class="btn-tech" target="_blank" rel="noreferrer">[ GITHUB ]</a>
+                            </div>
+                        </div>
+
+                        <!-- HowlBoard -->
+                        <div class="dir-card" style="border-top: 3px solid var(--color-amber);">
+                            <div class="dir-card-header">
+                                <span class="dir-card-title">HowlBoard</span>
+                                <span class="chip chip-amber">TIER 2 // TELEMETRY</span>
+                            </div>
+                            <p class="dir-card-desc">Live telemetry console and full-stack deterministic task state machine application.</p>
+                            <div class="dir-card-links">
+                                <a href="https://howlcipher.github.io/howlboard/" class="btn-tech btn-tech-primary">[ LIVE SITE ]</a>
+                                <a href="https://github.com/howlcipher/howlboard" class="btn-tech" target="_blank" rel="noreferrer">[ GITHUB ]</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Site Footer -->
+        <footer class="site-footer">
+            <div class="footer-telemetry">
+                <div class="status-indicator">
+                    <span class="status-dot" aria-hidden="true"></span>
+                    <span>SYS_STATUS: ACTIVE // HOWLWRITER-PROSE</span>
+                </div>
+                <div>AUTH // HOWL ECOSYSTEM 2026</div>
+            </div>
+            <div class="footer-links">
+                <nav class="footer-nav" aria-label="Ecosystem Links">
+                    <a href="https://howlcipher.github.io/howl/">Howl Hub</a>
+                    <a href="https://howlcipher.github.io/howlframe/">HowlFrame</a>
+                    <a href="https://howlcipher.github.io/howlplane/">HowlPlane</a>
+                    <a href="https://howlcipher.github.io/howlnotes/">HowlNotes</a>
+                    <a href="https://howlcipher.github.io/howlchangeops/">HowlChangeOps</a>
+                    <a href="https://howlcipher.github.io/howlboard/">HowlBoard</a>
+                    <a href="https://howlcipher.github.io/howlwriter/">HowlWriter</a>
+                </nav>
+                <a href="#main-content">[ BACK TO TOP ]</a>
+            </div>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
