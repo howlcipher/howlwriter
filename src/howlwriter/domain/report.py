@@ -44,6 +44,9 @@ class WritingReport(DataClassSerializationMixin):
     lint_after_count: int | None = None
     meaning_preservation: MeaningPreservationStatus = "NOT_EVALUATED"
     semantic_meaning_status: str | None = None
+    humanizer_duration_seconds: float | None = None
+    meaning_reviewer_duration_seconds: float | None = None
+    total_duration_seconds: float | None = None
     changes: list[ChangeRecord] = field(default_factory=list)
     sources: list[Source] = field(default_factory=list)
 
@@ -56,6 +59,8 @@ class WritingReport(DataClassSerializationMixin):
             lines.append(f"Humanizer:             {self.humanizer_provider}")
         if self.meaning_reviewer_provider:
             lines.append(f"Meaning Reviewer:      {self.meaning_reviewer_provider}")
+        if self.reviewer_independence:
+            lines.append(f"Reviewer Independence: {self.reviewer_independence}")
         has_header_info = any([
             self.mode,
             self.humanizer_provider,
@@ -63,6 +68,26 @@ class WritingReport(DataClassSerializationMixin):
             self.reviewer_independence,
         ])
         if has_header_info:
+            lines.append("")
+
+        if (
+            self.humanizer_duration_seconds is not None
+            or self.meaning_reviewer_duration_seconds is not None
+            or self.total_duration_seconds is not None
+        ):
+            lines.append("Latency:")
+            if self.humanizer_duration_seconds is not None:
+                lines.append(
+                    f"  Humanizer:           {self.humanizer_duration_seconds:.1f}s"
+                )
+            if self.meaning_reviewer_duration_seconds is not None:
+                lines.append(
+                    f"  Meaning Review:      {self.meaning_reviewer_duration_seconds:.1f}s"
+                )
+            if self.total_duration_seconds is not None:
+                lines.append(
+                    f"  Total:               {self.total_duration_seconds:.1f}s"
+                )
             lines.append("")
 
         if self.lint_before_count is not None or self.lint_after_count is not None:

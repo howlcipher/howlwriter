@@ -26,7 +26,7 @@ from howlwriter.integration.model_role import NotConfiguredRole, WritingRole
 Status = Literal["PASS", "FLAGGED"]
 SemanticVerdict = Literal["PASS", "PASS_WITH_WARNINGS", "FAIL"]
 
-_NUMBER = re.compile(r"\b\d[\d,.]*\b")
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
 _ATTRIBUTION_MARKERS = (
     "according to", "study by", "reports that", "found that"
 )
@@ -207,6 +207,9 @@ class NotConfiguredMeaningReviewer(NotConfiguredRole):
         return self.run(original, revised)
 
 
+MAX_SINGLE_PASS_CHARS = 100_000
+
+
 class RealModelMeaningReviewer:
     """Real model-backed semantic meaning reviewer wired via HowlPlane."""
 
@@ -220,6 +223,15 @@ class RealModelMeaningReviewer:
         cwd: Path | str | None = None,
         custom_backend: Any | None = None,
     ) -> SemanticMeaningResult:
+        if (
+            len(original.text) > MAX_SINGLE_PASS_CHARS
+            or len(revised.text) > MAX_SINGLE_PASS_CHARS
+        ):
+            raise ValueError(
+                f"Document size exceeds safe single-pass limit "
+                f"({MAX_SINGLE_PASS_CHARS} chars) for semantic meaning review."
+            )
+
         bridge = get_howlplane_bridge()
 
         prompt = f"""You are an independent Meaning Reviewer executing the FINAL_REVIEWER role.
@@ -227,16 +239,16 @@ Your mission is to compare the ORIGINAL text against the REVISED text and evalua
 whether factual meaning, intent, technical precision, or claims were altered.
 
 EVALUATION CRITERIA:
-1. Changed meaning or core thesis
+1. Changed meaning, thesis, or polarity (e.g. negative turned into positive)
 2. Stronger or bolder claims than the original justified
 3. Weaker claims or dropped core assertions
-4. Removed qualifiers, hedges, or conditions
+4. Removed qualifiers, hedges, or conditions (e.g. "may", "approximately", "likely")
 5. Changed opinions or altered author stance
 6. New factual assertions fabricated by the rewrite
-7. Removed technical details or specifications
-8. Altered numbers, statistics, percentages, or dates
-9. Removed or altered source attribution
-10. Changed uncertainty levels
+7. Removed or altered technical details, software versions, IP addresses, or units
+8. Altered numbers, statistics, percentages, currency, ranges, or dates
+9. Removed or altered source attribution, quotes, or citations
+10. Changed uncertainty levels or causation (e.g. correlation changed to causation)
 
 ORIGINAL TEXT:
 ```markdown

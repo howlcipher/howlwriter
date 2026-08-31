@@ -10,6 +10,7 @@ import argparse
 from pathlib import Path
 
 from howlwriter.config.loader import ConfigLoader
+from howlwriter.domain.io import atomic_write_text
 from howlwriter.pipeline.howl import run_howl_pipeline
 
 
@@ -68,7 +69,7 @@ def run(args: argparse.Namespace) -> int:
         if args.out
         else Path(args.path).with_suffix(".howled.md")
     )
-    out_path.write_text(result.final_document.text, encoding="utf-8")
+    atomic_write_text(out_path, result.final_document.text)
     print(f"Wrote {out_path}")
     print()
     print(result.report.render_text())

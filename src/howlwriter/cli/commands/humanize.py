@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import time
 
 from howlwriter.config.loader import ConfigLoader
 from howlwriter.domain.document import Document
+from howlwriter.domain.io import atomic_write_text
 from howlwriter.domain.report import WritingReport
 from howlwriter.humanize.detector import detect
 from howlwriter.humanize.rewriter import ModelHumanizerRewriter, SafeRewriter
@@ -85,11 +87,12 @@ def run(args: argparse.Namespace) -> int:
             print(f"applied: {change.description}")
 
         if args.out:
-            Path(args.out).write_text(result.document.text, encoding="utf-8")
+            atomic_write_text(args.out, result.document.text)
             print(f"Wrote {args.out}")
         return 0
 
     # 2. Real model-backed path via HowlPlane
+    start_time = time.time()
     print("Running deterministic analysis...")
     print(f"  Detected {len(findings)} humanization patterns, {len(lint_before)} lint matches.")
 
@@ -148,6 +151,11 @@ def run(args: argparse.Namespace) -> int:
         ai_style_warnings=ai_style_count,
         meaning_preservation=meaning_res.status,
         semantic_meaning_status=semantic_res.verdict if semantic_res else None,
+        humanizer_duration_seconds=humanize_res.duration_seconds,
+        meaning_reviewer_duration_seconds=(
+            semantic_res.duration_seconds if semantic_res else None
+        ),
+        total_duration_seconds=round(time.time() - start_time, 2),
         changes=list(humanize_res.changes),
     )
 
@@ -156,7 +164,7 @@ def run(args: argparse.Namespace) -> int:
         if args.out
         else Path(args.path).with_suffix(".humanized.md")
     )
-    out_path.write_text(transformed_doc.text, encoding="utf-8")
+    atomic_write_text(out_path, transformed_doc.text)
     print(f"Wrote {out_path}")
     print()
     print(report.render_text())

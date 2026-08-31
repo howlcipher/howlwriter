@@ -97,6 +97,9 @@ class ModelHumanizeResult(DataClassSerializationMixin):
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+MAX_SINGLE_PASS_CHARS = 100_000
+
+
 class ModelHumanizerRewriter:
     """Real model-backed Humanizer executor wired through HowlPlane."""
 
@@ -109,6 +112,12 @@ class ModelHumanizerRewriter:
         cwd: Path | str | None = None,
         custom_backend: Any | None = None,
     ) -> ModelHumanizeResult:
+        if len(document.text) > MAX_SINGLE_PASS_CHARS:
+            raise ValueError(
+                f"Document size ({len(document.text)} chars) exceeds safe single-pass limit "
+                f"({MAX_SINGLE_PASS_CHARS} chars). Please process document in sections or chapters."
+            )
+
         bridge = get_howlplane_bridge()
 
         # Run deterministic analysis to supply context to the model

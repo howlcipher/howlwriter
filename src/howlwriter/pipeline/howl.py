@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import time
 from typing import Any
 
 from howlwriter.config.schema import HowlWriterConfig
@@ -51,6 +52,7 @@ def run_howl_pipeline(
     deterministic_only: bool = False,
     custom_backend: Any | None = None,
 ) -> PipelineResult:
+    start_time = time.time()
     text = Path(path).read_text(encoding="utf-8")
     original_document = Document.parse(text, title=Path(path).stem)
 
@@ -135,6 +137,7 @@ def run_howl_pipeline(
             semantic_meaning_result is not None
             and semantic_meaning_result.verdict == "PASS_WITH_WARNINGS"
         )
+        or (humanizer_provider is not None and banned_word_count > 0)
     ):
         status = "NEEDS_REVIEW"
     else:
@@ -154,6 +157,15 @@ def run_howl_pipeline(
         semantic_meaning_status=(
             semantic_meaning_result.verdict if semantic_meaning_result else None
         ),
+        humanizer_duration_seconds=(
+            humanize_res.duration_seconds if "humanize_res" in locals() else None
+        ),
+        meaning_reviewer_duration_seconds=(
+            semantic_meaning_result.duration_seconds
+            if semantic_meaning_result
+            else None
+        ),
+        total_duration_seconds=round(time.time() - start_time, 2),
         changes=changes,
     )
 
