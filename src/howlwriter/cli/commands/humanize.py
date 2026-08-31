@@ -8,6 +8,12 @@ from pathlib import Path
 import time
 
 from howlwriter.config.loader import ConfigLoader
+from howlwriter.diagnostic.run_record import (
+    RunRecord,
+    classify_failure,
+    compute_sha256,
+    generate_run_id,
+)
 from howlwriter.domain.document import Document
 from howlwriter.domain.io import atomic_write_text
 from howlwriter.domain.report import WritingReport
@@ -93,79 +99,163 @@ def run(args: argparse.Namespace) -> int:
 
     # 2. Real model-backed path via HowlPlane
     start_time = time.time()
+    active_run_id = generate_run_id()
+    input_sha256 = compute_sha256(document.text)
+    input_chars = len(document.text)
+
     print("Running deterministic analysis...")
-    print(f"  Detected {len(findings)} humanization patterns, {len(lint_before)} lint matches.")
-
-    # ModelHumanizerRewriter will raise ModelRoleNotConfiguredError if unconfigured
-    print("Invoking HUMANIZER role via HowlPlane...")
-    humanize_res = ModelHumanizerRewriter().rewrite(
-        document, config, cwd=Path(args.path).parent
-    )
-    transformed_doc = humanize_res.document
-
-    lint_after = LintEngine().run(transformed_doc, config)
-    meaning_res = MeaningPreservationReviewer().compare(
-        document, transformed_doc
+    print(
+        f"  Detected {len(findings)} humanization patterns, "
+        f"{len(lint_before)} lint matches."
     )
 
-    bridge = get_howlplane_bridge()
-    semantic_res = None
-    meaning_reviewer_provider = None
-    reviewer_independence = "NOT_REVIEWED"
-
-    if bridge.is_role_configured(WritingRole.FINAL_REVIEWER):
-        print("Invoking MEANING_REVIEWER role via HowlPlane...")
-        semantic_res = RealModelMeaningReviewer().compare(
+    humanizer_provider: str | None = None
+    try:
+        # ModelHumanizerRewriter will raise ModelRoleNotConfiguredError if unconfigured
+        print("Invoking HUMANIZER role via HowlPlane...")
+        humanize_res = ModelHumanizerRewriter().rewrite(
             document,
-            transformed_doc,
-            humanizer_provider=humanize_res.provider,
+            config,
             cwd=Path(args.path).parent,
+            run_id=active_run_id,
         )
-        meaning_reviewer_provider = semantic_res.provider
-        reviewer_independence = semantic_res.independence_status
+        transformed_doc = humanize_res.document
+        humanizer_provider = humanize_res.provider
 
-    banned_word_count = sum(
-        1 for m in lint_after if m.rule_code == AI_STYLE_BANNED_WORD
-    )
-    ai_style_count = len(lint_after) - banned_word_count
+        lint_after = LintEngine().run(transformed_doc, config)
+        meaning_res = MeaningPreservationReviewer().compare(
+            document, transformed_doc
+        )
 
-    if semantic_res is not None and semantic_res.verdict == "FAIL":
-        status = "NEEDS_REVIEW"
-    elif (
-        meaning_res.status != "PASS"
-        or (semantic_res is not None and semantic_res.verdict == "PASS_WITH_WARNINGS")
-    ):
-        status = "NEEDS_REVIEW"
-    else:
-        status = "READY"
+        bridge = get_howlplane_bridge()
+        semantic_res = None
+        meaning_reviewer_provider = None
+        reviewer_independence = "NOT_REVIEWED"
 
-    report = WritingReport(
-        status=status,
-        mode=document.mode,
-        humanizer_provider=humanize_res.provider,
-        meaning_reviewer_provider=meaning_reviewer_provider,
-        reviewer_independence=reviewer_independence,
-        lint_before_count=len(lint_before),
-        lint_after_count=len(lint_after),
-        banned_words=banned_word_count,
-        ai_style_warnings=ai_style_count,
-        meaning_preservation=meaning_res.status,
-        semantic_meaning_status=semantic_res.verdict if semantic_res else None,
-        humanizer_duration_seconds=humanize_res.duration_seconds,
-        meaning_reviewer_duration_seconds=(
-            semantic_res.duration_seconds if semantic_res else None
-        ),
-        total_duration_seconds=round(time.time() - start_time, 2),
-        changes=list(humanize_res.changes),
-    )
+        if bridge.is_role_configured(WritingRole.FINAL_REVIEWER):
+            print("Invoking MEANING_REVIEWER role via HowlPlane...")
+            semantic_res = RealModelMeaningReviewer().compare(
+                document,
+                transformed_doc,
+                humanizer_provider=humanize_res.provider,
+                cwd=Path(args.path).parent,
+                run_id=active_run_id,
+            )
+            meaning_reviewer_provider = semantic_res.provider
+            reviewer_independence = semantic_res.independence_status
 
-    out_path = (
-        Path(args.out)
-        if args.out
-        else Path(args.path).with_suffix(".humanized.md")
-    )
-    atomic_write_text(out_path, transformed_doc.text)
-    print(f"Wrote {out_path}")
-    print()
-    print(report.render_text())
-    return 0
+        banned_word_count = sum(
+            1 for m in lint_after if m.rule_code == AI_STYLE_BANNED_WORD
+        )
+        ai_style_count = len(lint_after) - banned_word_count
+
+        if semantic_res is not None and semantic_res.verdict == "FAIL":
+            status = "NEEDS_REVIEW"
+        elif (
+            meaning_res.status != "PASS"
+            or (
+                semantic_res is not None
+                and semantic_res.verdict == "PASS_WITH_WARNINGS"
+            )
+            or (humanizer_provider is not None and banned_word_count > 0)
+        ):
+            status = "NEEDS_REVIEW"
+        else:
+            status = "READY"
+
+        total_duration = round(time.time() - start_time, 2)
+        report = WritingReport(
+            status=status,
+            run_id=active_run_id,
+            mode=str(document.mode) if document.mode else None,
+            humanizer_provider=humanize_res.provider,
+            meaning_reviewer_provider=meaning_reviewer_provider,
+            reviewer_independence=reviewer_independence,
+            lint_before_count=len(lint_before),
+            lint_after_count=len(lint_after),
+            banned_words=banned_word_count,
+            ai_style_warnings=ai_style_count,
+            meaning_preservation=meaning_res.status,
+            semantic_meaning_status=(
+                semantic_res.verdict if semantic_res else None
+            ),
+            humanizer_duration_seconds=humanize_res.duration_seconds,
+            meaning_reviewer_duration_seconds=(
+                semantic_res.duration_seconds if semantic_res else None
+            ),
+            total_duration_seconds=total_duration,
+            changes=list(humanize_res.changes),
+        )
+
+        out_path = (
+            Path(args.out)
+            if args.out
+            else Path(args.path).with_suffix(".humanized.md")
+        )
+        atomic_write_text(out_path, transformed_doc.text)
+        print(f"Wrote {out_path}")
+        print()
+        print(report.render_text())
+
+        record = RunRecord(
+            run_id=active_run_id,
+            command="humanize",
+            writing_mode=str(document.mode) if document.mode else None,
+            success=True,
+            status=status,
+            humanizer_provider=humanize_res.provider,
+            humanizer_model=humanize_res.model,
+            meaning_reviewer_provider=meaning_reviewer_provider,
+            meaning_reviewer_model=(
+                semantic_res.model if semantic_res else None
+            ),
+            reviewer_independence=reviewer_independence,
+            lint_before_count=len(lint_before),
+            lint_after_count=len(lint_after),
+            banned_words=banned_word_count,
+            ai_style_warnings=ai_style_count,
+            meaning_preservation=meaning_res.status,
+            semantic_meaning_status=(
+                semantic_res.verdict if semantic_res else None
+            ),
+            changes_count=len(humanize_res.changes),
+            humanizer_duration_seconds=humanize_res.duration_seconds,
+            meaning_reviewer_duration_seconds=(
+                semantic_res.duration_seconds if semantic_res else None
+            ),
+            total_duration_seconds=total_duration,
+            input_path=str(args.path),
+            input_chars=input_chars,
+            input_sha256=input_sha256,
+            output_path=str(out_path),
+            output_chars=len(transformed_doc.text),
+            output_sha256=compute_sha256(transformed_doc.text),
+            exit_code=0,
+        )
+        try:
+            record.save()
+        except Exception:
+            pass
+        return 0
+    except Exception as exc:
+        total_duration = round(time.time() - start_time, 2)
+        try:
+            failure_record = RunRecord(
+                run_id=active_run_id,
+                command="humanize",
+                writing_mode=str(document.mode) if document.mode else None,
+                success=False,
+                status="BLOCKED",
+                humanizer_provider=humanizer_provider,
+                failure_category=classify_failure(exc),
+                error_message=str(exc),
+                total_duration_seconds=total_duration,
+                input_path=str(args.path),
+                input_chars=input_chars,
+                input_sha256=input_sha256,
+                exit_code=1,
+            )
+            failure_record.save()
+        except Exception:
+            pass
+        raise

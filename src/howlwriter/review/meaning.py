@@ -222,6 +222,7 @@ class RealModelMeaningReviewer:
         humanizer_provider: str | None = None,
         cwd: Path | str | None = None,
         custom_backend: Any | None = None,
+        run_id: str | None = None,
     ) -> SemanticMeaningResult:
         if (
             len(original.text) > MAX_SINGLE_PASS_CHARS
@@ -278,6 +279,7 @@ rationale: "<summary explanation of verdict>"
                 "original_title": original.title,
                 "revised_title": revised.title,
                 "humanizer_provider": humanizer_provider,
+                "run_id": run_id,
             },
             avoid_provider=humanizer_provider,
             timeout_seconds=300,

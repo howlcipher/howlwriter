@@ -130,9 +130,85 @@ Latency:
 
 ---
 
-## 7. Current Trust Rating
+## 7. Continuous Dogfood Telemetry & Run Evidence
+
+### Philosophy: Every Run Is a Dogfood Run
+
+HowlWriter has transitioned from manufacturing synthetic test campaigns to **continuous dogfooding during normal usage**. Every model-backed execution of `howlwriter humanize` and `howlwriter howl` automatically leaves behind structured, machine-readable diagnostic evidence while strictly respecting user privacy.
+
+### Privacy-Conscious Local Storage
+
+- **Storage Location**: `~/.howlwriter/runs/<run-id>.json` (overridable via `HOWLWRITER_RUNS_DIR`).
+- **No Shadow Prose Archive**: Full input and output writing content is **never** archived by default. Only cryptographic SHA-256 hashes, character counts, deterministic rule violations, structured reviewer verdicts, duration metrics, provider IDs, and error messages are retained.
+- **Local First**: Telemetry remains 100% local. No external calls, cloud sync, or analytics uploads occur.
+- **Fault-Tolerant Recording**: A failure during diagnostic record persistence will print a warning to `stderr` and will **never** crash or corrupt the user's primary document.
+
+### Run Identification & Correlation
+
+Every execution generates a unique, sortable run identifier:
+```
+hw-YYYYMMDD-HHMMSS-<6char_hex>
+```
+The Run ID correlates:
+- HowlWriter CLI invocation
+- HowlPlane role executions (`HUMANIZER`, `FINAL_REVIEWER`)
+- Formatted `WritingReport` header
+- Local diagnostic JSON artifact
+
+### Inspecting Runs
+
+```bash
+# List recent execution runs
+howlwriter runs list --limit 10
+
+# Display summary of a specific run
+howlwriter runs show hw-20260831-210835-d6b7a6
+
+# Display full JSON record
+howlwriter runs show hw-20260831-210835-d6b7a6 --raw
+
+# Print local runs storage directory
+howlwriter runs path
+```
+
+### The Continuous Dogfood Loop
+
+```
+NORMAL USE
+    │
+    ▼
+RUN ARTIFACT (~/.howlwriter/runs/<run_id>.json)
+    │
+    ├── NO ANOMALY ──► Continue normal use
+    │
+    └── ANOMALY DETECTED
+            │
+            ▼
+    Inspect run record (`howlwriter runs show <run_id>`)
+            │
+            ▼
+    Reproduce under test
+            │
+            ▼
+    Determine Root Cause:
+    - MODEL VARIABILITY (Subjective phrasing, stylistic variations)
+    - USER EXPECTATION (Configurable thresholds)
+    - PROVIDER ISSUE (Rate limits, token exhaustion)
+    - SYSTEM DEFECT (Altered meaning marked READY, silent failure, transcript leak)
+            │
+            ▼
+    If SYSTEM DEFECT:
+    1. Fix root cause
+    2. Add focused regression test
+    3. Return to normal use
+```
+
+---
+
+## 8. Current Trust Rating
 
 | Command | Trust Rating | Justification |
 | :--- | :--- | :--- |
-| `howlwriter humanize` | **RELIABLE** | Demonstrated multi-provider execution, zero-change preservation on clean human text, thorough AI slop removal, atomic output safety, and reliable crash handling. |
-| `howlwriter howl` | **RELIABLE** | Complete 8-stage pipeline (`EDIT -> HUMANIZE -> LINT -> RED PEN -> MEANING REVIEW -> FINAL REVIEW -> OUTPUT`) with independent semantic review gating and transparent latency observability. |
+| `howlwriter humanize` | **RELIABLE** | Demonstrated multi-provider execution, zero-change preservation on clean human text, thorough AI slop removal, atomic output safety, reliable crash handling, and automated diagnostic recording. |
+| `howlwriter howl` | **RELIABLE** | Complete 8-stage pipeline (`EDIT -> HUMANIZE -> LINT -> RED PEN -> MEANING REVIEW -> FINAL REVIEW -> OUTPUT`) with independent semantic review gating, transparent latency observability, and continuous dogfood run capture. |
+

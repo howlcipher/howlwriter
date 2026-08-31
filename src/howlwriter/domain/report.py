@@ -28,6 +28,7 @@ class ChangeRecord(DataClassSerializationMixin):
 @dataclass
 class WritingReport(DataClassSerializationMixin):
     status: Status = "NEEDS_REVIEW"
+    run_id: str | None = None
     mode: str | None = None
     humanizer_provider: str | None = None
     meaning_reviewer_provider: str | None = None
@@ -53,6 +54,8 @@ class WritingReport(DataClassSerializationMixin):
     def render_text(self) -> str:
         lines = ["HOWLWRITER REPORT", ""]
 
+        if self.run_id:
+            lines.append(f"Run ID:                {self.run_id}")
         if self.mode:
             lines.append(f"Mode:                  {self.mode}")
         if self.humanizer_provider:
@@ -62,6 +65,7 @@ class WritingReport(DataClassSerializationMixin):
         if self.reviewer_independence:
             lines.append(f"Reviewer Independence: {self.reviewer_independence}")
         has_header_info = any([
+            self.run_id,
             self.mode,
             self.humanizer_provider,
             self.meaning_reviewer_provider,

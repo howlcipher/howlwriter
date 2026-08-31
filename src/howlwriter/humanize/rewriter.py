@@ -111,6 +111,7 @@ class ModelHumanizerRewriter:
         config: HowlWriterConfig,
         cwd: Path | str | None = None,
         custom_backend: Any | None = None,
+        run_id: str | None = None,
     ) -> ModelHumanizeResult:
         if len(document.text) > MAX_SINGLE_PASS_CHARS:
             raise ValueError(
@@ -188,6 +189,7 @@ warnings: []
                 "title": document.title,
                 "mode": document.mode,
                 "strength": config.humanization_strength,
+                "run_id": run_id,
             },
             timeout_seconds=300,
             cwd=cwd,

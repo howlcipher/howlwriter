@@ -21,6 +21,7 @@ from howlwriter.cli.commands import (
     redpen,
     references,
     research,
+    runs,
     sources,
     voice,
     writer,
@@ -41,6 +42,7 @@ _COMMAND_MODULES = (
     lint,
     finalize,
     howl,
+    runs,
 )
 
 
