@@ -57,6 +57,8 @@ def _is_organizational(author: str) -> bool:
 def _surname(author: str) -> str:
     if _is_organizational(author):
         return author
+    if "," in author:
+        return author.split(",")[0].strip()
     parts = author.strip().split()
     return parts[-1] if parts else author
 
@@ -64,11 +66,18 @@ def _surname(author: str) -> str:
 def _format_author(author: str) -> str:
     if _is_organizational(author):
         return author
+    if "," in author:
+        last, rest = author.split(",", 1)
+        given = rest.strip().split()
+        if not given:
+            return last.strip()
+        initials = " ".join(f"{p[0]}." for p in given if p and p[0].isalpha())
+        return f"{last.strip()}, {initials}" if initials else last.strip()
     parts = author.strip().split()
     if len(parts) < 2:
         return author
     *given, last = parts
-    initials = " ".join(f"{p[0]}." for p in given if p)
+    initials = " ".join(f"{p[0]}." for p in given if p and p[0].isalpha())
     return f"{last}, {initials}"
 
 

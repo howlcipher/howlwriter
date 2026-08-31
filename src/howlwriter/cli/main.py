@@ -18,6 +18,7 @@ from howlwriter.cli.commands import (
     howl,
     humanize,
     lint,
+    paper,
     redpen,
     references,
     research,
@@ -29,6 +30,7 @@ from howlwriter.cli.commands import (
 from howlwriter.integration.model_role import ModelRoleNotConfiguredError
 
 _COMMAND_MODULES = (
+    paper,
     writer,
     editor,
     humanize,

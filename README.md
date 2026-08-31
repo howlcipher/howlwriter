@@ -141,13 +141,14 @@ howlwriter voice learn post1.txt post2.txt --author "Jane Doe"
 # Compare meaning between two files (e.g. before/after a rewrite)
 howlwriter finalize original.md revised.md
 
-# The full pipeline: INPUT -> EDIT -> HUMANIZE -> LINT -> RED PEN -> FINAL REVIEW -> OUTPUT
+# Academic paper / assignment writing from a typed specification
+howlwriter paper assignment.yaml --out paper.md
+
+# The full editorial pipeline: INPUT -> EDIT -> HUMANIZE -> LINT -> RED PEN -> FINAL REVIEW -> OUTPUT
 howlwriter howl draft.md
 ```
 
-`howlwriter writer <prompt>` and `howlwriter research <query>` are
-model-backed with no implementation configured yet; both exit with a clear
-`ModelRoleNotConfiguredError` message rather than doing nothing silently.
+`howlwriter writer <prompt>` drafts prose from notes using the configured Writer role, and `howlwriter research <query>` retrieves scholarly sources. When no model providers are wired in, model-only roles exit with a clear `ModelRoleNotConfiguredError` message rather than doing nothing silently. See [docs/academic-paper.md](docs/academic-paper.md) for details on academic workflows.
 
 ## Development
 

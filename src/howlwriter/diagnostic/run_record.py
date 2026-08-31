@@ -50,6 +50,13 @@ def classify_failure(error: Exception | str) -> str:
         return "DOCUMENT_SIZE_EXCEEDED"
     if "not configured" in msg or "unconfigured" in msg:
         return "CONFIGURATION_FAILURE"
+    write_keywords = ("permission", "io", "disk", "space", "failed to write", "destination")
+    if "write" in msg and any(kw in msg for kw in write_keywords):
+        return "OUTPUT_WRITE_FAILURE"
+    if "semantic drift" in msg:
+        return "SEMANTIC_DRIFT"
+    if "meaning review" in msg or "meaning preservation" in msg:
+        return "MEANING_REVIEW_FAILURE"
     if "parse" in msg or "yaml" in msg or "json" in msg:
         return "STRUCTURED_PARSE_FAILURE"
     if "interrupt" in msg or isinstance(error, KeyboardInterrupt):
@@ -65,6 +72,20 @@ def get_howlwriter_version() -> str:
         return importlib.metadata.version("howlwriter")
     except Exception:
         return "0.1.0"
+
+
+def get_howlplane_version() -> str | None:
+    try:
+        import importlib.metadata
+        return importlib.metadata.version("howlplane")
+    except Exception:
+        pass
+    try:
+        import howlplane
+        return getattr(howlplane, "__version__", None)
+    except Exception:
+        pass
+    return None
 
 
 def get_git_revision(repo_dir: Path | str | None = None) -> str | None:
@@ -85,6 +106,19 @@ def get_git_revision(repo_dir: Path | str | None = None) -> str | None:
     return None
 
 
+def get_howlplane_git_revision() -> str | None:
+    candidate_paths = [
+        Path("/run/media/system/tallgeese/dev/howlplane"),
+        Path(__file__).resolve().parents[4] / "howlplane",
+    ]
+    for p in candidate_paths:
+        if p.is_dir() and (p / ".git").exists():
+            rev = get_git_revision(p)
+            if rev:
+                return rev
+    return None
+
+
 @dataclass
 class RunRecord(DataClassSerializationMixin):
     """Structured local diagnostic record for a HowlWriter execution."""
@@ -94,9 +128,12 @@ class RunRecord(DataClassSerializationMixin):
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
     command: str = "humanize"
-    howlwriter_version: str = "0.1.0"
-    howlplane_version: str | None = None
-    git_revision: str | None = None
+    howlwriter_version: str = field(default_factory=get_howlwriter_version)
+    howlplane_version: str | None = field(default_factory=get_howlplane_version)
+    git_revision: str | None = field(default_factory=get_git_revision)
+    howlplane_git_revision: str | None = field(
+        default_factory=get_howlplane_git_revision
+    )
     writing_mode: str | None = None
     success: bool = True
     status: str = "READY"  # READY | NEEDS_REVIEW | BLOCKED | REJECTED
@@ -122,6 +159,10 @@ class RunRecord(DataClassSerializationMixin):
     meaning_reviewer_duration_seconds: float | None = None
     total_duration_seconds: float | None = None
 
+    # Execution flags
+    fallback_occurred: bool = False
+    retry_occurred: bool = False
+
     # Privacy-conscious document metadata (NO FULL PROSE ARCHIVED)
     input_path: str | None = None
     input_chars: int = 0
@@ -138,6 +179,42 @@ class RunRecord(DataClassSerializationMixin):
     # Correlation
     howlplane_task_ids: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def deterministic_meaning_result(self) -> str | None:
+        return self.meaning_preservation
+
+    @property
+    def semantic_meaning_result(self) -> str | None:
+        return self.semantic_meaning_status
+
+    @property
+    def input_size(self) -> int:
+        return self.input_chars
+
+    @property
+    def output_size(self) -> int | None:
+        return self.output_chars
+
+    @property
+    def humanizer_duration(self) -> float | None:
+        return self.humanizer_duration_seconds
+
+    @property
+    def review_duration(self) -> float | None:
+        return self.meaning_reviewer_duration_seconds
+
+    @property
+    def total_duration(self) -> float | None:
+        return self.total_duration_seconds
+
+    @property
+    def review_provider(self) -> str | None:
+        return self.meaning_reviewer_provider
+
+    @property
+    def review_model(self) -> str | None:
+        return self.meaning_reviewer_model
 
     def save(self, runs_dir: Path | str | None = None) -> Path | None:
         """Saves run record locally as JSON. Never raises to prevent aborting user task."""
