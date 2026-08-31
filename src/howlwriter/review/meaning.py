@@ -3,29 +3,37 @@
 MeaningPreservationReviewer.compare() is a deterministic heuristic diff --
 numbers, attribution phrases, and hedge words between before/after --
 never a hardcoded PASS. It returns PASS only when nothing of substance
-changed, and FLAGGED (with itemized diffs) otherwise; it never returns a
-hard FAIL on its own, since a heuristic can raise a concern but shouldn't
-unilaterally reject a rewrite -- that call belongs to a human or, later,
-ModelMeaningReviewer, the reserved model-backed hook for real semantic
-comparison.
+changed, and FLAGGED (with itemized diffs) otherwise.
+
+ModelMeaningReviewer is the real model-backed semantic meaning reviewer
+wired through HowlPlane to perform deep adversarial semantic comparison with
+independent reviewer guarantee.
 """
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from pathlib import Path
+import re
+from typing import Any, Literal, Protocol
 
 from howlwriter.domain.document import Document
 from howlwriter.domain.serialization import DataClassSerializationMixin
+from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import NotConfiguredRole, WritingRole
 
 Status = Literal["PASS", "FLAGGED"]
+SemanticVerdict = Literal["PASS", "PASS_WITH_WARNINGS", "FAIL"]
 
 _NUMBER = re.compile(r"\b\d[\d,.]*\b")
-_ATTRIBUTION_MARKERS = ("according to", "study by", "reports that", "found that")
-_HEDGE_WORDS = ("may", "might", "could", "suggests", "appears", "likely", "possibly", "perhaps", "reportedly")
+_ATTRIBUTION_MARKERS = (
+    "according to", "study by", "reports that", "found that"
+)
+_HEDGE_WORDS = (
+    "may", "might", "could", "suggests", "appears", "likely",
+    "possibly", "perhaps", "reportedly",
+)
 _WORD = re.compile(r"[A-Za-z']+")
 _SENTENCE_COUNT_RATIO_THRESHOLD = 0.2
 _SENTENCE_COUNT_MIN_DELTA = 2
@@ -45,17 +53,27 @@ class MeaningPreservationResult(DataClassSerializationMixin):
 
 def _count_markers(text: str, markers: tuple[str, ...]) -> Counter:
     lowered = text.lower()
-    return Counter({marker: lowered.count(marker) for marker in markers if lowered.count(marker)})
+    return Counter({
+        marker: lowered.count(marker)
+        for marker in markers
+        if lowered.count(marker)
+    })
 
 
 def _count_words(text: str, words: tuple[str, ...]) -> Counter:
     tokens = [t.lower() for t in _WORD.findall(text)]
     token_counts = Counter(tokens)
-    return Counter({word: token_counts[word] for word in words if token_counts[word]})
+    return Counter({
+        word: token_counts[word] for word in words if token_counts[word]
+    })
 
 
 class MeaningPreservationReviewer:
-    def compare(self, original: Document, revised: Document) -> MeaningPreservationResult:
+    """Deterministic heuristic meaning preservation checker."""
+
+    def compare(
+        self, original: Document, revised: Document
+    ) -> MeaningPreservationResult:
         diffs: list[MeaningDiff] = []
         diffs.extend(self._number_diffs(original.text, revised.text))
         diffs.extend(self._attribution_diffs(original.text, revised.text))
@@ -66,7 +84,9 @@ class MeaningPreservationReviewer:
         return MeaningPreservationResult(status=status, diffs=diffs)
 
     @staticmethod
-    def _number_diffs(original_text: str, revised_text: str) -> list[MeaningDiff]:
+    def _number_diffs(
+        original_text: str, revised_text: str
+    ) -> list[MeaningDiff]:
         original_counts = Counter(_NUMBER.findall(original_text))
         revised_counts = Counter(_NUMBER.findall(revised_text))
         removed = original_counts - revised_counts
@@ -77,32 +97,41 @@ class MeaningPreservationReviewer:
             diffs.append(
                 MeaningDiff(
                     "number_removed",
-                    f'"{number}" appeared {original_counts[number]}x in the original '
-                    f"vs {revised_counts[number]}x in the revision.",
+                    f'"{number}" appeared {original_counts[number]}x in the '
+                    f"original vs {revised_counts[number]}x in the revision.",
                 )
             )
         for number in added:
             diffs.append(
                 MeaningDiff(
                     "number_added",
-                    f'"{number}" appears {revised_counts[number]}x in the revision '
-                    f"vs {original_counts[number]}x in the original.",
+                    f'"{number}" appears {revised_counts[number]}x in the '
+                    f"revision vs {original_counts[number]}x in the original.",
                 )
             )
         return diffs
 
     @staticmethod
-    def _attribution_diffs(original_text: str, revised_text: str) -> list[MeaningDiff]:
-        original_counts = _count_markers(original_text, _ATTRIBUTION_MARKERS)
+    def _attribution_diffs(
+        original_text: str, revised_text: str
+    ) -> list[MeaningDiff]:
+        original_counts = _count_markers(
+            original_text, _ATTRIBUTION_MARKERS
+        )
         revised_counts = _count_markers(revised_text, _ATTRIBUTION_MARKERS)
         removed = original_counts - revised_counts
         return [
-            MeaningDiff("attribution_removed", f'Attribution phrase "{marker}" was dropped.')
+            MeaningDiff(
+                "attribution_removed",
+                f'Attribution phrase "{marker}" was dropped.',
+            )
             for marker in removed
         ]
 
     @staticmethod
-    def _hedge_diffs(original_text: str, revised_text: str) -> list[MeaningDiff]:
+    def _hedge_diffs(
+        original_text: str, revised_text: str
+    ) -> list[MeaningDiff]:
         original_counts = _count_words(original_text, _HEDGE_WORDS)
         revised_counts = _count_words(revised_text, _HEDGE_WORDS)
         removed = original_counts - revised_counts
@@ -110,15 +139,21 @@ class MeaningPreservationReviewer:
 
         diffs = []
         for word in removed:
-            message = f'Hedge word "{word}" was dropped -- claim may be stronger.'
+            message = (
+                f'Hedge word "{word}" was dropped -- claim may be stronger.'
+            )
             diffs.append(MeaningDiff("hedge_removed", message))
         for word in added:
-            message = f'Hedge word "{word}" was added -- claim may be weaker.'
+            message = (
+                f'Hedge word "{word}" was added -- claim may be weaker.'
+            )
             diffs.append(MeaningDiff("hedge_added", message))
         return diffs
 
     @staticmethod
-    def _sentence_count_diff(original: Document, revised: Document) -> list[MeaningDiff]:
+    def _sentence_count_diff(
+        original: Document, revised: Document
+    ) -> list[MeaningDiff]:
         original_count = len(original.all_sentences())
         revised_count = len(revised.all_sentences())
         delta = abs(original_count - revised_count)
@@ -129,22 +164,167 @@ class MeaningPreservationReviewer:
         return [
             MeaningDiff(
                 "sentence_count_changed",
-                f"Sentence count changed from {original_count} to {revised_count}.",
+                f"Sentence count changed from {original_count} to "
+                f"{revised_count}.",
             )
         ]
 
 
+@dataclass
+class SemanticMeaningResult(DataClassSerializationMixin):
+    """Result of independent model-backed semantic meaning review."""
+
+    verdict: SemanticVerdict = "PASS"
+    differences: list[MeaningDiff] = field(default_factory=list)
+    rationale: str = ""
+    provider: str = ""
+    model: str | None = None
+    duration_seconds: float = 0.0
+    independence_status: str = "INDEPENDENT"
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
 class ModelMeaningReviewer(Protocol):
-    """Reserved hook for real semantic comparison. Unconfigured by default."""
+    """Protocol for semantic meaning review."""
 
     role: WritingRole
 
-    def compare(self, original: Document, revised: Document) -> MeaningPreservationResult: ...
+    def compare(
+        self,
+        original: Document,
+        revised: Document,
+        humanizer_provider: str | None = None,
+    ) -> Any: ...
 
 
 class NotConfiguredMeaningReviewer(NotConfiguredRole):
     def __init__(self) -> None:
         super().__init__(WritingRole.FINAL_REVIEWER)
 
-    def compare(self, original: Document, revised: Document) -> MeaningPreservationResult:
+    def compare(
+        self, original: Document, revised: Document
+    ) -> Any:
         return self.run(original, revised)
+
+
+class RealModelMeaningReviewer:
+    """Real model-backed semantic meaning reviewer wired via HowlPlane."""
+
+    role: WritingRole = WritingRole.FINAL_REVIEWER
+
+    def compare(
+        self,
+        original: Document,
+        revised: Document,
+        humanizer_provider: str | None = None,
+        cwd: Path | str | None = None,
+        custom_backend: Any | None = None,
+    ) -> SemanticMeaningResult:
+        bridge = get_howlplane_bridge()
+
+        prompt = f"""You are an independent Meaning Reviewer executing the FINAL_REVIEWER role.
+Your mission is to compare the ORIGINAL text against the REVISED text and evaluate
+whether factual meaning, intent, technical precision, or claims were altered.
+
+EVALUATION CRITERIA:
+1. Changed meaning or core thesis
+2. Stronger or bolder claims than the original justified
+3. Weaker claims or dropped core assertions
+4. Removed qualifiers, hedges, or conditions
+5. Changed opinions or altered author stance
+6. New factual assertions fabricated by the rewrite
+7. Removed technical details or specifications
+8. Altered numbers, statistics, percentages, or dates
+9. Removed or altered source attribution
+10. Changed uncertainty levels
+
+ORIGINAL TEXT:
+```markdown
+{original.text}
+```
+
+REVISED TEXT:
+```markdown
+{revised.text}
+```
+
+OUTPUT FORMAT:
+Return a ```yaml code block containing:
+```yaml
+verdict: "PASS" # One of: "PASS", "PASS_WITH_WARNINGS", "FAIL"
+differences:
+  - kind: "<kind of difference, e.g. stronger_claim, altered_fact, dropped_qualifier, new_assertion>"
+    description: "<detailed explanation of semantic shift>"
+    severity: "blocker" # blocker | warning | info
+rationale: "<summary explanation of verdict>"
+```"""
+
+        result = bridge.execute_writing_role(
+            role=self.role,
+            prompt=prompt,
+            context={
+                "original_title": original.title,
+                "revised_title": revised.title,
+                "humanizer_provider": humanizer_provider,
+            },
+            avoid_provider=humanizer_provider,
+            timeout_seconds=300,
+            cwd=cwd,
+            custom_backend=custom_backend,
+        )
+
+        if not result.success:
+            err = result.error_message or "Reviewer execution failed"
+            return SemanticMeaningResult(
+                verdict="FAIL",
+                differences=[
+                    MeaningDiff(
+                        kind="reviewer_failure",
+                        description=f"Meaning reviewer failed: {err}",
+                    )
+                ],
+                rationale=f"Reviewer execution failed: {err}",
+                provider=result.provider,
+                model=result.model,
+                duration_seconds=result.duration_seconds,
+                independence_status=result.independence_status,
+                metadata=result.metadata,
+            )
+
+        structured = result.structured_output or {}
+        raw_verdict = str(structured.get("verdict") or "").upper().strip()
+        if raw_verdict not in ("PASS", "PASS_WITH_WARNINGS", "FAIL"):
+            if raw_verdict in ("FLAGGED", "WARNING"):
+                verdict: SemanticVerdict = "PASS_WITH_WARNINGS"
+            else:
+                verdict = (
+                    "PASS"
+                    if not structured.get("differences")
+                    else "PASS_WITH_WARNINGS"
+                )
+        else:
+            verdict = raw_verdict  # type: ignore
+
+        differences: list[MeaningDiff] = []
+        raw_diffs = structured.get("differences", [])
+        if isinstance(raw_diffs, list):
+            for item in raw_diffs:
+                if isinstance(item, dict):
+                    kind = str(item.get("kind") or "semantic_shift")
+                    desc = str(item.get("description") or item.get("claim") or "")
+                    differences.append(MeaningDiff(kind=kind, description=desc))
+                elif isinstance(item, str):
+                    differences.append(MeaningDiff(kind="semantic_shift", description=item))
+
+        rationale = str(structured.get("rationale") or "")
+
+        return SemanticMeaningResult(
+            verdict=verdict,
+            differences=differences,
+            rationale=rationale,
+            provider=result.provider,
+            model=result.model,
+            duration_seconds=result.duration_seconds,
+            independence_status=result.independence_status,
+            metadata=result.metadata,
+        )

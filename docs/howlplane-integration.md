@@ -56,51 +56,46 @@ own behalf, anywhere in this codebase -- "provider routing/execution is a
 HowlPlane concern" is enforced by this being the *only* seam, not by
 convention.
 
-This is where two real gaps show up:
+## Domain-Neutral Role Binding Architecture
 
-### 1. HowlPlane's reviewer-role vocabulary is engineering-shaped
+The two gaps identified during initial development have been resolved cleanly
+via HowlPlane's domain-neutral role execution framework:
 
-`CONTROL_PLANE.md` §3.4 enumerates `correctness-reviewer,
-regression-reviewer, security-reviewer, test-falsifier,
-architecture-reviewer, simplicity-reviewer`. None of those map cleanly onto
-HowlWriter's writing-domain roles (`HUMANIZER`, `VOICE_REVIEWER`,
-`RED_PEN`, `CITATION_VALIDATOR`, ...). If HowlPlane's independent-review
-coordination is ever asked to route a HowlWriter task, it currently has no
-vocabulary for what kind of reviewer that is. **Observation, not a change
-request:** an extensible or project-declared reviewer-role vocabulary
-would let a non-engineering project register its own role set instead of
-being forced into engineering-shaped ones. Whether this is worth doing is
-a question for whoever owns that roadmap, evaluated against the Freeze's
-own bar (does it block real work, repeatedly, across real tasks).
+1. **Domain-Neutral Role Dispatching (`src.control_plane.role_binding`)**:
+   HowlPlane provides `RoleDescriptor`, `RoleBinding`, `RoleBindingRegistry`, and `RoleDispatcher`.
+   Rather than hardcoding software-only reviewer roles, HowlPlane supports registering roles
+   across any domain (e.g. `domain="writing"`, `role="humanizer"`, `role="final_reviewer"`).
 
-### 2. There is no committed artifact binding a `WritingRole` to an executor
+2. **Explicit Role-to-Executor Binding**:
+   Role bindings are configured declaratively in operator configuration (`~/.config/howlplane/config.toml`
+   or `.env` / `settings.yaml`):
+   ```toml
+   [roles.writing]
+   humanizer = "claude_code"
+   final_reviewer = "codex"
+   ```
+   Or explicitly per role:
+   ```toml
+   [roles.writing.humanizer]
+   provider = "claude_code"
+   capability = "text_transform"
+   timeout_seconds = 300
+   ```
 
-`.ai-project.toml`'s `[routing]` field routes *engineering* tasks
-performed on a repository (see above) -- it was never meant to, and
-doesn't, say anything about how HowlWriter's own internal `WritingRole`
-Protocols get a real implementation at runtime. The
-`PROJECT_MANIFEST_SPEC.md` is explicit that "provider execution" and
-"routing resolution logic" are non-goals of the manifest format by design
-(§7). So even when HowlPlane is present and available, there is currently
-no artifact analogous to `.ai-project.toml` that says "here is the
-`HumanizerRewriter` implementation for this project" or "route
-`FACT_CHECKER` verification calls to provider X."
-
-This is not a defect in what's frozen -- it's a layer above the manifest
-that neither project currently owns. The temptation this creates is for
-HowlWriter to build its own lightweight provider-calling shim to fill the
-gap. **That has been deliberately not done here.** `NotConfiguredRole`
-raising a clear, named error is the correct MVP behavior: it makes the gap
-visible instead of quietly working around it. Filling this gap properly
-belongs to whoever designs HowlPlane's (or another runtime's) execution
-boundary, not to ad hoc code inside HowlWriter.
+3. **HowlWriter / HowlPlane Bridge (`howlwriter.integration.howlplane_bridge`)**:
+   `HowlPlaneWritingBridge` routes `WritingRole` requests from HowlWriter to HowlPlane's
+   `RoleDispatcher`.
+   - HowlWriter retains domain authority over prompt contracts, 10 humanizer priorities,
+     deterministic linting, and semantic meaning-preservation validation.
+   - HowlPlane retains execution authority over provider resolution, backend spawning,
+     independent reviewer enforcement (`avoid_provider`), timeouts, and receipts.
+   - When unconfigured, HowlWriter raises an explicit `ModelRoleNotConfiguredError` rather
+     than quietly faking model output.
+   - Independent review is verified and recorded with observable `IndependenceStatus`
+     (`INDEPENDENT`, `SAME_PROVIDER`, `NOT_REVIEWED`, `UNAVAILABLE`).
 
 ## Summary
 
-Two gaps, both genuine, both explicitly left open rather than patched
-inside this codebase: an engineering-shaped reviewer vocabulary that
-doesn't fit writing roles, and no execution-binding artifact for
-`WritingRole` at all. Everything else HowlWriter needs from HowlPlane --
-project discovery, command execution, capability grants -- already works
-through the existing `.ai-project.toml` boundary, validated in this
-repository against HowlPlane's own `ai project validate`.
+The separation of concerns is clean and domain-neutral:
+HowlPlane owns model execution, provider pools, and control plane guarantees.
+HowlWriter owns writing semantics, provenance graphs, linting, and verification contracts.

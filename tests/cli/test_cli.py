@@ -105,11 +105,23 @@ def test_humanize_command_reports_findings(tmp_path, capsys):
     draft = tmp_path / "draft.md"
     draft.write_text("We need to delve into this.")
 
-    exit_code = main(["humanize", str(draft)])
+    exit_code = main(["humanize", str(draft), "--deterministic"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
     assert "AI_STYLE_BANNED_WORD" in captured.out
+
+
+def test_humanize_unconfigured_surfaces_clean_error(tmp_path, capsys):
+    draft = tmp_path / "draft.md"
+    draft.write_text("We need to delve into this.")
+
+    exit_code = main(["humanize", str(draft)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert "error:" in captured.err
+    assert "humanizer is not configured" in captured.err
 
 
 def test_fact_check_command_extracts_claims(tmp_path, capsys):
