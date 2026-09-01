@@ -25,6 +25,11 @@ from howlwriter.academic.length import (
 )
 from howlwriter.academic.outline import OutlineResult, check_outline_conformance
 from howlwriter.academic.redundancy import RedundancyResult, detect_redundancy
+from howlwriter.academic.requirements import (
+    apply_identifier_specificity_overrides,
+    classify_requirements,
+    is_identifier_fabrication_prohibition,
+)
 from howlwriter.academic.research import AcademicResearcher
 from howlwriter.academic.spec import AssignmentSpec, load_assignment_spec
 from howlwriter.academic.verifier import AcademicVerifier, VerificationSummary
@@ -164,7 +169,11 @@ def run_academic_pipeline(
     actual_words = count_body_words(draft_doc.text)
     min_words, max_words = bounds.min_words, bounds.max_words
     wc_status, wc_reason = evaluate_word_count_bounds(
-        actual_words, bounds.min_words, bounds.max_words, bounds.target_words
+        actual_words,
+        bounds.min_words,
+        bounds.max_words,
+        bounds.target_words,
+        hard_max_words=bounds.hard_max_words,
     )
 
     pre_correction_redundancy = detect_redundancy(draft_doc)
@@ -189,15 +198,32 @@ def run_academic_pipeline(
             draft_doc = corr_res.document
             actual_words = count_body_words(draft_doc.text)
             wc_status, wc_reason = evaluate_word_count_bounds(
-                actual_words, bounds.min_words, bounds.max_words, bounds.target_words
+                actual_words,
+                bounds.min_words,
+                bounds.max_words,
+                bounds.target_words,
+                hard_max_words=bounds.hard_max_words,
             )
             retries += 1
 
     # 4. OUTLINE CONFORMANCE CHECK
     outline_res = check_outline_conformance(draft_doc, spec.outline)
 
-    # 4b. MINIMUM-SUFFICIENT-COVERAGE CHECK (explicit requirements)
-    coverage_res = check_requirements_coverage(draft_doc, spec.requirements)
+    # 4a. REQUIREMENT CLASSIFICATION & GROUNDING CORPUS (shared by coverage
+    # and identifier verification below -- see academic/requirements.py for
+    # why positive/prohibition/length/style requirements are routed to
+    # different validators instead of all being scored by word overlap).
+    grounding_texts = [s.retrieved_text or "" for s in sources]
+    grounding_texts.extend([spec.topic, *spec.requirements, *spec.known_identifiers])
+    req_buckets = classify_requirements(spec.requirements)
+
+    # 4b. MINIMUM-SUFFICIENT-COVERAGE CHECK (positive requirements only --
+    # prohibition/length/style requirements are scored by their own
+    # dedicated validators below, not by word overlap).
+    coverage_res = check_requirements_coverage(draft_doc, req_buckets.positive)
+    coverage_res = apply_identifier_specificity_overrides(
+        coverage_res, draft_doc, grounding_texts
+    )
 
     # 4c. REDUNDANCY CHECK (final, post-correction)
     redundancy_res = detect_redundancy(draft_doc)
@@ -214,7 +240,7 @@ def run_academic_pipeline(
         draft_doc,
         sources,
         stated_claims=writer_stated_claims,
-        additional_grounding_texts=[spec.topic, *spec.requirements],
+        additional_grounding_texts=[spec.topic, *spec.requirements, *spec.known_identifiers],
     )
 
     # 6. HUMANIZE (ACADEMIC CONTEXT)
@@ -287,7 +313,11 @@ def run_academic_pipeline(
 
     # 10. EVALUATE FINAL READINESS STATUS
     # Academic criteria for READY:
-    # - Word count in tolerance (wc_status == "PASS")
+    # - Word count within the hard bounds (wc_status in ("PASS", "TARGET_MISS");
+    #   TARGET_MISS -- missing only the soft preferred range while staying
+    #   under any hard ceiling -- is a quality signal, not a blocking one;
+    #   only TOO_SHORT/HARD_LIMIT_FAILURE block readiness. See
+    #   academic/length.py's evaluate_word_count_bounds.)
     # - Outline conformance (outline_res.status == "PASS")
     # - Sources count meets minimum requirement
     # - No unsupported or contradicted factual claims
@@ -309,9 +339,10 @@ def run_academic_pipeline(
         or bool(verif_summary.quotation_warnings)
         or bool(verif_summary.identifier_warnings)
     )
+    has_length_deficiency = wc_status in ("TOO_SHORT", "HARD_LIMIT_FAILURE")
 
     if (
-        wc_status != "PASS"
+        has_length_deficiency
         or outline_res.status != "PASS"
         or coverage_res.status != "PASS"
         or has_source_deficiency
@@ -327,6 +358,39 @@ def run_academic_pipeline(
         final_status = "READY"
 
     total_duration = round(time.time() - start_time, 2)
+
+    # 10b. REQUIREMENT-BUCKET OBSERVABILITY (prohibition/length/style) --
+    # report-only signals, not additional NEEDS_REVIEW gates: the identifier-
+    # fabrication prohibition sub-type already gates readiness above via
+    # has_claim_deficiency/identifier_warnings, unchanged.
+    identifier_prohibitions = [
+        r for r in req_buckets.prohibition if is_identifier_fabrication_prohibition(r)
+    ]
+    other_prohibitions = [
+        r for r in req_buckets.prohibition if r not in identifier_prohibitions
+    ]
+
+    prohibition_requirements_count = len(identifier_prohibitions) or None
+    prohibition_requirements_passed = (
+        (0 if verif_summary.identifier_warnings else len(identifier_prohibitions))
+        if identifier_prohibitions
+        else None
+    )
+    other_prohibition_requirements_count = len(other_prohibitions) or None
+
+    length_requirement_items_count = len(req_buckets.length) or None
+    length_requirement_items_passed = (
+        (len(req_buckets.length) if wc_status in ("PASS", "TARGET_MISS") else 0)
+        if req_buckets.length
+        else None
+    )
+
+    style_requirements_count = len(req_buckets.style) or None
+    style_requirements_passed = (
+        (0 if has_redundancy_deficiency else len(req_buckets.style))
+        if req_buckets.style
+        else None
+    )
 
     report = WritingReport(
         status=final_status,
@@ -362,6 +426,13 @@ def run_academic_pipeline(
         required_criteria_count=coverage_res.required_count,
         present_criteria_count=coverage_res.present_count,
         requirements_coverage_status=coverage_res.status,
+        prohibition_requirements_count=prohibition_requirements_count,
+        prohibition_requirements_passed=prohibition_requirements_passed,
+        other_prohibition_requirements_count=other_prohibition_requirements_count,
+        length_requirement_items_count=length_requirement_items_count,
+        length_requirement_items_passed=length_requirement_items_passed,
+        style_requirements_count=style_requirements_count,
+        style_requirements_passed=style_requirements_passed,
         redundancy_findings_count=len(redundancy_res.findings),
         sources_retrieved=len(sources),
         sources_used=len(citation_analysis.used_sources),
@@ -400,9 +471,7 @@ def run_academic_pipeline(
         ai_style_warnings=ai_style_count,
         meaning_preservation=meaning_det.status,
         semantic_meaning_status=semantic_res.verdict if semantic_res else None,
-        length_hard_ceiling_exceeded=(
-            bounds.hard_max_words is not None and actual_words > bounds.hard_max_words
-        ),
+        length_hard_ceiling_exceeded=(wc_status == "HARD_LIMIT_FAILURE"),
         requirements_coverage_status=coverage_res.status,
         redundancy_flagged=has_redundancy_deficiency,
         identifier_grounding_flagged=bool(verif_summary.identifier_warnings),

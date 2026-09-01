@@ -124,20 +124,24 @@ CRITICAL ACADEMIC WRITING RULES:
    exact percentages, entropy, or timing values): only state one if it appears in the source
    evidence above; otherwise generalize (e.g. "GuardDuty may flag anomalous credential use"
    rather than inventing a specific finding name).
-5. If evidence is insufficient for a claim, qualify the statement (e.g. "Research suggests...") or omit it.
-6. Address every section in the required outline. Use clear markdown headings for major outline sections.
-7. Aim for approximately {aim_words} words -- near the lower-middle of the allowed range, not the
+5. When a precise technical identifier or figure described in rule 4 DOES appear verbatim in the
+   retrieved source evidence above and is relevant to the point being made, prefer reusing it
+   exactly as given rather than generalizing it away -- grounded precision is preferred over
+   unnecessary vagueness. Only generalize when no such grounded value exists.
+6. If evidence is insufficient for a claim, qualify the statement (e.g. "Research suggests...") or omit it.
+7. Address every section in the required outline. Use clear markdown headings for major outline sections.
+8. Aim for approximately {aim_words} words -- near the lower-middle of the allowed range, not the
    maximum. Stop once the outline and explicit requirements are fully addressed with sufficient
    (not exhaustive) support; do not pad, restate, or add tangential elaboration to approach the
    maximum. A shorter paper that fully satisfies the outline and requirements is strongly
    preferred over a longer one that restates points already made.
-8. Only attach a citation to a claim when that specific source actually establishes or supports
+9. Only attach a citation to a claim when that specific source actually establishes or supports
    that specific claim. Never attach a citation merely because the source is topically adjacent
    to the paragraph's subject.
-9. For any staged, sequential, or procedural content (e.g. attack chains, workflows, timelines),
-   ensure each stage only uses capabilities or access the actor has already acquired by that
-   point -- do not have a later stage retroactively justify an earlier one.
-10. DO NOT include a "# References" section at the end (the HowlWriter engine generates and attaches it).
+10. For any staged, sequential, or procedural content (e.g. attack chains, workflows, timelines),
+    ensure each stage only uses capabilities or access the actor has already acquired by that
+    point -- do not have a later stage retroactively justify an earlier one.
+11. DO NOT include a "# References" section at the end (the HowlWriter engine generates and attaches it).
 
 OUTPUT FORMAT:
 Return a ```yaml code block containing:
@@ -245,9 +249,15 @@ warnings: []
                 for finding in redundancy_hint.findings:
                     hint_lines.append(f"- {finding.description}")
             hint_str = "\n".join(hint_lines)
+            hard_max_note = (
+                f" This includes a HARD, non-negotiable maximum of {bounds.hard_max_words} "
+                f"words that must never be exceeded."
+                if bounds.hard_max_words is not None
+                else ""
+            )
             instruction = (
                 f"The draft is currently {current_words} words, which exceeds the target range "
-                f"({min_words}–{max_words} words; target: {bounds.target_words}).\n"
+                f"({min_words}–{max_words} words; target: {bounds.target_words}).{hard_max_note}\n"
                 f"Please tighten the prose, eliminate redundancy, and condense phrasing while "
                 f"strictly preserving all outline sections, factual points, and citations.\n"
                 f"{hint_str}"

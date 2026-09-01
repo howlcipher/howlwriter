@@ -47,6 +47,11 @@ class AssignmentSpec(DataClassSerializationMixin):
     source_requirements: SourceRequirements = field(default_factory=SourceRequirements)
     length_constraints: LengthConstraints = field(default_factory=LengthConstraints)
     requirements: list[str] = field(default_factory=list)
+    # Exact technical identifiers (CVE IDs, ATT&CK technique IDs, etc.) known
+    # to be legitimate for this assignment even if a source's retrieved_text
+    # doesn't happen to quote them verbatim -- assignment-level "verified"
+    # grounding, distinct from incidental prose overlap in requirements/topic.
+    known_identifiers: list[str] = field(default_factory=list)
     outline: list[str] = field(default_factory=list)
     voice_profile: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

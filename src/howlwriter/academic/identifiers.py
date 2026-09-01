@@ -52,6 +52,18 @@ def _context_snippet(text: str, start: int, end: int, radius: int = 40) -> str:
     return text[lo:hi].strip()
 
 
+def identifier_kinds_present(text: str) -> set[str]:
+    """Returns the set of _IDENTIFIER_PATTERNS 'kind' labels that have at
+    least one match anywhere in text, without any grounding check.
+
+    Reused by academic/requirements.py's identifier-specificity coverage
+    override to check which identifier kinds are actually available in the
+    grounding corpus / present in the document, without duplicating the
+    pattern table here.
+    """
+    return {kind for kind, pattern in _IDENTIFIER_PATTERNS if pattern.search(text)}
+
+
 def find_ungrounded_identifiers(
     document_text: str, grounding_texts: list[str]
 ) -> list[IdentifierFinding]:

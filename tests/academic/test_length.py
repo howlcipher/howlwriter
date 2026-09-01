@@ -4,6 +4,7 @@ from howlwriter.academic.length import (
     calculate_word_tolerance,
     count_body_words,
     evaluate_word_count,
+    evaluate_word_count_bounds,
     extract_body_text,
     resolve_length_bounds,
     strip_frontmatter,
@@ -126,3 +127,66 @@ def test_resolve_length_bounds_page_range_aims_below_midpoint():
     soft_max = round(9 * 275)
     midpoint = (bounds.min_words + soft_max) / 2
     assert bounds.min_words < bounds.target_words < midpoint
+
+
+# The following tests exercise evaluate_word_count_bounds' distinction
+# between a soft target-range miss (TARGET_MISS) and a genuine hard-maximum
+# breach (HARD_LIMIT_FAILURE), using the CYBR-601 dogfood scale: a 6-9 page
+# soft target (1650-2475 words) with a 10-page hard maximum (2750 words).
+_MIN_WORDS = 1650
+_SOFT_MAX_WORDS = 2475
+_HARD_MAX_WORDS = 2750
+_TARGET_WORDS = 1980
+
+
+def test_evaluate_word_count_bounds_backward_compat_without_hard_max():
+    # No hard_max_words supplied (e.g. the general howl pipeline's call
+    # pattern): legacy two-tier TOO_LONG literal must be preserved exactly.
+    status, _ = evaluate_word_count_bounds(2300, 1800, 2200, 2000)
+    assert status == "TOO_LONG"
+
+
+def test_evaluate_word_count_bounds_within_soft_target_passes():
+    # 8-9 pages, within the preferred range.
+    status, _ = evaluate_word_count_bounds(
+        2200, _MIN_WORDS, _SOFT_MAX_WORDS, _TARGET_WORDS, hard_max_words=_HARD_MAX_WORDS
+    )
+    assert status == "PASS"
+
+
+def test_evaluate_word_count_bounds_over_soft_under_hard_is_target_miss():
+    # ~9.4 pages: over the soft 9-page target, under the 10-page hard max.
+    status, reason = evaluate_word_count_bounds(
+        2585, _MIN_WORDS, _SOFT_MAX_WORDS, _TARGET_WORDS, hard_max_words=_HARD_MAX_WORDS
+    )
+    assert status == "TARGET_MISS"
+    assert "hard maximum" in reason
+
+
+def test_evaluate_word_count_bounds_at_hard_max_is_target_miss_not_hard_failure():
+    # Exactly 10 pages / 2750 words: at the hard boundary, not over it --
+    # "acceptable... though outside preferred target", not a hard failure.
+    status, _ = evaluate_word_count_bounds(
+        _HARD_MAX_WORDS,
+        _MIN_WORDS,
+        _SOFT_MAX_WORDS,
+        _TARGET_WORDS,
+        hard_max_words=_HARD_MAX_WORDS,
+    )
+    assert status == "TARGET_MISS"
+
+
+def test_evaluate_word_count_bounds_over_hard_max_is_hard_limit_failure():
+    # >10 pages: a genuine hard-maximum breach.
+    status, reason = evaluate_word_count_bounds(
+        2800, _MIN_WORDS, _SOFT_MAX_WORDS, _TARGET_WORDS, hard_max_words=_HARD_MAX_WORDS
+    )
+    assert status == "HARD_LIMIT_FAILURE"
+    assert "exceeds the hard maximum" in reason
+
+
+def test_evaluate_word_count_bounds_too_short_unaffected_by_hard_max():
+    status, _ = evaluate_word_count_bounds(
+        1000, _MIN_WORDS, _SOFT_MAX_WORDS, _TARGET_WORDS, hard_max_words=_HARD_MAX_WORDS
+    )
+    assert status == "TOO_SHORT"

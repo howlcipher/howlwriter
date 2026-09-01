@@ -64,6 +64,13 @@ class WritingReport(DataClassSerializationMixin):
     required_criteria_count: int | None = None
     present_criteria_count: int | None = None
     requirements_coverage_status: str | None = None
+    prohibition_requirements_count: int | None = None
+    prohibition_requirements_passed: int | None = None
+    other_prohibition_requirements_count: int | None = None
+    length_requirement_items_count: int | None = None
+    length_requirement_items_passed: int | None = None
+    style_requirements_count: int | None = None
+    style_requirements_passed: int | None = None
     banned_words: int | None = None
     ai_style_warnings: int | None = None
     quotation_warnings: int | None = None
@@ -177,16 +184,48 @@ class WritingReport(DataClassSerializationMixin):
                 lines.append(f"  Status:              {self.outline_status}")
             lines.append("")
 
-        # Requirements Coverage Section
-        if self.required_criteria_count is not None:
+        # Requirements Coverage Section -- required_criteria_count/
+        # present_criteria_count/requirements_coverage_status reflect ONLY
+        # positive-content requirements (see academic/requirements.py);
+        # prohibition/length/style requirements are scored by their own
+        # dedicated validators and reported in the lines below instead of
+        # being folded into this same word-overlap coverage fraction.
+        if (
+            self.required_criteria_count is not None
+            or self.prohibition_requirements_count is not None
+            or self.other_prohibition_requirements_count is not None
+            or self.length_requirement_items_count is not None
+            or self.style_requirements_count is not None
+        ):
             lines.append("Requirements Coverage:")
-            lines.append(f"  Required Criteria:   {self.required_criteria_count}")
-            if self.present_criteria_count is not None:
+            if self.required_criteria_count is not None:
+                lines.append(f"  Required Criteria:   {self.required_criteria_count}")
+                if self.present_criteria_count is not None:
+                    lines.append(
+                        f"  Coverage:            {self.present_criteria_count}/{self.required_criteria_count}"
+                    )
+                if self.requirements_coverage_status is not None:
+                    lines.append(f"  Status:              {self.requirements_coverage_status}")
+            if self.prohibition_requirements_count is not None:
                 lines.append(
-                    f"  Coverage:            {self.present_criteria_count}/{self.required_criteria_count}"
+                    f"  Prohibitions:        {self.prohibition_requirements_passed}/"
+                    f"{self.prohibition_requirements_count} passed"
                 )
-            if self.requirements_coverage_status is not None:
-                lines.append(f"  Status:              {self.requirements_coverage_status}")
+            if self.other_prohibition_requirements_count is not None:
+                lines.append(
+                    f"  Other Prohibitions:  {self.other_prohibition_requirements_count} "
+                    "not automatically validated"
+                )
+            if self.length_requirement_items_count is not None:
+                lines.append(
+                    f"  Length Requirements: {self.length_requirement_items_passed}/"
+                    f"{self.length_requirement_items_count} passed"
+                )
+            if self.style_requirements_count is not None:
+                lines.append(
+                    f"  Style Requirements:  {self.style_requirements_passed}/"
+                    f"{self.style_requirements_count} passed"
+                )
             lines.append("")
 
         # Academic Sources Section

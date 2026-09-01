@@ -99,6 +99,59 @@ warnings: []
     assert "Ahmadi, S." in result.final_document.text
 
 
+def test_known_identifiers_are_grounded_and_not_flagged(tmp_path, monkeypatch):
+    # spec.known_identifiers is assignment-level "verified" grounding text --
+    # an exact identifier listed there must be accepted even when no
+    # retrieved source's text happens to quote it verbatim.
+    monkeypatch.setenv("HOWLWRITER_RUNS_DIR", str(tmp_path / "runs"))
+
+    s1 = Source(
+        id="S001",
+        title="Credential Dumping Techniques",
+        authors=["Cross, Jamie"],
+        publication_date=date(2025, 1, 1),
+        access_date=date.today(),
+        source_type=SourceType.JOURNAL_ARTICLE,
+        retrieved_text=(
+            "Adversaries frequently target in-memory credential material on "
+            "Windows hosts to enable lateral movement."
+        ),
+    )
+
+    spec = AssignmentSpec(
+        title="Credential Access Techniques",
+        topic="Examine credential access techniques used in enterprise intrusions.",
+        target_words=40,
+        word_tolerance_percent=50.0,
+        outline=["Overview"],
+        source_requirements=dict(minimum_sources=1),
+        known_identifiers=["T1003.001"],
+    )
+
+    fake_backend = FakeAgentBackend(
+        agent_id="fake_known_identifier_writer",
+        default_stdout="""```yaml
+body_markdown: |
+  # Credential Access Techniques
+
+  ## Overview
+  Adversaries commonly dump in-memory credential material, a behavior mapped to
+  OS Credential Dumping: LSASS Memory (T1003.001) (Cross, 2025).
+word_count_estimate: 25
+```""",
+    )
+
+    result = run_academic_pipeline(
+        spec,
+        default_config(),
+        existing_sources=[s1],
+        custom_backend=fake_backend,
+    )
+
+    assert result.verification_summary.identifier_warnings == []
+    assert "T1003.001" in result.final_document.text
+
+
 def test_pipeline_needs_review_when_requirements_uncovered(tmp_path, monkeypatch):
     monkeypatch.setenv("HOWLWRITER_RUNS_DIR", str(tmp_path / "runs"))
 

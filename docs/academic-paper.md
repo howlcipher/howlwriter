@@ -21,7 +21,7 @@ howlwriter paper assignment.yaml --out paper.md
 4. **Citation ↔ Reference Consistency**:
    APA 7 in-text citations and reference list entries are generated deterministically from the same `Source` objects.
 5. **No Fake Readiness**:
-   If word counts are outside tolerance, required outline sections are missing, or unsupported/contradicted claims exist, the document is flagged with status `NEEDS_REVIEW` instead of `READY`.
+   If body words fall below the minimum, or exceed an explicit **hard** length ceiling (`length_constraints.max_words`/`max_pages`), required outline sections are missing, or unsupported/contradicted claims exist, the document is flagged with status `NEEDS_REVIEW` instead of `READY`. Falling outside the *soft* preferred target range (`target_words`/`word_tolerance_percent`, or `target_page_min`/`target_page_max`) while still under any hard ceiling is reported as word-count status `TARGET_MISS` -- a quality signal that triggers a tightening/expansion correction attempt, but does not by itself force `NEEDS_REVIEW`. Only a below-minimum or hard-ceiling breach (`HARD_LIMIT_FAILURE`) is a length-driven blocker; see `academic/length.py`'s `evaluate_word_count_bounds`.
 
 ---
 
@@ -55,6 +55,17 @@ outline:
   - Security controls
   - Conclusion
 ```
+
+`requirements` is free text, but each item is automatically classified into one of four kinds and routed to the validator best suited to check it, rather than every item being scored by the same content-word-overlap coverage check:
+
+| Kind | Example | Validated by |
+| --- | --- | --- |
+| Positive content | "Discuss both security risks and possible controls" | Requirements coverage (word overlap) |
+| Prohibition | "Do not invent exact technical identifiers..." | Identifier grounding (for the identifier-fabrication sub-type); other prohibitions are reported as present but not automatically validated |
+| Length | "Maximum 10 pages" | Length evaluation (`word_count_status`) |
+| Style/output | "Keep the paper concise; avoid padding" | Redundancy detection |
+
+An optional `known_identifiers: [...]` field lists exact technical identifiers (CVE IDs, ATT&CK technique IDs, etc.) known to be legitimate for the assignment, so the identifier-grounding check accepts them even if no retrieved source happens to quote them verbatim.
 
 ---
 

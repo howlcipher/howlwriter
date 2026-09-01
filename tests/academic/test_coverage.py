@@ -48,3 +48,17 @@ def test_empty_requirements_pass_trivially():
     assert result.status == "PASS"
     assert result.required_count == 0
     assert result.present_count == 0
+
+
+def test_requirement_result_defaults_to_content_overlap_kind():
+    doc_text = """# Attack Chain Analysis
+
+## Chain One: Leaked Cloud Credentials
+
+Tools such as Pacu and the AWS CLI were used for discovery. Defensive
+telemetry includes CloudTrail logging and GuardDuty anomaly detection.
+"""
+    doc = Document.parse(doc_text)
+    result = check_requirements_coverage(doc, ["Include tools and defensive telemetry"])
+
+    assert result.requirement_results[0].kind == "content_overlap"

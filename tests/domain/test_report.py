@@ -44,6 +44,29 @@ def test_render_text_omits_new_sections_when_fields_none():
     assert "Consistency Review" not in text
     assert "Hard Maximum Words" not in text
     assert "Identifier Warnings" not in text
+    assert "Prohibitions:" not in text
+    assert "Other Prohibitions:" not in text
+    assert "Length Requirements:" not in text
+    assert "Style Requirements:" not in text
+
+
+def test_render_text_includes_requirement_bucket_sections_when_populated():
+    report = WritingReport(
+        status="READY",
+        prohibition_requirements_count=1,
+        prohibition_requirements_passed=1,
+        other_prohibition_requirements_count=1,
+        length_requirement_items_count=1,
+        length_requirement_items_passed=1,
+        style_requirements_count=1,
+        style_requirements_passed=1,
+    )
+    text = report.render_text()
+    assert "Requirements Coverage:" in text
+    assert "Prohibitions:        1/1 passed" in text
+    assert "Other Prohibitions:  1 not automatically validated" in text
+    assert "Length Requirements: 1/1 passed" in text
+    assert "Style Requirements:  1/1 passed" in text
 
 
 def test_render_text_includes_new_sections_when_populated():

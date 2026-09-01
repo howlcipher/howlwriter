@@ -14,10 +14,14 @@ PRIORITY ORDERING (highest to lowest -- when these are in tension, the higher on
 2. Satisfy each required criterion once, clearly. Do not repeat the same
    evidence across a table and multiple paragraphs, and do not add further
    examples once a requirement is already demonstrated.
-3. Prefer a concise, grounded, generalized statement over an impressive-
-   looking but unverifiable exact figure or identifier. If a precise number,
-   code, or name is not grounded in the supplied source material, generalize
-   it rather than inventing a plausible-looking exact value.
+3. When a precise identifier, code, or figure (e.g. a CVE ID, an ATT&CK
+   technique ID, an exact percentage) IS present verbatim in the retrieved
+   source evidence and is relevant to the point being made, prefer reusing
+   that exact grounded value over a vaguer paraphrase. Conversely, if a
+   precise number, code, or name is NOT grounded in the supplied source
+   material, generalize it rather than inventing a plausible-looking exact
+   value. In short: prefer grounded precision over generality, and prefer
+   generality over invented precision.
 4. Validate that any staged, sequential, or procedural content is causally
    consistent -- a step must not use a capability the actor has not yet
    acquired, and labels/headings must accurately describe what the section

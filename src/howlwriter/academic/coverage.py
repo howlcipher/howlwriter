@@ -32,6 +32,10 @@ class RequirementResult(DataClassSerializationMixin):
     status: str  # "PASS" | "FAIL"
     overlap_ratio: float = 0.0
     reason: str = ""
+    # "content_overlap" (this module's own word-overlap verdict) |
+    # "identifier_specificity" (downgraded by
+    # academic/requirements.py's apply_identifier_specificity_overrides).
+    kind: str = "content_overlap"
 
 
 @dataclass

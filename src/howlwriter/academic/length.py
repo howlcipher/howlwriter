@@ -195,14 +195,29 @@ def resolve_length_bounds(spec: "AssignmentSpec") -> ResolvedLengthBounds:
 
 
 def evaluate_word_count_bounds(
-    actual_words: int, min_words: int, max_words: int, target_words: int
+    actual_words: int,
+    min_words: int,
+    max_words: int,
+    target_words: int,
+    hard_max_words: int | None = None,
 ) -> tuple[str, str]:
     """Evaluates whether actual word count is within externally supplied bounds.
 
-    Same PASS/TOO_SHORT/TOO_LONG semantics as evaluate_word_count(), but
-    against bounds already resolved elsewhere (e.g. via resolve_length_bounds
+    Against bounds already resolved elsewhere (e.g. via resolve_length_bounds
     or a caller-supplied target_words/max_words pair), rather than
     recomputing symmetric tolerance bounds internally.
+
+    hard_max_words is optional and distinguishes an absolute, non-negotiable
+    ceiling from the soft target ceiling represented by max_words:
+
+    - hard_max_words is None: legacy two-tier PASS/TOO_SHORT/TOO_LONG
+      semantics, unchanged for callers that only ever had a single ceiling
+      (e.g. the general howl pipeline's word-tolerance-only length hook).
+    - hard_max_words is set: three-tier semantics distinguishing a soft
+      target miss from a genuine hard-limit breach. Exceeding max_words
+      while still at or under hard_max_words returns TARGET_MISS (a
+      preference miss -- warrants tightening, not automatic rejection).
+      Only exceeding hard_max_words returns HARD_LIMIT_FAILURE.
     """
     if actual_words < min_words:
         return (
@@ -212,14 +227,33 @@ def evaluate_word_count_bounds(
                 f"({min_words} words; target: {target_words})."
             ),
         )
-    if actual_words > max_words:
-        return (
-            "TOO_LONG",
-            (
-                f"Body word count ({actual_words}) exceeds the maximum allowed "
-                f"({max_words} words; target: {target_words})."
-            ),
-        )
+    if hard_max_words is None:
+        if actual_words > max_words:
+            return (
+                "TOO_LONG",
+                (
+                    f"Body word count ({actual_words}) exceeds the maximum allowed "
+                    f"({max_words} words; target: {target_words})."
+                ),
+            )
+    else:
+        if actual_words > hard_max_words:
+            return (
+                "HARD_LIMIT_FAILURE",
+                (
+                    f"Body word count ({actual_words}) exceeds the hard maximum "
+                    f"({hard_max_words} words; target: {target_words})."
+                ),
+            )
+        if actual_words > max_words:
+            return (
+                "TARGET_MISS",
+                (
+                    f"Body word count ({actual_words}) exceeds the preferred target "
+                    f"ceiling ({max_words} words) but is within the hard maximum "
+                    f"({hard_max_words} words; target: {target_words})."
+                ),
+            )
     return (
         "PASS",
         (
