@@ -63,7 +63,7 @@ def test_cite_command_renders_a_reference_page(tmp_path, capsys):
 
     assert exit_code == 0
     assert "Smith, J. (2024)." in captured.out
-    assert "A Study of Things." in captured.out
+    assert "A study of things." in captured.out
 
 
 def test_cite_command_warns_on_missing_metadata_via_stderr(tmp_path, capsys):

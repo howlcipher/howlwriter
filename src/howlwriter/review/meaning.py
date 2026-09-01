@@ -34,6 +34,22 @@ _HEDGE_WORDS = (
     "may", "might", "could", "suggests", "appears", "likely",
     "possibly", "perhaps", "reportedly",
 )
+_CAUSAL_MARKERS = (
+    "causes", "caused", "causing", "causation", "leads to",
+    "resulted in", "produces", "produced",
+)
+_CORRELATIONAL_MARKERS = (
+    "associated with", "correlated with", "correlation", "linked to",
+    "related to", "connected to", "correlates with",
+)
+_FILLER_TRANSITION_PHRASES = (
+    "furthermore", "moreover", "in addition", "however", "therefore",
+    "thus", "consequently", "in conclusion", "to conclude", "finally",
+    "as a result", "for example", "for instance", "in summary",
+)
+_CANNED_CONCLUSION_PHRASES = (
+    "in conclusion", "to conclude", "in summary", "to summarize",
+)
 _WORD = re.compile(r"[A-Za-z']+")
 _SENTENCE_COUNT_RATIO_THRESHOLD = 0.2
 _SENTENCE_COUNT_MIN_DELTA = 2
@@ -49,6 +65,7 @@ class MeaningDiff(DataClassSerializationMixin):
 class MeaningPreservationResult(DataClassSerializationMixin):
     status: Status = "PASS"
     diffs: list[MeaningDiff] = field(default_factory=list)
+    style_diffs: list[MeaningDiff] = field(default_factory=list)
 
 
 def _count_markers(text: str, markers: tuple[str, ...]) -> Counter:
@@ -74,14 +91,20 @@ class MeaningPreservationReviewer:
     def compare(
         self, original: Document, revised: Document
     ) -> MeaningPreservationResult:
-        diffs: list[MeaningDiff] = []
-        diffs.extend(self._number_diffs(original.text, revised.text))
-        diffs.extend(self._attribution_diffs(original.text, revised.text))
-        diffs.extend(self._hedge_diffs(original.text, revised.text))
-        diffs.extend(self._sentence_count_diff(original, revised))
+        substantive: list[MeaningDiff] = []
+        substantive.extend(self._number_diffs(original.text, revised.text))
+        substantive.extend(self._attribution_diffs(original.text, revised.text))
+        substantive.extend(self._hedge_diffs(original.text, revised.text))
+        substantive.extend(self._causal_diffs(original.text, revised.text))
 
-        status: Status = "FLAGGED" if diffs else "PASS"
-        return MeaningPreservationResult(status=status, diffs=diffs)
+        style: list[MeaningDiff] = []
+        style.extend(self._filler_and_transition_diffs(original.text, revised.text))
+        style.extend(self._sentence_structure_diffs(original, revised))
+
+        status: Status = "FLAGGED" if substantive else "PASS"
+        return MeaningPreservationResult(
+            status=status, diffs=substantive, style_diffs=style
+        )
 
     @staticmethod
     def _number_diffs(
@@ -151,23 +174,75 @@ class MeaningPreservationReviewer:
         return diffs
 
     @staticmethod
-    def _sentence_count_diff(
+    def _causal_diffs(
+        original_text: str, revised_text: str
+    ) -> list[MeaningDiff]:
+        original_counts = _count_markers(original_text, _CAUSAL_MARKERS)
+        revised_counts = _count_markers(revised_text, _CAUSAL_MARKERS)
+        added = revised_counts - original_counts
+        return [
+            MeaningDiff(
+                "causal_escalation",
+                f'Causal language "{marker}" was added.',
+            )
+            for marker in added
+        ]
+
+    @staticmethod
+    def _filler_and_transition_diffs(
+        original_text: str, revised_text: str
+    ) -> list[MeaningDiff]:
+        original_counts = _count_markers(original_text, _FILLER_TRANSITION_PHRASES)
+        revised_counts = _count_markers(revised_text, _FILLER_TRANSITION_PHRASES)
+        removed = original_counts - revised_counts
+        return [
+            MeaningDiff(
+                "filler_or_transition_removed",
+                f'Filler/transition "{marker}" was removed.',
+            )
+            for marker in removed
+        ]
+
+    @staticmethod
+    def _sentence_structure_diffs(
         original: Document, revised: Document
     ) -> list[MeaningDiff]:
         original_count = len(original.all_sentences())
         revised_count = len(revised.all_sentences())
         delta = abs(original_count - revised_count)
-        if original_count == 0 or delta < _SENTENCE_COUNT_MIN_DELTA:
+
+        original_words = _content_word_set(original.text)
+        revised_words = _content_word_set(revised.text)
+        same_content = original_words == revised_words
+
+        if original_count == 0 or delta == 0:
             return []
-        if delta / original_count < _SENTENCE_COUNT_RATIO_THRESHOLD:
+        if not same_content and delta < _SENTENCE_COUNT_MIN_DELTA:
             return []
-        return [
-            MeaningDiff(
-                "sentence_count_changed",
-                f"Sentence count changed from {original_count} to "
-                f"{revised_count}.",
-            )
-        ]
+        if not same_content and delta / original_count < _SENTENCE_COUNT_RATIO_THRESHOLD:
+            return []
+
+        if revised_count > original_count:
+            kind = "sentence_split"
+            desc = f"One or more sentences were split ({original_count} -> {revised_count})."
+        elif revised_count < original_count:
+            kind = "sentence_combined"
+            desc = f"Sentences were combined ({original_count} -> {revised_count})."
+        else:
+            return []
+
+        return [MeaningDiff(kind, desc)]
+
+
+def _content_word_set(text: str) -> set[str]:
+    """Content words (lowercased, 3+ chars) used to compare propositions."""
+    tokens = [t.lower() for t in _WORD.findall(text) if len(t) >= 3]
+    # A small stop-word guard so purely stylistic words do not dominate.
+    stop = {
+        "the", "and", "but", "for", "with", "from", "into", "onto", "than",
+        "that", "this", "these", "those", "they", "them", "their", "there",
+    }
+    return {t for t in tokens if t not in stop}
 
 
 @dataclass
@@ -239,7 +314,7 @@ class RealModelMeaningReviewer:
 Your mission is to compare the ORIGINAL text against the REVISED text and evaluate
 whether factual meaning, intent, technical precision, or claims were altered.
 
-EVALUATION CRITERIA:
+EVALUATION CRITERIA (substantive changes only):
 1. Changed meaning, thesis, or polarity (e.g. negative turned into positive)
 2. Stronger or bolder claims than the original justified
 3. Weaker claims or dropped core assertions
@@ -250,6 +325,23 @@ EVALUATION CRITERIA:
 8. Altered numbers, statistics, percentages, currency, ranges, or dates
 9. Removed or altered source attribution, quotes, or citations
 10. Changed uncertainty levels or causation (e.g. correlation changed to causation)
+
+BENIGN STYLE EDITS (do NOT return FAIL for these):
+- Removing filler words such as "Furthermore", "Moreover", "In conclusion"
+- Changing transition words ("However" -> "Yet")
+- Splitting or combining sentences while the propositions remain the same
+- Simplifying phrasing, removing redundancy, or varying rhythm
+- Removing canned conclusions or summary phrases
+
+If a rewrite is only a benign style edit, return PASS (or PASS_WITH_WARNINGS
+if you are uncertain but the risk looks remote). Use FAIL only when a
+reasonably identifiable factual, semantic, or evidentiary discrepancy exists.
+Use differences with severity "info" for benign style notes, "warning" for
+uncertain or minor semantic risk, and "blocker" for definite substantive drift.
+
+When describing a substantive difference, prefer these kinds:
+MEANING_DRIFT, FACT_CHANGE, QUALIFIER_CHANGE, ATTRIBUTION_CHANGE,
+BENIGN_STYLE_CHANGE, UNCERTAIN.
 
 ORIGINAL TEXT:
 ```markdown

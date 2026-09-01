@@ -2,7 +2,11 @@ from datetime import date
 
 import pytest
 
-from howlwriter.citations.apa7 import CITATION_METADATA_MISSING, APA7Formatter
+from howlwriter.citations.apa7 import (
+    CITATION_METADATA_MISSING,
+    CITATION_TITLE_CASE,
+    APA7Formatter,
+)
 from howlwriter.citations.styles import CitationStyle, get_formatter
 from howlwriter.domain.source import Source
 
@@ -12,7 +16,7 @@ formatter = APA7Formatter()
 def _source(**overrides) -> Source:
     defaults = dict(
         id="s1",
-        title="A Study of Things",
+        title="A study of things",
         authors=["Jane A. Smith"],
         publisher="Example Press",
         publication_date=date(2024, 3, 1),
@@ -26,7 +30,7 @@ def test_reference_entry_with_complete_metadata_has_no_warnings():
     result = formatter.reference_entry(_source())
     assert result.warnings == []
     assert "Smith, J. A. (2024)." in result.text
-    assert "A Study of Things." in result.text
+    assert "A study of things." in result.text
     assert "https://example.com/study" in result.text
 
 
@@ -46,7 +50,7 @@ def test_reference_entry_missing_date_uses_nd_and_warns():
 def test_reference_entry_missing_author_moves_title_forward_and_warns():
     source = _source(authors=[])
     result = formatter.reference_entry(source)
-    assert result.text.startswith("A Study of Things (2024).")
+    assert result.text.startswith("A study of things (2024).")
     assert any(w.field == "authors" for w in result.warnings)
 
 
@@ -85,7 +89,7 @@ def test_narrative_forms():
 
 def test_narrative_missing_author_uses_short_title():
     result = formatter.narrative(_source(authors=[]))
-    assert result.text.startswith('"A Study of Things" (2024)')
+    assert result.text.startswith('"A study of things" (2024)')
     assert any(w.field == "authors" for w in result.warnings)
 
 
@@ -109,6 +113,24 @@ def test_get_formatter_returns_apa7():
 
 
 _UNIMPLEMENTED_STYLES = [CitationStyle.MLA, CitationStyle.CHICAGO, CitationStyle.IEEE, CitationStyle.HARVARD]
+
+
+def test_title_is_rendered_in_sentence_case():
+    result = formatter.reference_entry(
+        _source(title="A Study of Things: A Longitudinal Analysis")
+    )
+    assert "A study of things: A longitudinal analysis." in result.text
+    assert any(w.code == CITATION_TITLE_CASE for w in result.warnings)
+
+
+def test_acronyms_are_preserved_in_sentence_case():
+    result = formatter.reference_entry(_source(title="The NASA HTTP Protocol"))
+    assert "The NASA HTTP protocol." in result.text
+
+
+def test_proper_nouns_with_internal_caps_are_preserved():
+    result = formatter.reference_entry(_source(title="Using iPhone in iOS Development"))
+    assert "Using iPhone in iOS development." in result.text
 
 
 @pytest.mark.parametrize("style", _UNIMPLEMENTED_STYLES)

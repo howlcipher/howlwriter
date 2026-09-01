@@ -52,8 +52,8 @@ Recent studies demonstrate that dynamic delegated authorization reduces stale pr
 
     # Check References Section
     assert "# References" in analysis.references_section_text
-    assert "Rose, S., & Borchert, O. (2020). Zero Trust Architecture." in analysis.references_section_text
-    assert "Ahmadi, S. (2025). Autonomous AI Agent Security." in analysis.references_section_text
+    assert "Rose, S., & Borchert, O. (2020). Zero trust architecture." in analysis.references_section_text
+    assert "Ahmadi, S. (2025). Autonomous AI agent security." in analysis.references_section_text
     assert "Uncited, A." not in analysis.references_section_text
 
     # Attach References to document

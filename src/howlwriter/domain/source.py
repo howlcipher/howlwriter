@@ -26,6 +26,19 @@ class SourceType(enum.Enum):
     OTHER = "other"
 
 
+# Source relevance to the assignment topic / query / outline.
+RELEVANCE_DIRECT = "DIRECT"
+RELEVANCE_SUPPORTING = "SUPPORTING"
+RELEVANCE_TANGENTIAL = "TANGENTIAL"
+RELEVANCE_IRRELEVANT = "IRRELEVANT"
+
+# Evidence depth actually retrieved for the source.
+DEPTH_FULL_TEXT = "FULL_TEXT"
+DEPTH_ABSTRACT = "ABSTRACT"
+DEPTH_METADATA_ONLY = "METADATA_ONLY"
+DEPTH_OTHER = "OTHER"
+
+
 @dataclass
 class Source(DataClassSerializationMixin):
     id: str
@@ -39,11 +52,33 @@ class Source(DataClassSerializationMixin):
     source_type: SourceType = SourceType.OTHER
     retrieved_text: str | None = None
     reliability_notes: str = ""
+    # Source-relevance classification assigned during research.
+    relevance: str = RELEVANCE_DIRECT
+    # Explicit evidence depth, independent of the free-text field.
+    evidence_depth: str = DEPTH_OTHER
 
     @property
     def was_accessed(self) -> bool:
         """True only if this source was actually retrieved, not just cited by id."""
         return self.retrieved_text is not None or self.access_date is not None
+
+    @property
+    def is_usable(self) -> bool:
+        """A source is usable for an assignment if it is relevant enough.
+
+        Usability counts toward the minimum source requirement. Depth is a
+        separate check: a usable source whose evidence is metadata-only can
+        support only metadata facts, not arbitrary technical claims.
+        """
+        return self.relevance in (RELEVANCE_DIRECT, RELEVANCE_SUPPORTING)
+
+    @property
+    def is_substantive_evidence(self) -> bool:
+        """True only if the source has some real retrieved text beyond metadata."""
+        text = (self.retrieved_text or "").strip()
+        if not text:
+            return False
+        return self.evidence_depth in (DEPTH_FULL_TEXT, DEPTH_ABSTRACT, DEPTH_OTHER)
 
 
 @dataclass

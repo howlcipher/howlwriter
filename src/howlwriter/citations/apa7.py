@@ -13,11 +13,78 @@ scope for the MVP's "basic APA7 citation representation" goal.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.domain.source import Source
 
 CITATION_METADATA_MISSING = "CITATION_METADATA_MISSING"
+CITATION_TITLE_CASE = "CITATION_TITLE_CASE"
+
+# Word separators that signal a new sentence/subtitle in APA 7.
+_TITLE_PUNCTUATION = frozenset({".", ":", ";", "?", "!", "—"})
+
+
+def _token_is_likely_acronym(token: str) -> bool:
+    """Preserves all-uppercase initialisms/acronyms (e.g., HTTP, NASA, API)."""
+    return token.isupper() and len(token) > 1
+
+
+def _sentence_case(title: str) -> tuple[str, bool]:
+    """Converts a work title to APA 7 sentence case.
+
+    Returns the transformed title and a flag indicating whether any change was
+    made. All-uppercase acronyms/initialisms are preserved; words that already
+    contain internal capitals (e.g. "iPhone") are left as-is to avoid mangling
+    proper nouns. Other words are lowercased except the first word and the first
+    word after a colon/semicolon/question/exclamation/dash.
+    """
+    if not title:
+        return title, False
+
+    # Preserve hyphenated words and apostrophes as single tokens.
+    parts = re.findall(r"[A-Za-z0-9_'-]+|[^A-Za-z0-9_'-]+", title)
+    changed = False
+    capitalize_next = True
+    result: list[str] = []
+
+    for part in parts:
+        if not part:
+            continue
+        # Non-word runs are punctuation/whitespace.
+        if not re.match(r"[A-Za-z0-9_'-]+", part):
+            result.append(part)
+            if any(p in part for p in _TITLE_PUNCTUATION):
+                # Next alphabetic token after punctuation gets capitalized if
+                # it is not already an acronym/proper noun.
+                capitalize_next = True
+            continue
+
+        if _token_is_likely_acronym(part):
+            result.append(part)
+            capitalize_next = False
+            continue
+
+        # Preserve mixed-case tokens (e.g., iPhone, McDonald) as probable
+        # proper nouns; otherwise apply sentence-case rules.
+        has_internal_upper = any(c.isupper() for c in part[1:])
+        if has_internal_upper:
+            result.append(part)
+            capitalize_next = False
+            continue
+
+        if capitalize_next:
+            new_part = part[0].upper() + part[1:].lower() if part else part
+            capitalize_next = False
+        else:
+            new_part = part.lower()
+
+        if new_part != part:
+            changed = True
+        result.append(new_part)
+
+    return "".join(result), changed
+
 
 _ORG_SUFFIXES = (
     "organization",
@@ -125,8 +192,9 @@ def _locator_str(source: Source) -> tuple[str, CitationWarning | None]:
 
 
 def _short_title(title: str, *, max_words: int = 6) -> str:
-    words = title.split()
-    return title if len(words) <= max_words else " ".join(words[:max_words]) + "..."
+    sentence_title, _ = _sentence_case(title)
+    words = sentence_title.split()
+    return sentence_title if len(words) <= max_words else " ".join(words[:max_words]) + "..."
 
 
 class APA7Formatter:
@@ -141,13 +209,29 @@ class APA7Formatter:
         if year_warning:
             warnings.append(year_warning)
 
+        # APA 7 article/work titles use sentence case. Preserve acronyms and
+        # mixed-case proper nouns; surface a warning so any mis-cased proper
+        # noun can be reviewed.
+        title, title_was_changed = _sentence_case(source.title)
+        if title_was_changed:
+            warnings.append(
+                CitationWarning(
+                    code=CITATION_TITLE_CASE,
+                    field="title",
+                    message=(
+                        "Title was converted to APA 7 sentence case. "
+                        "Proper nouns may need manual review."
+                    ),
+                )
+            )
+
         segments: list[str] = []
         if author_str:
             segments.append(f"{author_str} ({year_str}).")
-            segments.append(f"{source.title}.")
+            segments.append(f"{title}.")
         else:
             # APA7: with no known author, the title moves into the author position.
-            segments.append(f"{source.title} ({year_str}).")
+            segments.append(f"{title} ({year_str}).")
 
         if source.publisher:
             segments.append(f"{source.publisher}.")

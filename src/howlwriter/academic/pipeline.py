@@ -32,7 +32,11 @@ from howlwriter.domain.document import Document
 from howlwriter.domain.modes import WritingMode
 from howlwriter.domain.provenance import ProvenanceGraph
 from howlwriter.domain.report import WritingReport
-from howlwriter.domain.source import Source
+from howlwriter.domain.source import (
+    DEPTH_METADATA_ONLY,
+    RELEVANCE_IRRELEVANT,
+    Source,
+)
 from howlwriter.humanize.rewriter import ModelHumanizerRewriter, SafeRewriter
 from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import WritingRole
@@ -90,16 +94,14 @@ def run_academic_pipeline(
     # 1. RESEARCH & SOURCE COLLECTION
     t_res_start = time.time()
     researcher = AcademicResearcher(existing_sources=existing_sources)
-    sources = researcher.execute_research(
-        spec,
-        max_sources_total=max(spec.source_requirements.minimum_sources + 2, 8),
-    )
+    sources = researcher.execute_research(spec)
     researcher_duration = round(time.time() - t_res_start, 2)
     researcher_provider = "scholarly_api" if sources else "none"
 
     if not sources:
-        # If no sources found at all, create an initial fallback source based on topic
-        # so the pipeline can proceed honestly with missing-sources status
+        # If no sources found at all, create an honest fallback marker that is
+        # explicitly not eligible for citation. It does not count toward the
+        # minimum and cannot be used to support claims.
         sources = [
             Source(
                 id="S001",
@@ -107,6 +109,8 @@ def run_academic_pipeline(
                 authors=["Staff Researcher"],
                 publication_date=None,
                 retrieved_text=f"Core topic overview: {spec.topic}",
+                relevance=RELEVANCE_IRRELEVANT,
+                evidence_depth=DEPTH_METADATA_ONLY,
             )
         ]
 

@@ -51,12 +51,15 @@ class AcademicCitationManager:
         for match in source_id_pattern.finditer(text):
             raw_in_text.append(match.group(1).strip())
 
+        # Only sources that pass the relevance gate are eligible for use.
+        eligible_sources = [s for s in available_sources if s.is_usable]
+
         used_sources: list[Source] = []
         unused_sources: list[Source] = []
         all_warnings: list[CitationWarning] = []
 
-        # Check each source to see if it was cited
-        for source in available_sources:
+        # Check each eligible source to see if it was cited
+        for source in eligible_sources:
             cited = False
 
             # Check by Source ID: S001
@@ -85,9 +88,11 @@ class AcademicCitationManager:
             else:
                 unused_sources.append(source)
 
-        # Build References Section deterministically for all used sources
-        # (or all available sources if none explicitly detected)
-        sources_for_bib = used_sources if used_sources else available_sources
+        # Build References Section for sources that are actually used in the
+        # paper. If no in-text citations were detected, still only include
+        # eligible sources; irrelevant or tangential items must not satisfy the
+        # minimum requirement or appear in the bibliography.
+        sources_for_bib = used_sources if used_sources else eligible_sources
         ref_page_result = self.formatter.reference_page(sources_for_bib)
         all_warnings.extend(ref_page_result.warnings)
 

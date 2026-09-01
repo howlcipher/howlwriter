@@ -11,30 +11,79 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 from howlwriter.academic.spec import AssignmentSpec
-from howlwriter.domain.source import Source, SourceType, source_from_dict
+from howlwriter.domain.source import (
+    DEPTH_ABSTRACT,
+    DEPTH_METADATA_ONLY,
+    RELEVANCE_DIRECT,
+    RELEVANCE_IRRELEVANT,
+    RELEVANCE_SUPPORTING,
+    RELEVANCE_TANGENTIAL,
+    Source,
+    SourceType,
+    source_from_dict,
+)
+
+# Keep distinctive technical tokens (e.g. C++, C#, Rust/C++) intact while
+# stripping decorative punctuation.
+_QUERY_TOKEN_PRESERVE = re.compile(r"[^\w\s\-+#/]")
+
+_QUERY_STOPWORDS = frozenset({
+    "the", "a", "an", "and", "or", "but", "for", "with", "to", "of",
+    "in", "on", "at", "from", "by", "as", "is", "are", "was", "were",
+    "be", "been", "being", "it", "its", "this", "that", "these", "those",
+    "we", "our", "you", "your", "i", "me", "my", "he", "she", "they",
+    "them", "his", "their", "have", "has", "had", "do", "does", "did",
+    "will", "would", "could", "should", "may", "might", "must", "shall",
+    "can", "need", "about", "into", "through", "during", "before", "after",
+    "above", "below", "between", "among", "within", "without", "over",
+    "under", "again", "further", "then", "once", "here", "there", "when",
+    "where", "why", "how", "all", "any", "both", "each", "few", "more",
+    "most", "other", "some", "such", "no", "nor", "not", "only", "own",
+    "same", "so", "than", "too", "very", "just", "now",
+})
+
+
+def _clean_research_query(text: str) -> str:
+    """Strips decorative punctuation but keeps language- and code-relevant tokens."""
+    normalized = _QUERY_TOKEN_PRESERVE.sub(" ", text)
+    collapsed = re.sub(r"\s+", " ", normalized).strip()
+    return collapsed
+
+
+def _extract_concepts(text: str) -> set[str]:
+    """Extracts the distinctive content words from a topic or query."""
+    text = _clean_research_query(text)
+    tokens = re.findall(r"\b\w[\w\-+#/]*\b", text)
+    return {
+        t.lower()
+        for t in tokens
+        if len(t) >= 3 and t.lower() not in _QUERY_STOPWORDS
+    }
 
 
 def derive_research_plan(spec: AssignmentSpec, max_queries: int = 6) -> list[str]:
     """Derives a focused, bounded list of research query strings from assignment spec and outline."""
     queries: list[str] = []
 
-    # 1. Core topic query
-    base_topic = spec.topic.strip().split("\n")[0]
-    # Clean special chars
-    clean_base = re.sub(r"[^\w\s-]", " ", base_topic).strip()
+    # 1. Core topic query: preserve distinctive language tokens (C++, Rust, etc.)
+    clean_base = _clean_research_query(spec.topic.strip().split("\n")[0])
     if clean_base:
         queries.append(clean_base)
 
-    # 2. Outline-derived queries
+    # 2. Outline-derived queries: preserve the base topic's distinctive terms
+    #    rather than replacing them with generic section boilerplate.
+    generic_sections = {"introduction", "background", "overview"}
+    generic_conclusions = {"conclusion", "summary", "future work"}
+
     for topic in spec.outline:
-        topic_clean = re.sub(r"[^\w\s-]", " ", topic).strip()
+        topic_clean = _clean_research_query(topic)
         if not topic_clean:
             continue
-        # Combine with main keywords if topic is very generic (e.g. "Introduction", "Conclusion")
-        if topic_clean.lower() in ("introduction", "background", "overview"):
-            q = f"{clean_base} background overview"
-        elif topic_clean.lower() in ("conclusion", "summary", "future work"):
-            q = f"{clean_base} future directions controls"
+        lowered = topic_clean.lower()
+
+        if lowered in generic_sections or lowered in generic_conclusions:
+            # Generic section names do not add distinctive terms; keep the base query.
+            q = clean_base
         else:
             q = f"{clean_base} {topic_clean}"
 
@@ -127,6 +176,7 @@ def fetch_arxiv_sources(query: str, max_results: int = 3) -> list[Source]:
                 source_type=SourceType.JOURNAL_ARTICLE,
                 retrieved_text=summary,
                 reliability_notes="Retrieved from arXiv API; peer-review / preprint.",
+                evidence_depth=DEPTH_ABSTRACT if summary.strip() else DEPTH_METADATA_ONLY,
             )
             sources.append(src)
     except Exception:
@@ -208,6 +258,13 @@ def fetch_crossref_sources(query: str, max_results: int = 3) -> list[Source]:
         else:
             st = SourceType.OTHER
 
+        if abstract.strip():
+            retrieved_text = abstract
+            evidence_depth = DEPTH_ABSTRACT
+        else:
+            retrieved_text = f"Published academic work by {publisher or 'author'}: {title}"
+            evidence_depth = DEPTH_METADATA_ONLY
+
         src = Source(
             id=f"S{len(sources)+1:03d}",
             title=title,
@@ -218,12 +275,58 @@ def fetch_crossref_sources(query: str, max_results: int = 3) -> list[Source]:
             doi=doi,
             access_date=date.today(),
             source_type=st,
-            retrieved_text=abstract or f"Published academic work by {publisher or 'author'}: {title}",
+            retrieved_text=retrieved_text,
             reliability_notes=f"Retrieved from Crossref API (type: {src_type_str}).",
+            evidence_depth=evidence_depth,
         )
         sources.append(src)
 
     return sources
+
+
+def classify_source_relevance(
+    source: Source,
+    topic: str,
+    query: str,
+    outline_topic: str = "",
+) -> str:
+    """Classifies a retrieved source by its topical relevance to the assignment.
+
+    Uses the actual assignment topic, the query it was retrieved with, and the
+    outline topic (if any) to guard against one-keyword coincidences.
+    """
+    # Build the expected concept set from the request context.
+    expected = _extract_concepts(topic)
+    expected |= _extract_concepts(query)
+    if outline_topic:
+        expected |= _extract_concepts(outline_topic)
+
+    if not expected:
+        # Nothing to compare against; the source is at best supporting.
+        return RELEVANCE_SUPPORTING if source.is_substantive_evidence else RELEVANCE_TANGENTIAL
+
+    # Collect concepts present in the source, keeping title and text separate.
+    title_concepts = _extract_concepts(source.title or "")
+    text_concepts = _extract_concepts(source.retrieved_text or "")
+    matches = expected & (title_concepts | text_concepts)
+    title_matches = expected & title_concepts
+
+    # One generic overlap is not enough.
+    if not matches:
+        return RELEVANCE_IRRELEVANT
+
+    # Direct: the source is central to the topic -- the title carries multiple
+    # distinctive concepts, or the combined text coverage is extensive.
+    if len(title_matches) >= 2 or len(matches) >= 4:
+        return RELEVANCE_DIRECT
+
+    # Supporting: some real overlap, but the source is not central enough for
+    # primary claims.
+    if len(matches) >= 2:
+        return RELEVANCE_SUPPORTING
+
+    # A single keyword overlap is normally tangential.
+    return RELEVANCE_TANGENTIAL
 
 
 class AcademicResearcher:
@@ -235,9 +338,22 @@ class AcademicResearcher:
     def execute_research(
         self,
         spec: AssignmentSpec,
-        max_sources_total: int = 10,
+        max_sources_total: int | None = None,
     ) -> list[Source]:
-        """Executes research plan for an assignment and returns collected Source objects."""
+        """Executes research plan for an assignment and returns collected Source objects.
+
+        Sources are classified for relevance and evidence depth as they are
+        retrieved. Retrieval stops once the assignment's minimum usable-source
+        requirement is met or the total budget is exhausted, whichever comes
+        first -- but the returned list still includes any additional collected
+        sources so the report can be truthful about what was found.
+        """
+        minimum_usable = spec.source_requirements.minimum_sources
+        if max_sources_total is None:
+            # Give a small retrieval budget above the minimum so the result
+            # is not arbitrarily capped at exactly the minimum.
+            max_sources_total = max(minimum_usable + 4, 10)
+
         collected: list[Source] = []
         seen_identifiers: set[str] = set()
 
@@ -255,25 +371,37 @@ class AcademicResearcher:
         # 1. First include any pre-loaded sources
         for s in self.existing_sources:
             _add_source(s)
-            if len(collected) >= max_sources_total:
-                return collected
 
-        # If caller explicitly provided sources meeting minimum requirement, do not perform network search
-        if self.existing_sources and len(collected) >= spec.source_requirements.minimum_sources:
+        # If caller explicitly provided enough usable sources, do not search.
+        if self.existing_sources and sum(1 for s in collected if s.is_usable) >= minimum_usable:
             return collected
 
         # 2. Derive research queries
         queries = derive_research_plan(spec)
+        topic_clean = _clean_research_query(spec.topic.strip().split("\n")[0])
 
         # 3. Query scholarly APIs for each plan item
         for q in queries:
-            if len(collected) >= max_sources_total:
+            usable_so_far = sum(1 for s in collected if s.is_usable)
+            if len(collected) >= max_sources_total or usable_so_far >= minimum_usable:
                 break
+
+            # Infer the outline topic that produced this query.
+            if topic_clean and q.startswith(topic_clean):
+                outline_topic = q[len(topic_clean):].strip()
+            else:
+                outline_topic = q
 
             # Query Crossref
             try:
-                crossref_res = fetch_crossref_sources(q, max_results=2)
+                crossref_res = fetch_crossref_sources(q, max_results=3)
                 for s in crossref_res:
+                    s.relevance = classify_source_relevance(
+                        s,
+                        topic=spec.topic,
+                        query=q,
+                        outline_topic=outline_topic,
+                    )
                     _add_source(s)
                     if len(collected) >= max_sources_total:
                         break
@@ -285,8 +413,14 @@ class AcademicResearcher:
 
             # Query arXiv
             try:
-                arxiv_res = fetch_arxiv_sources(q, max_results=2)
+                arxiv_res = fetch_arxiv_sources(q, max_results=3)
                 for s in arxiv_res:
+                    s.relevance = classify_source_relevance(
+                        s,
+                        topic=spec.topic,
+                        query=q,
+                        outline_topic=outline_topic,
+                    )
                     _add_source(s)
                     if len(collected) >= max_sources_total:
                         break

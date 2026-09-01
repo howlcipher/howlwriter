@@ -42,6 +42,64 @@ def test_dropped_attribution_is_flagged():
     assert any(d.kind == "attribution_removed" for d in result.diffs)
 
 
+def test_filler_removal_is_a_benign_style_change():
+    original = Document.parse(
+        "Furthermore, the service failed repeatedly.", title="t"
+    )
+    revised = Document.parse("The service failed repeatedly.", title="t")
+    result = reviewer.compare(original, revised)
+    assert result.status == "PASS"
+    assert any(d.kind == "filler_or_transition_removed" for d in result.style_diffs)
+
+
+def test_conclusion_removal_is_a_benign_style_change():
+    original = Document.parse(
+        "In conclusion, these controls reduce the attack surface.", title="t"
+    )
+    revised = Document.parse("These controls reduce the attack surface.", title="t")
+    result = reviewer.compare(original, revised)
+    assert result.status == "PASS"
+    assert any(d.kind == "filler_or_transition_removed" for d in result.style_diffs)
+
+
+def test_sentence_split_is_a_benign_style_change():
+    original = Document.parse(
+        "The service failed repeatedly and the queue filled completely.",
+        title="t",
+    )
+    revised = Document.parse(
+        "The service failed repeatedly. The queue filled completely.",
+        title="t",
+    )
+    result = reviewer.compare(original, revised)
+    assert result.status == "PASS"
+    assert any(d.kind == "sentence_split" for d in result.style_diffs)
+
+
+def test_qualifier_change_is_flagged():
+    original = Document.parse("This may reduce latency.", title="t")
+    revised = Document.parse("This reduces latency.", title="t")
+    result = reviewer.compare(original, revised)
+    assert result.status == "FLAGGED"
+    assert any(d.kind == "hedge_removed" for d in result.diffs)
+
+
+def test_causal_escalation_is_flagged():
+    original = Document.parse("X is associated with Y.", title="t")
+    revised = Document.parse("X causes Y.", title="t")
+    result = reviewer.compare(original, revised)
+    assert result.status == "FLAGGED"
+    assert any(d.kind == "causal_escalation" for d in result.diffs)
+
+
+def test_number_change_is_flagged():
+    original = Document.parse("The error rate was 12%.", title="t")
+    revised = Document.parse("The error rate was 21%.", title="t")
+    result = reviewer.compare(original, revised)
+    assert result.status == "FLAGGED"
+    assert any(d.kind == "number_removed" for d in result.diffs)
+
+
 def test_not_configured_meaning_reviewer_raises():
     original = Document.parse("Text.", title="t")
     revised = Document.parse("Text.", title="t")
