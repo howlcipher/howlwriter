@@ -114,6 +114,13 @@ export interface ValidateSpecResponse {
   yaml_preview: string;
 }
 
+export interface ReviewReason {
+  category: 'RESEARCH_SUFFICIENCY' | 'SOURCE_CLAIM_SUPPORT' | 'SEMANTIC_REVIEW' | 'WORD_COUNT' | 'OUTLINE' | 'CITATIONS' | 'OTHER';
+  severity: 'info' | 'warning' | 'critical';
+  title: string;
+  explanation: string;
+}
+
 export interface Source {
   id: string;
   title: string;
@@ -126,7 +133,9 @@ export interface Source {
   retrieved_text?: string | null;
   claims_count: number;
   in_text_citations_count: number;
-  evidence_origin?: string | null;
+  evidence_origin: 'FULL_TEXT' | 'ABSTRACT' | 'METADATA_ONLY' | 'OTHER' | string;
+  relevance_notes?: string | null;
+  raw_metadata?: Record<string, any>;
   metadata: Record<string, any>;
 }
 
@@ -137,7 +146,7 @@ export interface Evidence {
   source_url?: string | null;
   source_doi?: string | null;
   excerpt: string;
-  origin_type: string;
+  origin_type: 'FULL_TEXT' | 'ABSTRACT' | 'METADATA_ONLY' | 'OTHER' | string;
   page_or_section?: string | null;
   confidence: number;
 }
@@ -169,6 +178,7 @@ export interface AcademicResult {
   sources_retrieved: number;
   sources_used: number;
   sources_required: number;
+  sources_sufficiency_status: 'SUFFICIENT' | 'DEFICIENT' | string;
   supported_claims: number;
   partially_supported_claims: number;
   unsupported_claims: number;
@@ -181,7 +191,10 @@ export interface AcademicResult {
   researcher_provider?: string | null;
   humanizer_provider?: string | null;
   meaning_reviewer_provider?: string | null;
+  meaning_reviewer_verdict?: string | null;
+  meaning_reviewer_explanation?: string | null;
   reviewer_independence?: string | null;
+  reviewer_independence_reason?: string | null;
   banned_words: number;
   ai_style_warnings: number;
   meaning_preservation: string;
@@ -192,6 +205,7 @@ export interface AcademicResult {
   claims: Claim[];
   references_text: string;
   warnings: string[];
+  review_reasons: ReviewReason[];
 }
 
 export interface Stage {

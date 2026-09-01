@@ -23,6 +23,7 @@ from howlwriter.web.models import (
     EvidenceDto,
     GeneratePaperRequest,
     JobResponse,
+    ReviewReasonDto,
     SourceDto,
     SourceRequirementsDto,
     ValidateSpecRequest,
@@ -125,20 +126,27 @@ def start_generate_paper(req: GeneratePaperRequest) -> JobResponse:
         source_dtos: list[SourceDto] = []
         source_id_map: dict[str, SourceDto] = {}
         for s in res.sources:
-            evidence_origin = "RETRIEVED_EXCERPT"
-            if s.retrieved_text:
-                is_arxiv = "arXiv:" in (s.doi or "") or "arxiv" in (s.url or "").lower()
-                is_abstract = len(s.retrieved_text) < 1500 and (
-                    "abstract" in s.retrieved_text.lower() or "doi" in s.retrieved_text.lower()
-                )
-                if is_arxiv:
-                    evidence_origin = "ARXIV_EXCERPT"
-                elif is_abstract:
-                    evidence_origin = "ABSTRACT"
-            elif s.doi or s.url:
-                evidence_origin = "METADATA"
+            # Audit Requirement 1: Explicitly distinguish FULL_TEXT, ABSTRACT, METADATA_ONLY, OTHER
+            if s.retrieved_text and len(s.retrieved_text) > 4000:
+                evidence_origin = "FULL_TEXT"
+            elif s.retrieved_text and len(s.retrieved_text) > 0:
+                evidence_origin = "ABSTRACT"
+            elif s.doi or s.url or s.title:
+                evidence_origin = "METADATA_ONLY"
+            else:
+                evidence_origin = "OTHER"
 
             used_in_text = any(us.id == s.id for us in res.citation_analysis.used_sources)
+            raw_meta = {
+                "raw_authors": s.authors,
+                "raw_title": s.title,
+                "raw_publication_date": s.publication_date.isoformat() if s.publication_date else None,
+                "raw_publisher": s.publisher,
+                "raw_doi": s.doi,
+                "raw_url": s.url,
+                "retrieved_char_count": len(s.retrieved_text) if s.retrieved_text else 0,
+            }
+
             sdto = SourceDto(
                 id=s.id,
                 title=s.title,
@@ -152,6 +160,7 @@ def start_generate_paper(req: GeneratePaperRequest) -> JobResponse:
                 claims_count=len(res.provenance_graph.claims_for_source(s.id)),
                 in_text_citations_count=1 if used_in_text else 0,
                 evidence_origin=evidence_origin,
+                raw_metadata=raw_meta,
                 metadata={},
             )
             source_dtos.append(sdto)
@@ -164,14 +173,14 @@ def start_generate_paper(req: GeneratePaperRequest) -> JobResponse:
             ev_dtos = []
             for ev in ev_list:
                 src = res.provenance_graph.sources.get(ev.source_id)
-                origin = "METADATA"
-                if src and src.retrieved_text:
-                    if "arxiv" in (src.url or "").lower():
-                        origin = "ARXIV_EXCERPT"
-                    elif len(src.retrieved_text) < 1500:
-                        origin = "ABSTRACT"
-                    else:
-                        origin = "RETRIEVED_EXCERPT"
+                if src and src.retrieved_text and len(src.retrieved_text) > 4000:
+                    origin = "FULL_TEXT"
+                elif src and src.retrieved_text and len(src.retrieved_text) > 0:
+                    origin = "ABSTRACT"
+                elif src and (src.doi or src.url or src.title):
+                    origin = "METADATA_ONLY"
+                else:
+                    origin = "OTHER"
 
                 ev_dtos.append(
                     EvidenceDto(
@@ -213,33 +222,159 @@ def start_generate_paper(req: GeneratePaperRequest) -> JobResponse:
         ]
         all_warnings = citation_warnings + res.verification_summary.quotation_warnings
 
+        # Audit Requirement 3: Source Sufficiency
+        sources_retrieved_count = res.report.sources_retrieved or len(res.sources)
+        sources_required_count = res.report.sources_required or res.spec.source_requirements.minimum_sources
+        sources_used_count = res.report.sources_used or len(res.citation_analysis.used_sources)
+        is_source_deficient = sources_retrieved_count < sources_required_count
+        sources_sufficiency = "DEFICIENT" if is_source_deficient else "SUFFICIENT"
+
+        # Audit Requirement 5: Categorized Review Reasons
+        review_reasons_list: list[ReviewReasonDto] = []
+
+        # 1. Research Sufficiency
+        if is_source_deficient:
+            review_reasons_list.append(
+                ReviewReasonDto(
+                    category="RESEARCH_SUFFICIENCY",
+                    severity="critical",
+                    title=(
+                        f"Source Deficiency ({sources_retrieved_count} gathered, "
+                        f"{sources_required_count} required)"
+                    ),
+                    explanation=(
+                        f"The research phase gathered {sources_retrieved_count} usable sources, "
+                        f"falling short of the requested minimum ({sources_required_count}). "
+                        "Try expanding topic keywords or broadening search constraints."
+                    ),
+                )
+            )
+
+        # 2. Source / Claim Support
+        unsupported_count = res.report.unsupported_claims or 0
+        contradicted_count = res.report.contradicted_claims or 0
+        abstract_only_count = sum(1 for s in source_dtos if s.evidence_origin == "ABSTRACT")
+        metadata_only_count = sum(1 for s in source_dtos if s.evidence_origin == "METADATA_ONLY")
+
+        if unsupported_count > 0 or contradicted_count > 0:
+            review_reasons_list.append(
+                ReviewReasonDto(
+                    category="SOURCE_CLAIM_SUPPORT",
+                    severity="critical",
+                    title=f"Unverified Claims ({unsupported_count} unsupported)",
+                    explanation=(
+                        f"{unsupported_count} claims drafted in the text lacked sufficient evidence in "
+                        "retrieved literature to verify factual support."
+                    ),
+                )
+            )
+
+        if abstract_only_count > 0 or metadata_only_count > 0:
+            review_reasons_list.append(
+                ReviewReasonDto(
+                    category="SOURCE_CLAIM_SUPPORT",
+                    severity="info",
+                    title=(
+                        f"Evidence Grounding: {abstract_only_count} Abstract / "
+                        f"{metadata_only_count} Metadata-Only"
+                    ),
+                    explanation=(
+                        "Truthful Grounding: Evidence is derived from scholarly abstracts and metadata. "
+                        "Full paper body text was not inspected."
+                    ),
+                )
+            )
+
+        # 3. Semantic Review
+        sem_status = res.report.semantic_meaning_status or res.report.meaning_preservation or "PASS"
+        if sem_status not in ("PASS", "PASS_WITH_WARNINGS"):
+            review_reasons_list.append(
+                ReviewReasonDto(
+                    category="SEMANTIC_REVIEW",
+                    severity="warning",
+                    title=f"Adversarial Semantic Review Flag ({sem_status})",
+                    explanation=(
+                        "Independent semantic reviewer identified potential factual "
+                        "distortion or nuance drift. Reviewer judgments represent "
+                        "automated scrutiny rather than absolute truth."
+                    ),
+                )
+            )
+
+        # 4. Word Count
+        actual_words = res.report.actual_body_words or 0
+        target_words = res.report.target_words or res.spec.target_words
+        if res.report.word_count_status in ("TOO_SHORT", "TOO_LONG"):
+            review_reasons_list.append(
+                ReviewReasonDto(
+                    category="WORD_COUNT",
+                    severity="warning",
+                    title=f"Word Count Deviation ({actual_words} / {target_words} words)",
+                    explanation=(
+                        f"Actual body length ({actual_words} words) is outside "
+                        f"specified tolerance ({res.report.word_count_status})."
+                    ),
+                )
+            )
+
+        # 5. Outline
+        if (res.report.present_outline_topics or 0) < (res.report.required_outline_topics or 0):
+            review_reasons_list.append(
+                ReviewReasonDto(
+                    category="OUTLINE",
+                    severity="warning",
+                    title=(
+                        f"Missing Outline Sections "
+                        f"({res.report.present_outline_topics}/{res.report.required_outline_topics})"
+                    ),
+                    explanation="One or more mandatory assignment outline sections were omitted or altered.",
+                )
+            )
+
+        # 6. Citations
+        if len(all_warnings) > 0:
+            review_reasons_list.append(
+                ReviewReasonDto(
+                    category="CITATIONS",
+                    severity="info",
+                    title=f"APA 7 Metadata Warnings ({len(all_warnings)} notices)",
+                    explanation=(
+                        "Missing upstream Crossref metadata (dates or authors) resulted in deterministic "
+                        "APA 7 fallbacks ('n.d.' or title citation)."
+                    ),
+                )
+            )
+
         result_dto = AcademicResultDto(
             paper_text=res.final_document.text,
             title=res.spec.title,
             topic=res.spec.topic,
-            target_words=res.report.target_words or res.spec.target_words,
-            min_words=res.report.min_words or int(res.spec.target_words * 0.9),
-            max_words=res.report.max_words or int(res.spec.target_words * 1.1),
-            actual_body_words=res.report.actual_body_words or 0,
+            target_words=target_words,
+            min_words=res.report.min_words or int(target_words * 0.9),
+            max_words=res.report.max_words or int(target_words * 1.1),
+            actual_body_words=actual_words,
             word_count_status=res.report.word_count_status or "UNKNOWN",
             outline_status=res.report.outline_status or "UNKNOWN",
             required_outline_topics=res.report.required_outline_topics or 0,
             present_outline_topics=res.report.present_outline_topics or 0,
-            sources_retrieved=res.report.sources_retrieved or 0,
-            sources_used=res.report.sources_used or 0,
-            sources_required=res.report.sources_required or 0,
+            sources_retrieved=sources_retrieved_count,
+            sources_used=sources_used_count,
+            sources_required=sources_required_count,
+            sources_sufficiency_status=sources_sufficiency,
             supported_claims=res.report.supported_claims or 0,
             partially_supported_claims=res.report.partially_supported_claims or 0,
-            unsupported_claims=res.report.unsupported_claims or 0,
-            contradicted_claims=res.report.contradicted_claims or 0,
+            unsupported_claims=unsupported_count,
+            contradicted_claims=contradicted_count,
             citation_style=res.report.citation_style or "apa7",
             in_text_citations=res.report.in_text_citations or 0,
             reference_entries=res.report.reference_entries or 0,
-            citation_warnings=res.report.citation_warnings or 0,
+            citation_warnings=res.report.citation_warnings or len(all_warnings),
             writer_provider=res.report.writer_provider,
             researcher_provider=res.report.researcher_provider,
             humanizer_provider=res.report.humanizer_provider,
             meaning_reviewer_provider=res.report.meaning_reviewer_provider,
+            meaning_reviewer_verdict=sem_status,
+            meaning_reviewer_explanation=None,
             reviewer_independence=res.report.reviewer_independence,
             banned_words=res.report.banned_words or 0,
             ai_style_warnings=res.report.ai_style_warnings or 0,
@@ -251,6 +386,7 @@ def start_generate_paper(req: GeneratePaperRequest) -> JobResponse:
             claims=claim_dtos,
             references_text=refs_text,
             warnings=all_warnings,
+            review_reasons=review_reasons_list,
         )
 
         j.complete(result_dto)

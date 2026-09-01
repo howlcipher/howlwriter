@@ -181,6 +181,13 @@ class GeneratePaperRequest(BaseModel):
 
 
 # Provenance, Verification, and Source Models
+class ReviewReasonDto(BaseModel):
+    category: str  # RESEARCH_SUFFICIENCY, SOURCE_CLAIM_SUPPORT, SEMANTIC_REVIEW, etc.
+    severity: str = "warning"  # info, warning, critical
+    title: str
+    explanation: str
+
+
 class SourceDto(BaseModel):
     id: str
     title: str
@@ -193,7 +200,9 @@ class SourceDto(BaseModel):
     retrieved_text: Optional[str] = None
     claims_count: int = 0
     in_text_citations_count: int = 0
-    evidence_origin: Optional[str] = None
+    evidence_origin: str = "METADATA_ONLY"  # FULL_TEXT, ABSTRACT, METADATA_ONLY, OTHER
+    relevance_notes: Optional[str] = None
+    raw_metadata: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -204,7 +213,7 @@ class EvidenceDto(BaseModel):
     source_url: Optional[str] = None
     source_doi: Optional[str] = None
     excerpt: str
-    origin_type: str = "METADATA"  # ABSTRACT, ARXIV_EXCERPT, METADATA, RETRIEVED_EXCERPT
+    origin_type: str = "METADATA_ONLY"  # FULL_TEXT, ABSTRACT, METADATA_ONLY, OTHER
     page_or_section: Optional[str] = None
     confidence: float = 1.0
 
@@ -236,6 +245,7 @@ class AcademicResultDto(BaseModel):
     sources_retrieved: int
     sources_used: int
     sources_required: int
+    sources_sufficiency_status: str = "SUFFICIENT"
     supported_claims: int
     partially_supported_claims: int
     unsupported_claims: int
@@ -248,7 +258,10 @@ class AcademicResultDto(BaseModel):
     researcher_provider: Optional[str] = None
     humanizer_provider: Optional[str] = None
     meaning_reviewer_provider: Optional[str] = None
+    meaning_reviewer_verdict: Optional[str] = None
+    meaning_reviewer_explanation: Optional[str] = None
     reviewer_independence: Optional[str] = None
+    reviewer_independence_reason: Optional[str] = None
     banned_words: int = 0
     ai_style_warnings: int = 0
     meaning_preservation: str = "PASS"
@@ -259,6 +272,7 @@ class AcademicResultDto(BaseModel):
     claims: list[ClaimDto] = Field(default_factory=list)
     references_text: str = ""
     warnings: list[str] = Field(default_factory=list)
+    review_reasons: list[ReviewReasonDto] = Field(default_factory=list)
 
 
 # Job Models

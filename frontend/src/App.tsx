@@ -12,6 +12,7 @@ import { AssignmentBuilder } from './components/academic/AssignmentBuilder';
 import { PipelineProgressRail } from './components/academic/PipelineProgressRail';
 import { AcademicPaperViewer } from './components/academic/AcademicPaperViewer';
 import { AcademicStatsBar } from './components/academic/AcademicStatsBar';
+import { ReviewReasonsPanel } from './components/academic/ReviewReasonsPanel';
 import { ClaimEvidenceInspector } from './components/academic/ClaimEvidenceInspector';
 import { SourceListPanel } from './components/academic/SourceListPanel';
 import { SourceDetailModal } from './components/academic/SourceDetailModal';
@@ -101,6 +102,7 @@ export const App: React.FC = () => {
   const [academicJob, setAcademicJob] = React.useState<JobResponse | null>(null);
   const [academicResult, setAcademicResult] = React.useState<AcademicResult | null>(null);
   const [academicViewTab, setAcademicViewTab] = React.useState<'paper' | 'claims' | 'sources' | 'references'>('paper');
+  const [showReviewReasons, setShowReviewReasons] = React.useState<boolean>(true);
 
   // Track edits
   React.useEffect(() => {
@@ -400,7 +402,13 @@ export const App: React.FC = () => {
                 <AcademicStatsBar
                   result={academicResult}
                   onReset={() => { setAcademicResult(null); setAcademicJob(null); }}
+                  onToggleReasons={() => setShowReviewReasons(!showReviewReasons)}
+                  showReasons={showReviewReasons}
                 />
+
+                {showReviewReasons && academicResult.review_reasons && academicResult.review_reasons.length > 0 && (
+                  <ReviewReasonsPanel reasons={academicResult.review_reasons} />
+                )}
 
                 {/* Sub-nav for Academic Results */}
                 <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.5rem' }}>

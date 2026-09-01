@@ -45,6 +45,19 @@ export const ClaimEvidenceInspector: React.FC<ClaimEvidenceInspectorProps> = ({
     }
   };
 
+  const getOriginBadge = (origin: string) => {
+    switch (origin) {
+      case 'FULL_TEXT':
+        return { label: 'FULL_TEXT', chipClass: 'chip-pass', desc: 'Full paper body text retrieved & inspected' };
+      case 'ABSTRACT':
+        return { label: 'ABSTRACT', chipClass: 'chip-blue', desc: 'Abstract only — full text was not retrieved' };
+      case 'METADATA_ONLY':
+        return { label: 'METADATA_ONLY', chipClass: 'chip-amber', desc: 'Metadata only — no body or abstract text' };
+      default:
+        return { label: 'OTHER', chipClass: 'chip-neutral', desc: 'Excerpt / other origin' };
+    }
+  };
+
   return (
     <div className="tech-panel" style={{ height: '100%' }}>
       <div className="tech-header">
@@ -52,6 +65,7 @@ export const ClaimEvidenceInspector: React.FC<ClaimEvidenceInspectorProps> = ({
         <span className="sec-id">{claims.length} CLAIMS AUDITED</span>
       </div>
 
+      {/* Filter Toolbar */}
       <div style={{ padding: '0.45rem 0.75rem', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
         {['ALL', 'SUPPORTED', 'PARTIALLY_SUPPORTED', 'UNSUPPORTED'].map((v) => (
           <button
@@ -67,6 +81,7 @@ export const ClaimEvidenceInspector: React.FC<ClaimEvidenceInspectorProps> = ({
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', flex: 1, overflow: 'hidden' }}>
+        {/* Claims Master List */}
         <div style={{ borderRight: '1px solid var(--border-subtle)', overflowY: 'auto', padding: '0.65rem' }}>
           {filteredClaims.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-dim)', fontSize: '0.8rem' }}>
@@ -98,9 +113,11 @@ export const ClaimEvidenceInspector: React.FC<ClaimEvidenceInspectorProps> = ({
           )}
         </div>
 
+        {/* Claim Detail & Provenance Inspector */}
         <div style={{ padding: '1rem', overflowY: 'auto' }}>
           {selectedClaim ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Claim Statement Box */}
               <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-medium)', padding: '0.85rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                   <span className="chip chip-blue" style={{ fontSize: '0.7rem' }}>CLAIM STATEMENT</span>
@@ -118,6 +135,7 @@ export const ClaimEvidenceInspector: React.FC<ClaimEvidenceInspectorProps> = ({
                 )}
               </div>
 
+              {/* Attached Evidence & Origin */}
               <div>
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
                   ATTACHED EVIDENCE PASSAGES ({selectedClaim.evidence.length})
@@ -131,6 +149,8 @@ export const ClaimEvidenceInspector: React.FC<ClaimEvidenceInspectorProps> = ({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     {selectedClaim.evidence.map((ev, i) => {
                       const src = sourceMap.get(ev.source_id);
+                      const originMeta = getOriginBadge(ev.origin_type);
+
                       return (
                         <div
                           key={ev.id || i}
@@ -143,8 +163,8 @@ export const ClaimEvidenceInspector: React.FC<ClaimEvidenceInspectorProps> = ({
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                               <span className="chip chip-blue" style={{ fontSize: '0.65rem' }}>{ev.source_id}</span>
-                              <span className="chip chip-cyan" style={{ fontSize: '0.65rem' }}>
-                                ORIGIN: {ev.origin_type}
+                              <span className={`chip ${originMeta.chipClass}`} style={{ fontSize: '0.65rem' }}>
+                                ORIGIN: {originMeta.label}
                               </span>
                             </div>
                             {src && (
@@ -154,7 +174,7 @@ export const ClaimEvidenceInspector: React.FC<ClaimEvidenceInspectorProps> = ({
                                 onClick={() => onOpenSourceModal(src)}
                                 style={{ padding: '0.2rem 0.45rem', fontSize: '0.7rem' }}
                               >
-                                [VIEW SOURCE]
+                                [VIEW SOURCE & METADATA]
                               </button>
                             )}
                           </div>
@@ -163,17 +183,21 @@ export const ClaimEvidenceInspector: React.FC<ClaimEvidenceInspectorProps> = ({
                             "{ev.excerpt}"
                           </div>
 
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginBottom: '0.35rem' }}>
+                            {originMeta.desc}
+                          </div>
+
                           {src && (
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.4rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                              <span>{src.authors.join(', ')} ({src.publication_date?.substring(0, 4) || 'n.d.'})</span>
+                              <span>{src.authors.join(', ') || 'No author listed'} ({src.publication_date?.substring(0, 4) || 'n.d.'})</span>
                               {src.url && (
                                 <a
                                   href={src.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  style={{ color: 'var(--color-cyan)', display: 'inline-flex', alignItems: 'center', gap: '0.2rem', textDecoration: 'none' }}
+                                  style={{ color: 'var(--color-cyan)', display: 'inline-flex', alignItems: 'center', gap: '0.2rem', textDecoration: 'none', fontWeight: 600 }}
                                 >
-                                  <span>OPEN SOURCE</span> <ExternalLink size={11} />
+                                  <span>OPEN SOURCE LINK</span> <ExternalLink size={11} />
                                 </a>
                               )}
                             </div>
@@ -185,8 +209,9 @@ export const ClaimEvidenceInspector: React.FC<ClaimEvidenceInspectorProps> = ({
                 )}
               </div>
 
+              {/* Truthful Evidence Origin Notice */}
               <div style={{ background: 'var(--bg-sunken)', border: '1px solid var(--border-subtle)', padding: '0.65rem 0.85rem', fontSize: '0.75rem', color: 'var(--text-dim)', lineHeight: 1.4 }}>
-                <strong>Truthful Evidence Origin Notice:</strong> Evidence origin (ABSTRACT, ARXIV EXCERPT, METADATA) reflects actual text retrieved. Excerpts are never exaggerated to represent unretrieved full papers.
+                <strong>Truthful Evidence Grounding:</strong> Evidence origins (FULL_TEXT, ABSTRACT, METADATA_ONLY) reflect what HowlWriter actually inspected. Papers with ABSTRACT or METADATA_ONLY origins are not represented as full-text verified.
               </div>
             </div>
           ) : (

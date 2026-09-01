@@ -28,13 +28,14 @@ export const DiffModal: React.FC<DiffModalProps> = ({
 
   const isReady = humanizeResult.status === 'READY';
   const meaningPass = humanizeResult.meaning_preservation_status === 'PASS';
+  const reviewerProvider = humanizeResult.model || humanizeResult.provider || 'independent_semantic_reviewer';
 
   return (
     <div className="modal-overlay">
       <div className="modal-card" style={{ width: '920px' }}>
         <div className="modal-header">
           <div className="modal-title">
-            HUMANIZE REVIEW // DIFF & MEANING VERIFICATION
+            HUMANIZE REVIEW // DIFF & ADVERSARIAL SEMANTIC VERIFICATION
           </div>
           <button type="button" className="btn-drawer-close" onClick={onClose}>
             <X size={14} /> [CLOSE]
@@ -43,15 +44,18 @@ export const DiffModal: React.FC<DiffModalProps> = ({
 
         {/* Verification Summary Banner */}
         <div style={{ padding: '0.65rem 1.25rem', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
             <span className={`chip ${isReady ? 'chip-pass' : 'chip-require'}`} style={{ fontSize: '0.8rem' }}>
               STATUS: {humanizeResult.status}
             </span>
             <span className={`chip ${meaningPass ? 'chip-pass' : 'chip-fail'}`}>
-              MEANING: {humanizeResult.meaning_preservation_status}
+              SEMANTIC VERDICT: {humanizeResult.meaning_preservation_status}
             </span>
             <span className={`chip ${humanizeResult.independence_status === 'INDEPENDENT' ? 'chip-pass' : 'chip-amber'}`}>
-              REVIEWER: {humanizeResult.independence_status}
+              INDEPENDENCE: {humanizeResult.independence_status}
+            </span>
+            <span className="chip chip-neutral" style={{ fontSize: '0.75rem' }}>
+              REVIEWER: {reviewerProvider}
             </span>
           </div>
 
@@ -76,6 +80,11 @@ export const DiffModal: React.FC<DiffModalProps> = ({
         </div>
 
         <div className="modal-body">
+          {/* Adversarial Review Notice */}
+          <div style={{ background: 'var(--bg-sunken)', border: '1px solid var(--border-subtle)', padding: '0.6rem 0.85rem', marginBottom: '0.75rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            <strong>Adversarial Review Judgment:</strong> Semantic verification is performed by an independent model reviewer ({reviewerProvider}) to falsify meaning drift. Reviewer judgments represent rigorous automated scrutiny rather than unquestionable truth.
+          </div>
+
           {/* Lint Improvement Comparison */}
           <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', padding: '0.65rem 0.85rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
             <div style={{ fontSize: '0.8rem', fontFamily: 'var(--font-mono)' }}>
