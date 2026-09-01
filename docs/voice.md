@@ -48,6 +48,22 @@ corpus scan can't honestly produce. It's unconfigured by default
 [docs/howlplane-integration.md](howlplane-integration.md) for why HowlWriter
 doesn't implement this itself.
 
+## Using a Voice Profile with the Humanizer
+
+`howlwriter.humanize.rewriter` treats `config.voice_profile` as a file path
+first. If the value points to an existing JSON file, it is loaded as a
+`VoiceProfile` and its real statistics (sentence-length mean/stdev,
+contraction rate, fragment rate, etc.) plus up to three representative
+examples are injected into the Humanizer prompt. If the value is not a
+file path, it is treated as an author label and no profile content is
+injected.
+
+The CLI accepts a `--voice-profile` argument:
+
+```bash
+howlwriter humanize post.md --mode linkedin --voice-profile ~/.howlwriter/voice.json
+```
+
 ## Why "voice match %" doesn't appear in reports yet
 
 Computing a defensible similarity score between a piece of generated text

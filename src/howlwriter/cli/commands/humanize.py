@@ -16,6 +16,7 @@ from howlwriter.diagnostic.run_record import (
 )
 from howlwriter.domain.document import Document
 from howlwriter.domain.io import atomic_write_text
+from howlwriter.domain.modes import parse_mode
 from howlwriter.domain.report import WritingReport
 from howlwriter.humanize.detector import detect
 from howlwriter.humanize.rewriter import ModelHumanizerRewriter, SafeRewriter
@@ -42,6 +43,17 @@ def add_subparser(
         help="Path to project configuration YAML/TOML.",
     )
     parser.add_argument(
+        "--mode",
+        default=None,
+        help="Writing mode (linkedin, academic, technical, casual, ...).",
+    )
+    parser.add_argument(
+        "--voice-profile",
+        dest="voice_profile",
+        default=None,
+        help="Path to a VoiceProfile JSON, or an author label.",
+    )
+    parser.add_argument(
         "--deterministic",
         action="store_true",
         help="Run in deterministic-only mode without invoking models.",
@@ -66,9 +78,15 @@ def add_subparser(
 
 
 def run(args: argparse.Namespace) -> int:
+    mode = parse_mode(args.mode)
+    config = ConfigLoader().load(
+        mode=mode, project_config_path=args.project_config_path
+    )
+    if args.voice_profile:
+        config.voice_profile = args.voice_profile
+
     text = Path(args.path).read_text(encoding="utf-8")
-    document = Document.parse(text, title=Path(args.path).stem)
-    config = ConfigLoader().load(project_config_path=args.project_config_path)
+    document = Document.parse(text, title=Path(args.path).stem, mode=mode)
 
     lint_before = LintEngine().run(document, config)
     findings = detect(document, config)
@@ -167,7 +185,7 @@ def run(args: argparse.Namespace) -> int:
         report = WritingReport(
             status=status,
             run_id=active_run_id,
-            mode=str(document.mode) if document.mode else None,
+            mode=str(document.mode.value) if document.mode else None,
             humanizer_provider=humanize_res.provider,
             meaning_reviewer_provider=meaning_reviewer_provider,
             reviewer_independence=reviewer_independence,
@@ -185,6 +203,7 @@ def run(args: argparse.Namespace) -> int:
             ),
             total_duration_seconds=total_duration,
             changes=list(humanize_res.changes),
+            change_count=len(humanize_res.changes),
         )
 
         out_path = (
@@ -200,7 +219,7 @@ def run(args: argparse.Namespace) -> int:
         record = RunRecord(
             run_id=active_run_id,
             command="humanize",
-            writing_mode=str(document.mode) if document.mode else None,
+            writing_mode=str(document.mode.value) if document.mode else None,
             success=True,
             status=status,
             humanizer_provider=humanize_res.provider,
@@ -243,7 +262,7 @@ def run(args: argparse.Namespace) -> int:
             failure_record = RunRecord(
                 run_id=active_run_id,
                 command="humanize",
-                writing_mode=str(document.mode) if document.mode else None,
+                writing_mode=str(document.mode.value) if document.mode else None,
                 success=False,
                 status="BLOCKED",
                 humanizer_provider=humanizer_provider,
