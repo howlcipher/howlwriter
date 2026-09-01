@@ -24,6 +24,7 @@ from howlwriter.cli.commands import (
     research,
     runs,
     sources,
+    ui,
     voice,
     writer,
 )
@@ -45,6 +46,7 @@ _COMMAND_MODULES = (
     finalize,
     howl,
     runs,
+    ui,
 )
 
 
