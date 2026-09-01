@@ -74,3 +74,42 @@ def test_invalid_assignment_specs_raise_clear_errors():
     # Invalid root type (e.g. YAML list instead of mapping)
     with pytest.raises(ValueError, match="must be a mapping/dict"):
         load_assignment_spec("- item 1\n- item 2")
+
+
+def test_length_constraints_backward_compat_default():
+    # A legacy spec with no length_constraints key must parse and validate
+    # identically to today -- no hard ceiling, no page range.
+    spec = load_assignment_spec({"title": "Test", "target_words": 1200})
+    assert spec.length_constraints.max_words is None
+    assert spec.length_constraints.max_pages is None
+    assert spec.length_constraints.target_page_min is None
+    assert spec.length_constraints.target_page_max is None
+    assert spec.length_constraints.words_per_page == 275.0
+
+
+def test_length_constraints_page_based_parses_from_dict():
+    spec = load_assignment_spec({
+        "title": "CYBR 601 Attack Chain Lab",
+        "target_words": 2000,
+        "length_constraints": {
+            "max_pages": 10,
+            "target_page_min": 6,
+            "target_page_max": 9,
+        },
+    })
+    assert spec.length_constraints.max_pages == 10
+    assert spec.length_constraints.target_page_min == 6
+    assert spec.length_constraints.target_page_max == 9
+    assert spec.length_constraints.words_per_page == 275.0
+
+
+def test_length_constraints_contradictory_range_raises():
+    with pytest.raises(ValueError, match="contradictory range"):
+        load_assignment_spec({
+            "title": "Test",
+            "length_constraints": {
+                "target_page_min": 6,
+                "target_page_max": 9,
+                "max_words": 100,
+            },
+        })

@@ -1,6 +1,7 @@
 """The complete academic paper pipeline:
 ASSIGNMENT -> RESEARCH -> DRAFT -> LENGTH CORRECTION -> OUTLINE CHECK ->
-VERIFY -> HUMANIZE -> LINT -> RED PEN -> MEANING REVIEW -> REFERENCES -> REPORT.
+COVERAGE CHECK -> VERIFY -> HUMANIZE -> LINT -> RED PEN -> MEANING REVIEW ->
+CONSISTENCY REVIEW -> REFERENCES -> REPORT.
 """
 
 from __future__ import annotations
@@ -11,12 +12,19 @@ import time
 from typing import Any
 
 from howlwriter.academic.citations import AcademicCitationManager, CitationAnalysis
+from howlwriter.academic.consistency import (
+    ConsistencyReviewResult,
+    RealModelConsistencyReviewer,
+    has_staged_content,
+)
+from howlwriter.academic.coverage import CoverageResult, check_requirements_coverage
 from howlwriter.academic.length import (
-    calculate_word_tolerance,
     count_body_words,
-    evaluate_word_count,
+    evaluate_word_count_bounds,
+    resolve_length_bounds,
 )
 from howlwriter.academic.outline import OutlineResult, check_outline_conformance
+from howlwriter.academic.redundancy import RedundancyResult, detect_redundancy
 from howlwriter.academic.research import AcademicResearcher
 from howlwriter.academic.spec import AssignmentSpec, load_assignment_spec
 from howlwriter.academic.verifier import AcademicVerifier, VerificationSummary
@@ -49,6 +57,12 @@ from howlwriter.review.meaning import (
     SemanticMeaningResult,
 )
 
+# A redundancy result is treated as a real deficiency (feeding NEEDS_REVIEW)
+# only once it clears one of these thresholds -- a single incidental overlap
+# is noise, not a rubric-evidence-restatement problem.
+_REDUNDANCY_TABLE_RESTATEMENT_GATE = 1
+_REDUNDANCY_NEAR_DUPLICATE_GATE = 2
+
 
 @dataclass
 class AcademicPipelineResult:
@@ -59,9 +73,12 @@ class AcademicPipelineResult:
     verification_summary: VerificationSummary
     citation_analysis: CitationAnalysis
     outline_result: OutlineResult
+    coverage_result: CoverageResult
+    redundancy_result: RedundancyResult
     lint_matches: list[RuleMatch]
     red_pen_findings: list[RedPenFinding]
     semantic_meaning_result: SemanticMeaningResult | None
+    consistency_review_result: ConsistencyReviewResult | None
     report: WritingReport
 
 
@@ -143,13 +160,14 @@ def run_academic_pipeline(
     writer_duration = round(time.time() - t_writer_start, 2)
 
     # 3. WORD COUNT & BOUNDED LENGTH CORRECTION
+    bounds = resolve_length_bounds(spec)
     actual_words = count_body_words(draft_doc.text)
-    min_words, max_words = calculate_word_tolerance(
-        spec.target_words, spec.word_tolerance_percent
+    min_words, max_words = bounds.min_words, bounds.max_words
+    wc_status, wc_reason = evaluate_word_count_bounds(
+        actual_words, bounds.min_words, bounds.max_words, bounds.target_words
     )
-    wc_status, wc_reason = evaluate_word_count(
-        actual_words, spec.target_words, spec.word_tolerance_percent
-    )
+
+    pre_correction_redundancy = detect_redundancy(draft_doc)
 
     if can_use_models and wc_status != "PASS" and max_length_retries > 0:
         retries = 0
@@ -164,21 +182,39 @@ def run_academic_pipeline(
                 cwd=cwd,
                 custom_backend=custom_backend,
                 run_id=active_run_id,
+                redundancy_hint=(
+                    pre_correction_redundancy if direction == "TIGHTEN" else None
+                ),
             )
             draft_doc = corr_res.document
             actual_words = count_body_words(draft_doc.text)
-            wc_status, wc_reason = evaluate_word_count(
-                actual_words, spec.target_words, spec.word_tolerance_percent
+            wc_status, wc_reason = evaluate_word_count_bounds(
+                actual_words, bounds.min_words, bounds.max_words, bounds.target_words
             )
             retries += 1
 
     # 4. OUTLINE CONFORMANCE CHECK
     outline_res = check_outline_conformance(draft_doc, spec.outline)
 
+    # 4b. MINIMUM-SUFFICIENT-COVERAGE CHECK (explicit requirements)
+    coverage_res = check_requirements_coverage(draft_doc, spec.requirements)
+
+    # 4c. REDUNDANCY CHECK (final, post-correction)
+    redundancy_res = detect_redundancy(draft_doc)
+    has_redundancy_deficiency = (
+        sum(1 for f in redundancy_res.findings if f.kind == "table_restatement")
+        >= _REDUNDANCY_TABLE_RESTATEMENT_GATE
+        or sum(1 for f in redundancy_res.findings if f.kind == "near_duplicate_paragraph")
+        >= _REDUNDANCY_NEAR_DUPLICATE_GATE
+    )
+
     # 5. CLAIM VERIFICATION & PROVENANCE GRAPH
     verifier = AcademicVerifier()
     provenance_graph, verif_summary = verifier.build_provenance_and_verify(
-        draft_doc, sources, stated_claims=writer_stated_claims
+        draft_doc,
+        sources,
+        stated_claims=writer_stated_claims,
+        additional_grounding_texts=[spec.topic, *spec.requirements],
     )
 
     # 6. HUMANIZE (ACADEMIC CONTEXT)
@@ -228,6 +264,18 @@ def run_academic_pipeline(
     elif humanizer_provider is not None:
         reviewer_independence = "NOT_REVIEWED"
 
+    # 8b. CONSISTENCY REVIEW (sequence/dependency + heading/label + citation fit)
+    consistency_res: ConsistencyReviewResult | None = None
+    if can_use_models and bridge.is_role_configured(WritingRole.FINAL_REVIEWER):
+        consistency_res = RealModelConsistencyReviewer().review(
+            transformed_doc,
+            sources,
+            staged_content_detected=has_staged_content(transformed_doc),
+            cwd=cwd,
+            custom_backend=custom_backend,
+            run_id=active_run_id,
+        )
+
     # 9. APA 7 CITATIONS & REFERENCES SECTION ATTACHMENT
     citation_mgr = AcademicCitationManager()
     citation_analysis = citation_mgr.analyze_and_build_references(
@@ -259,14 +307,18 @@ def run_academic_pipeline(
         verif_summary.unsupported_claims > 0
         or verif_summary.contradicted_claims > 0
         or bool(verif_summary.quotation_warnings)
+        or bool(verif_summary.identifier_warnings)
     )
 
     if (
         wc_status != "PASS"
         or outline_res.status != "PASS"
+        or coverage_res.status != "PASS"
         or has_source_deficiency
         or has_claim_deficiency
+        or has_redundancy_deficiency
         or (semantic_res is not None and semantic_res.verdict == "FAIL")
+        or (consistency_res is not None and consistency_res.verdict == "FAIL")
         or (meaning_det.status != "PASS")
         or (humanizer_provider is not None and banned_word_count > 0)
     ):
@@ -291,14 +343,26 @@ def run_academic_pipeline(
         ai_style_warnings=ai_style_count,
         meaning_preservation=meaning_det.status,
         semantic_meaning_status=semantic_res.verdict if semantic_res else None,
-        target_words=spec.target_words,
+        consistency_review_status=consistency_res.verdict if consistency_res else None,
+        consistency_findings_count=(
+            len(consistency_res.findings) if consistency_res else None
+        ),
+        target_words=bounds.target_words,
         min_words=min_words,
         max_words=max_words,
+        hard_max_words=bounds.hard_max_words,
+        target_pages_min=spec.length_constraints.target_page_min,
+        target_pages_max=spec.length_constraints.target_page_max,
+        max_pages=spec.length_constraints.max_pages,
         actual_body_words=actual_words,
         word_count_status=wc_status,
         required_outline_topics=outline_res.required_topics_count,
         present_outline_topics=outline_res.present_topics_count,
         outline_status=outline_res.status,
+        required_criteria_count=coverage_res.required_count,
+        present_criteria_count=coverage_res.present_count,
+        requirements_coverage_status=coverage_res.status,
+        redundancy_findings_count=len(redundancy_res.findings),
         sources_retrieved=len(sources),
         sources_used=len(citation_analysis.used_sources),
         sources_required=spec.source_requirements.minimum_sources,
@@ -306,6 +370,8 @@ def run_academic_pipeline(
         partially_supported_claims=verif_summary.partially_supported_claims,
         unsupported_claims=verif_summary.unsupported_claims,
         contradicted_claims=verif_summary.contradicted_claims,
+        quotation_warnings=len(verif_summary.quotation_warnings),
+        identifier_warnings=len(verif_summary.identifier_warnings),
         citation_style=spec.citation_style,
         in_text_citations=citation_analysis.in_text_citation_count,
         reference_entries=len(citation_analysis.used_sources) or len(sources),
@@ -334,6 +400,13 @@ def run_academic_pipeline(
         ai_style_warnings=ai_style_count,
         meaning_preservation=meaning_det.status,
         semantic_meaning_status=semantic_res.verdict if semantic_res else None,
+        length_hard_ceiling_exceeded=(
+            bounds.hard_max_words is not None and actual_words > bounds.hard_max_words
+        ),
+        requirements_coverage_status=coverage_res.status,
+        redundancy_flagged=has_redundancy_deficiency,
+        identifier_grounding_flagged=bool(verif_summary.identifier_warnings),
+        consistency_review_status=consistency_res.verdict if consistency_res else None,
         humanizer_duration_seconds=humanize_duration,
         meaning_reviewer_duration_seconds=meaning_review_duration,
         total_duration_seconds=total_duration,
@@ -357,8 +430,11 @@ def run_academic_pipeline(
         verification_summary=verif_summary,
         citation_analysis=citation_analysis,
         outline_result=outline_res,
+        coverage_result=coverage_res,
+        redundancy_result=redundancy_res,
         lint_matches=lint_after,
         red_pen_findings=red_pen_findings,
         semantic_meaning_result=semantic_res,
+        consistency_review_result=consistency_res,
         report=report,
     )

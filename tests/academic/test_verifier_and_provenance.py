@@ -97,3 +97,45 @@ def test_quotation_integrity_checks():
     assert len(summary2.quotation_warnings) == 1
     assert "was not found verbatim in any retrieved source" in summary2.quotation_warnings[0]
     assert summary2.status == "NEEDS_REVIEW"
+
+
+def test_identifier_warnings_populate_verification_summary():
+    s1 = Source(
+        id="S001",
+        title="Cloud Threat Detection Overview",
+        authors=["Rivera, Ana"],
+        publication_date=date(2024, 6, 1),
+        access_date=date.today(),
+        retrieved_text=(
+            "AWS GuardDuty and SIEM detections can flag anomalous credential use "
+            "and unusual API activity tied to compromised access keys."
+        ),
+    )
+
+    # The draft invents a suspiciously precise jitter figure not present in
+    # any retrieved source or the assignment's own text.
+    doc_text = """# Beaconing Behavior
+
+The malware exhibited beacon traffic with 34.72% jitter to evade detection,
+consistent with AWS GuardDuty telemetry for anomalous credential use.
+"""
+    doc = Document.parse(doc_text)
+    verifier = AcademicVerifier()
+    _, summary = verifier.build_provenance_and_verify(doc, [s1])
+
+    assert len(summary.identifier_warnings) >= 1
+    assert any("34.72" in w for w in summary.identifier_warnings)
+    assert summary.status == "NEEDS_REVIEW"
+
+
+def test_identifier_grounded_via_additional_grounding_texts_not_flagged():
+    doc_text = "The lab specifically analyzes CVE-2024-31337 as a case study."
+    doc = Document.parse(doc_text)
+    verifier = AcademicVerifier()
+    _, summary = verifier.build_provenance_and_verify(
+        doc,
+        sources=[],
+        additional_grounding_texts=["Analyze CVE-2024-31337 as the primary case study."],
+    )
+
+    assert not any("CVE-2024-31337" in w for w in summary.identifier_warnings)

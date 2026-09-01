@@ -35,6 +35,18 @@ def add_subparser(
         default=None,
         help="Output path (default: <path>.howled.md).",
     )
+    parser.add_argument(
+        "--target-words",
+        type=int,
+        default=None,
+        help="Optional target word count; final document is checked against it.",
+    )
+    parser.add_argument(
+        "--max-words",
+        type=int,
+        default=None,
+        help="Optional hard word count ceiling (used with --target-words).",
+    )
     parser.set_defaults(handler=run)
     return parser
 
@@ -42,7 +54,11 @@ def add_subparser(
 def run(args: argparse.Namespace) -> int:
     config = ConfigLoader().load(project_config_path=args.project_config_path)
     result = run_howl_pipeline(
-        args.path, config, deterministic_only=args.deterministic
+        args.path,
+        config,
+        deterministic_only=args.deterministic,
+        target_words=args.target_words,
+        max_words=args.max_words,
     )
 
     if result.lint_matches:

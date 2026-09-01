@@ -1,0 +1,39 @@
+title: "CYBR 601 Laboratory Report: Cloud and Kubernetes Attack Chain Analysis"
+topic: >
+  A graduate cybersecurity laboratory report analyzing three plausible attack
+  chains against a hypothetical enterprise cloud/Kubernetes environment,
+  covering leaked-credential cloud compromise, Kubernetes RBAC privilege
+  escalation, and phishing-based lateral movement, with MITRE ATT&CK mappings,
+  representative tools, and defensive telemetry for each chain.
+type: academic
+target_words: 2000
+word_tolerance_percent: 10
+citation_style: apa7
+length_constraints:
+  target_page_min: 6
+  target_page_max: 9
+  max_pages: 10
+  words_per_page: 275
+source_requirements:
+  minimum_sources: 3
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - "Include exactly three plausible attack chains, each in its own subsection."
+  - "For each attack chain, map the relevant steps to MITRE ATT&CK tactics and techniques."
+  - "For each attack chain, name representative tools an attacker or defender might use."
+  - "For each attack chain, describe defensive telemetry and detection opportunities."
+  - "Do not invent exact technical identifiers (e.g. specific CVE numbers, ATT&CK technique
+     IDs, Windows Event IDs, or cloud provider finding names) unless grounded in the retrieved
+     source evidence; generalize instead when precise identifiers are not available."
+  - "Each attack chain must be logically consistent: a stage may not use a capability or
+     access level before the earlier stage that is supposed to grant it."
+  - "Keep the paper concise: approximately three-quarters of a page per attack chain is
+     sufficient; avoid unnecessary elaboration, repeated explanations, and padding."
+outline:
+  - "Introduction"
+  - "Attack Chain One: Leaked Cloud Credentials"
+  - "Attack Chain Two: Kubernetes RBAC Privilege Escalation"
+  - "Attack Chain Three: Phishing-Based Lateral Movement"
+  - "Cross-Chain Defensive Themes"
+  - "Conclusion"

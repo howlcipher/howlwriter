@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import re
 
+from howlwriter.academic.identifiers import find_ungrounded_identifiers
 from howlwriter.domain.claim import Claim, ClaimType, VerificationStatus
 from howlwriter.domain.document import Document
 from howlwriter.domain.provenance import ProvenanceGraph
@@ -28,6 +29,7 @@ class VerificationSummary(DataClassSerializationMixin):
     opinion_or_inference_claims: int = 0
     quotation_claims: int = 0
     quotation_warnings: list[str] = field(default_factory=list)
+    identifier_warnings: list[str] = field(default_factory=list)
     status: str = "PASS"  # "PASS" | "NEEDS_REVIEW" | "REJECTED"
 
 
@@ -108,8 +110,15 @@ class AcademicVerifier:
         document: Document,
         sources: list[Source],
         stated_claims: list[dict] | None = None,
+        additional_grounding_texts: list[str] | None = None,
     ) -> tuple[ProvenanceGraph, VerificationSummary]:
-        """Extracts claims from paper, cross-references with sources, and verifies evidence."""
+        """Extracts claims from paper, cross-references with sources, and verifies evidence.
+
+        additional_grounding_texts widens the identifier-grounding corpus
+        beyond the sources' retrieved_text (e.g. the assignment's own
+        topic/requirements text), so an identifier the assignment itself
+        legitimately names is never flagged as ungrounded.
+        """
         graph = ProvenanceGraph()
         for s in sources:
             graph.add_source(s)
@@ -147,6 +156,18 @@ class AcademicVerifier:
                 quotation_warnings.append(
                     f'Direct quotation "{quote_text[:60]}..." was not found verbatim in any retrieved source.'
                 )
+
+        # 3b. Check unsupported-specificity: precise technical identifiers /
+        # figures that are not grounded in any source or additional
+        # grounding text (e.g. the assignment's own topic/requirements).
+        grounding_texts = [s.retrieved_text or "" for s in sources]
+        grounding_texts.extend(additional_grounding_texts or [])
+        identifier_findings = find_ungrounded_identifiers(document.text, grounding_texts)
+        identifier_warnings = [
+            f'Ungrounded {f.kind} "{f.identifier}" (context: "{f.context_snippet}") was not found '
+            "in any retrieved source or assignment text."
+            for f in identifier_findings
+        ]
 
         evidence_counter = 1
         supported_count = 0
@@ -242,7 +263,12 @@ class AcademicVerifier:
                     opinion_count += 1
 
         overall_status = "PASS"
-        if unsupported_count > 0 or contradicted_count > 0 or quotation_warnings:
+        if (
+            unsupported_count > 0
+            or contradicted_count > 0
+            or quotation_warnings
+            or identifier_warnings
+        ):
             overall_status = "NEEDS_REVIEW"
 
         summary = VerificationSummary(
@@ -254,6 +280,7 @@ class AcademicVerifier:
             opinion_or_inference_claims=opinion_count,
             quotation_claims=quote_count,
             quotation_warnings=quotation_warnings,
+            identifier_warnings=identifier_warnings,
             status=overall_status,
         )
 

@@ -6,7 +6,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from howlwriter.academic.length import calculate_word_tolerance, count_body_words
+from howlwriter.academic.length import count_body_words, resolve_length_bounds
+from howlwriter.academic.prompts import ACADEMIC_PRIORITY_ORDERING_GUIDANCE
+from howlwriter.academic.redundancy import RedundancyResult
 from howlwriter.academic.spec import AssignmentSpec
 from howlwriter.citations.apa7 import APA7Formatter
 from howlwriter.config.schema import HowlWriterConfig
@@ -16,6 +18,24 @@ from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.domain.source import Source
 from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import WritingRole
+
+
+def _aim_words(min_words: int, target_words: int) -> int:
+    """The word count the WRITER should aim for: near the lower-middle of the
+    allowed range, never the maximum -- see Goal H, "stop elaborating"."""
+    return min_words + round((target_words - min_words) / 2)
+
+
+def _format_outline(outline: list[str]) -> str:
+    if outline:
+        return "\n".join(f"- {topic}" for topic in outline)
+    return "- Comprehensive analysis"
+
+
+def _format_requirements(requirements: list[str]) -> str:
+    if requirements:
+        return "\n".join(f"- {r}" for r in requirements)
+    return "- Follow academic conventions"
 
 
 @dataclass
@@ -49,9 +69,9 @@ class ModelAcademicWriter:
         bridge = get_howlplane_bridge()
         formatter = APA7Formatter()
 
-        min_words, max_words = calculate_word_tolerance(
-            spec.target_words, spec.word_tolerance_percent
-        )
+        bounds = resolve_length_bounds(spec)
+        min_words, max_words = bounds.min_words, bounds.max_words
+        aim_words = _aim_words(min_words, bounds.target_words)
 
         # Build formatted source list with exact APA in-text citation keys
         source_context_lines: list[str] = []
@@ -70,23 +90,19 @@ class ModelAcademicWriter:
 
         sources_block = "\n".join(source_context_lines) if source_context_lines else "No sources available."
 
-        if spec.outline:
-            outline_str = "\n".join(f"- {topic}" for topic in spec.outline)
-        else:
-            outline_str = "- Comprehensive analysis"
-
-        if spec.requirements:
-            reqs_str = "\n".join(f"- {r}" for r in spec.requirements)
-        else:
-            reqs_str = "- Follow academic conventions"
+        outline_str = _format_outline(spec.outline)
+        reqs_str = _format_requirements(spec.requirements)
 
         prompt = f"""You are executing the WRITER role under the HowlWriter academic contract.
 Your mission is to draft a rigorous, high-quality academic research paper on the specified topic,
 strictly structured according to the required outline and strictly grounded in the retrieved sources.
 
+{ACADEMIC_PRIORITY_ORDERING_GUIDANCE}
+
 ASSIGNMENT TITLE: {spec.title}
 TOPIC: {spec.topic}
-TARGET WORD COUNT (BODY): {spec.target_words} words (Allowed range: {min_words} to {max_words} words)
+TARGET WORD COUNT (BODY): aim for approximately {aim_words} words
+  (Allowed range: {min_words} to {max_words} words)
 CITATION STYLE: APA 7
 
 REQUIRED OUTLINE:
@@ -103,11 +119,25 @@ CRITICAL ACADEMIC WRITING RULES:
 2. Insert APA 7 in-text citations using the exact author/year format provided for each source
    (e.g. (Smith, 2024) or Smith (2024)).
 3. DO NOT invent external sources, authors, or DOIs not provided in the source evidence list.
-4. DO NOT invent or fabricate statistics, dates, or study findings.
+4. DO NOT invent or fabricate statistics, dates, or study findings. This also applies to precise
+   technical identifiers and figures (e.g. exact CVE/ATT&CK IDs, event IDs, cloud finding names,
+   exact percentages, entropy, or timing values): only state one if it appears in the source
+   evidence above; otherwise generalize (e.g. "GuardDuty may flag anomalous credential use"
+   rather than inventing a specific finding name).
 5. If evidence is insufficient for a claim, qualify the statement (e.g. "Research suggests...") or omit it.
 6. Address every section in the required outline. Use clear markdown headings for major outline sections.
-7. Write substantive, rigorous academic prose aiming for the body target of {spec.target_words} words.
-8. DO NOT include a "# References" section at the end (the HowlWriter engine generates and attaches it).
+7. Aim for approximately {aim_words} words -- near the lower-middle of the allowed range, not the
+   maximum. Stop once the outline and explicit requirements are fully addressed with sufficient
+   (not exhaustive) support; do not pad, restate, or add tangential elaboration to approach the
+   maximum. A shorter paper that fully satisfies the outline and requirements is strongly
+   preferred over a longer one that restates points already made.
+8. Only attach a citation to a claim when that specific source actually establishes or supports
+   that specific claim. Never attach a citation merely because the source is topically adjacent
+   to the paragraph's subject.
+9. For any staged, sequential, or procedural content (e.g. attack chains, workflows, timelines),
+   ensure each stage only uses capabilities or access the actor has already acquired by that
+   point -- do not have a later stage retroactively justify an earlier one.
+10. DO NOT include a "# References" section at the end (the HowlWriter engine generates and attaches it).
 
 OUTPUT FORMAT:
 Return a ```yaml code block containing:
@@ -127,6 +157,7 @@ warnings: []
         result = bridge.execute_writing_role(
             role=self.role,
             prompt=prompt,
+            system_instruction=ACADEMIC_PRIORITY_ORDERING_GUIDANCE,
             context={
                 "topic": spec.topic,
                 "title": spec.title,
@@ -187,34 +218,55 @@ warnings: []
         cwd: Path | str | None = None,
         custom_backend: Any | None = None,
         run_id: str | None = None,
+        redundancy_hint: RedundancyResult | None = None,
     ) -> WriterDraftResult:
         """Performs a bounded corrective pass to bring paper body within target word count."""
         bridge = get_howlplane_bridge()
-        min_words, max_words = calculate_word_tolerance(
-            spec.target_words, spec.word_tolerance_percent
-        )
+        bounds = resolve_length_bounds(spec)
+        min_words, max_words = bounds.min_words, bounds.max_words
+        aim_words = _aim_words(min_words, bounds.target_words)
+        outline_str = _format_outline(spec.outline)
+        reqs_str = _format_requirements(spec.requirements)
 
         if direction == "EXPAND":
             instruction = (
                 f"The draft is currently {current_words} words, which is below the target range "
-                f"({min_words}–{max_words} words; target: {spec.target_words}).\n"
-                f"Please expand thin sections with deeper academic analysis and discussion "
-                f"using the EXISTING retrieved sources and evidence. DO NOT add fluff or invent facts."
+                f"({min_words}–{max_words} words; target: {bounds.target_words}).\n"
+                f"Confirm the outline sections and explicit requirements below are addressed with "
+                f"sufficient depth before adding material; prioritize expanding only genuinely "
+                f"thin/underdeveloped sections relative to this list using the EXISTING retrieved "
+                f"sources and evidence. DO NOT add fluff, restate existing points merely to add "
+                f"words, or invent facts."
             )
         else:
+            hint_lines: list[str] = []
+            if redundancy_hint is not None and redundancy_hint.findings:
+                hint_lines.append("Specific redundancy already detected (address these first):")
+                for finding in redundancy_hint.findings:
+                    hint_lines.append(f"- {finding.description}")
+            hint_str = "\n".join(hint_lines)
             instruction = (
                 f"The draft is currently {current_words} words, which exceeds the target range "
-                f"({min_words}–{max_words} words; target: {spec.target_words}).\n"
+                f"({min_words}–{max_words} words; target: {bounds.target_words}).\n"
                 f"Please tighten the prose, eliminate redundancy, and condense phrasing while "
-                f"strictly preserving all outline sections, factual points, and citations."
-            )
+                f"strictly preserving all outline sections, factual points, and citations.\n"
+                f"{hint_str}"
+            ).strip()
 
         prompt = f"""You are executing a LENGTH CORRECTION pass for the academic paper: "{spec.title}".
+
+{ACADEMIC_PRIORITY_ORDERING_GUIDANCE}
 
 INSTRUCTION:
 {instruction}
 
-TARGET BODY WORDS: {spec.target_words} (Allowed range: {min_words} to {max_words} words)
+TARGET BODY WORDS: aim for approximately {aim_words} words (Allowed range: {min_words} to {max_words} words)
+
+REQUIRED OUTLINE:
+{outline_str}
+
+EXPLICIT ASSIGNMENT REQUIREMENTS:
+{reqs_str}
 
 CURRENT DRAFT:
 ```markdown
@@ -233,6 +285,7 @@ warnings: []
         result = bridge.execute_writing_role(
             role=self.role,
             prompt=prompt,
+            system_instruction=ACADEMIC_PRIORITY_ORDERING_GUIDANCE,
             context={
                 "topic": spec.topic,
                 "title": spec.title,

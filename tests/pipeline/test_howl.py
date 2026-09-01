@@ -42,3 +42,34 @@ def test_pipeline_final_document_preserves_word_content_when_no_safe_rewrite_app
     original_words = set(result.original_document.text.split())
     final_words = set(result.final_document.text.split())
     assert original_words == final_words
+
+
+def test_pipeline_length_hook_reports_pass_within_target():
+    result = run_howl_pipeline(
+        FIXTURES / "sample_clean_human.md",
+        default_config(),
+        target_words=113,
+        word_tolerance_percent=20.0,
+    )
+    assert result.report.target_words == 113
+    assert result.report.actual_body_words == 113
+    assert result.report.word_count_status == "PASS"
+    assert result.report.status == "READY"
+
+
+def test_pipeline_length_hook_hard_ceiling_forces_needs_review():
+    result = run_howl_pipeline(
+        FIXTURES / "sample_clean_human.md",
+        default_config(),
+        target_words=113,
+        word_tolerance_percent=50.0,
+        max_words=50,
+    )
+    assert result.report.word_count_status == "TOO_LONG"
+    assert result.report.status == "NEEDS_REVIEW"
+
+
+def test_pipeline_without_target_words_omits_word_count_section():
+    result = run_howl_pipeline(FIXTURES / "sample_clean_human.md", default_config())
+    assert result.report.target_words is None
+    assert "Word Count" not in result.report.render_text()

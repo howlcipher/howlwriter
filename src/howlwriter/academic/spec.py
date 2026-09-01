@@ -21,6 +21,22 @@ class SourceRequirements(DataClassSerializationMixin):
 
 
 @dataclass
+class LengthConstraints(DataClassSerializationMixin):
+    """Optional hard/soft length limits layered on top of target_words.
+
+    All fields default to None (or the conventional academic words-per-page
+    estimate), so an assignment spec that only sets target_words/
+    word_tolerance_percent behaves exactly as it did before this field existed.
+    """
+
+    max_words: int | None = None
+    max_pages: float | None = None
+    target_page_min: float | None = None
+    target_page_max: float | None = None
+    words_per_page: float = 275.0
+
+
+@dataclass
 class AssignmentSpec(DataClassSerializationMixin):
     title: str = ""
     topic: str = ""
@@ -29,6 +45,7 @@ class AssignmentSpec(DataClassSerializationMixin):
     word_tolerance_percent: float = 10.0
     citation_style: str = "apa7"
     source_requirements: SourceRequirements = field(default_factory=SourceRequirements)
+    length_constraints: LengthConstraints = field(default_factory=LengthConstraints)
     requirements: list[str] = field(default_factory=list)
     outline: list[str] = field(default_factory=list)
     voice_profile: str | None = None
@@ -37,6 +54,8 @@ class AssignmentSpec(DataClassSerializationMixin):
     def __post_init__(self) -> None:
         if isinstance(self.source_requirements, dict):
             self.source_requirements = SourceRequirements.from_dict(self.source_requirements)
+        if isinstance(self.length_constraints, dict):
+            self.length_constraints = LengthConstraints.from_dict(self.length_constraints)
         if not self.title and self.topic:
             # Use first line or up to 60 chars of topic as default title
             clean_topic = self.topic.strip().split("\n")[0]
@@ -72,6 +91,46 @@ def validate_assignment_spec(spec: AssignmentSpec) -> list[str]:
             f"minimum_sources must be non-negative, got {spec.source_requirements.minimum_sources}."
         )
 
+    lc = spec.length_constraints
+    if lc.max_words is not None and lc.max_words <= 0:
+        errors.append(f"length_constraints.max_words must be positive, got {lc.max_words}.")
+    if lc.max_pages is not None and lc.max_pages <= 0:
+        errors.append(f"length_constraints.max_pages must be positive, got {lc.max_pages}.")
+    if lc.words_per_page <= 0:
+        errors.append(
+            f"length_constraints.words_per_page must be positive, got {lc.words_per_page}."
+        )
+    if lc.target_page_min is not None and lc.target_page_min <= 0:
+        errors.append(
+            f"length_constraints.target_page_min must be positive, got {lc.target_page_min}."
+        )
+    if lc.target_page_max is not None and lc.target_page_max <= 0:
+        errors.append(
+            f"length_constraints.target_page_max must be positive, got {lc.target_page_max}."
+        )
+    if (
+        lc.target_page_min is not None
+        and lc.target_page_max is not None
+        and lc.target_page_min > lc.target_page_max
+    ):
+        errors.append(
+            "length_constraints.target_page_min must be <= target_page_max "
+            f"(got {lc.target_page_min} > {lc.target_page_max})."
+        )
+
+    if not errors:
+        # Cross-check that the hard ceiling doesn't conflict with the
+        # requested soft target range (e.g. a max_words tighter than the
+        # words a page-derived target_page_min would already require).
+        from howlwriter.academic.length import resolve_length_bounds
+
+        bounds = resolve_length_bounds(spec)
+        if bounds.min_words > bounds.max_words:
+            errors.append(
+                "length_constraints produce a contradictory range: the resolved minimum "
+                f"({bounds.min_words} words) exceeds the resolved maximum ({bounds.max_words} words)."
+            )
+
     return errors
 
 
@@ -106,6 +165,13 @@ def load_assignment_spec(source: str | Path | dict[str, Any]) -> AssignmentSpec:
         raw_data["source_requirements"] = sr
     elif sr_data is None:
         raw_data["source_requirements"] = SourceRequirements()
+
+    # Parse length_constraints nested dict
+    lc_data = raw_data.get("length_constraints")
+    if isinstance(lc_data, dict):
+        raw_data["length_constraints"] = LengthConstraints.from_dict(lc_data)
+    elif lc_data is None:
+        raw_data["length_constraints"] = LengthConstraints()
 
     spec = AssignmentSpec.from_dict(raw_data)
     errors = validate_assignment_spec(spec)

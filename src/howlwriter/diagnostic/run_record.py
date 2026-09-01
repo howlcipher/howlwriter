@@ -154,6 +154,14 @@ class RunRecord(DataClassSerializationMixin):
     semantic_meaning_status: str | None = None
     changes_count: int = 0
 
+    # Constraint-compliance signals (status/boolean only, mirroring the
+    # granularity of the fields already mirrored above)
+    length_hard_ceiling_exceeded: bool = False
+    requirements_coverage_status: str | None = None
+    redundancy_flagged: bool = False
+    identifier_grounding_flagged: bool = False
+    consistency_review_status: str | None = None
+
     # Timing metrics
     humanizer_duration_seconds: float | None = None
     meaning_reviewer_duration_seconds: float | None = None

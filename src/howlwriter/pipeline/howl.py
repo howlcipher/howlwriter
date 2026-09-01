@@ -13,6 +13,11 @@ from pathlib import Path
 import time
 from typing import Any
 
+from howlwriter.academic.length import (
+    calculate_word_tolerance,
+    count_body_words,
+    evaluate_word_count_bounds,
+)
 from howlwriter.config.schema import HowlWriterConfig
 from howlwriter.diagnostic.run_record import (
     RunRecord,
@@ -58,6 +63,9 @@ def run_howl_pipeline(
     deterministic_only: bool = False,
     custom_backend: Any | None = None,
     run_id: str | None = None,
+    target_words: int | None = None,
+    word_tolerance_percent: float = 15.0,
+    max_words: int | None = None,
 ) -> PipelineResult:
     start_time = time.time()
     active_run_id = run_id or generate_run_id()
@@ -149,6 +157,25 @@ def run_howl_pipeline(
         )
         ai_style_count = len(lint_matches) - banned_word_count
 
+        # Optional length constraint (deliberately no outline/rubric concept
+        # for the general howl pipeline this milestone -- see academic/
+        # pipeline.py for the full constraint-aware academic pipeline).
+        actual_words: int | None = None
+        min_words: int | None = None
+        resolved_max_words: int | None = None
+        wc_status: str | None = None
+        if target_words is not None:
+            actual_words = count_body_words(final_document.text)
+            min_words, soft_max_words = calculate_word_tolerance(
+                target_words, word_tolerance_percent
+            )
+            resolved_max_words = (
+                min(soft_max_words, max_words) if max_words is not None else soft_max_words
+            )
+            wc_status, _ = evaluate_word_count_bounds(
+                actual_words, min_words, resolved_max_words, target_words
+            )
+
         # Determine final readiness status
         if (
             semantic_meaning_result is not None
@@ -162,6 +189,7 @@ def run_howl_pipeline(
                 and semantic_meaning_result.verdict == "PASS_WITH_WARNINGS"
             )
             or (humanizer_provider is not None and banned_word_count > 0)
+            or (wc_status is not None and wc_status != "PASS")
         ):
             status = "NEEDS_REVIEW"
         else:
@@ -197,6 +225,11 @@ def run_howl_pipeline(
             ),
             total_duration_seconds=total_duration,
             changes=changes,
+            target_words=target_words,
+            min_words=min_words,
+            max_words=resolved_max_words,
+            actual_body_words=actual_words,
+            word_count_status=wc_status,
         )
 
         record = RunRecord(

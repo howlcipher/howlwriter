@@ -52,17 +52,29 @@ class WritingReport(DataClassSerializationMixin):
     target_words: int | None = None
     min_words: int | None = None
     max_words: int | None = None
+    hard_max_words: int | None = None
+    target_pages_min: float | None = None
+    target_pages_max: float | None = None
+    max_pages: float | None = None
     actual_body_words: int | None = None
     word_count_status: str | None = None
     required_outline_topics: int | None = None
     present_outline_topics: int | None = None
     outline_status: str | None = None
+    required_criteria_count: int | None = None
+    present_criteria_count: int | None = None
+    requirements_coverage_status: str | None = None
     banned_words: int | None = None
     ai_style_warnings: int | None = None
+    quotation_warnings: int | None = None
+    identifier_warnings: int | None = None
+    redundancy_findings_count: int | None = None
     lint_before_count: int | None = None
     lint_after_count: int | None = None
     meaning_preservation: MeaningPreservationStatus = "NOT_EVALUATED"
     semantic_meaning_status: str | None = None
+    consistency_review_status: str | None = None
+    consistency_findings_count: int | None = None
     writer_duration_seconds: float | None = None
     researcher_duration_seconds: float | None = None
     humanizer_duration_seconds: float | None = None
@@ -138,9 +150,17 @@ class WritingReport(DataClassSerializationMixin):
         # Academic Word Count Section
         if self.target_words is not None:
             lines.append("Word Count:")
+            if self.target_pages_min is not None and self.target_pages_max is not None:
+                lines.append(
+                    f"  Target Pages:        {self.target_pages_min:g}–{self.target_pages_max:g}"
+                )
+            if self.max_pages is not None:
+                lines.append(f"  Maximum Pages:       {self.max_pages:g}")
             lines.append(f"  Target Words:        {self.target_words}")
             if self.min_words is not None and self.max_words is not None:
                 lines.append(f"  Allowed Range:       {self.min_words}–{self.max_words}")
+            if self.hard_max_words is not None:
+                lines.append(f"  Hard Maximum Words:  {self.hard_max_words}")
             if self.actual_body_words is not None:
                 lines.append(f"  Actual Body Words:   {self.actual_body_words}")
             if self.word_count_status is not None:
@@ -155,6 +175,18 @@ class WritingReport(DataClassSerializationMixin):
                 lines.append(f"  Present Topics:      {self.present_outline_topics}")
             if self.outline_status is not None:
                 lines.append(f"  Status:              {self.outline_status}")
+            lines.append("")
+
+        # Requirements Coverage Section
+        if self.required_criteria_count is not None:
+            lines.append("Requirements Coverage:")
+            lines.append(f"  Required Criteria:   {self.required_criteria_count}")
+            if self.present_criteria_count is not None:
+                lines.append(
+                    f"  Coverage:            {self.present_criteria_count}/{self.required_criteria_count}"
+                )
+            if self.requirements_coverage_status is not None:
+                lines.append(f"  Status:              {self.requirements_coverage_status}")
             lines.append("")
 
         # Academic Sources Section
@@ -174,6 +206,8 @@ class WritingReport(DataClassSerializationMixin):
             or self.partially_supported_claims is not None
             or self.unsupported_claims is not None
             or self.contradicted_claims is not None
+            or self.quotation_warnings is not None
+            or self.identifier_warnings is not None
         ):
             lines.append("Claims Verification:")
             if self.supported_claims is not None:
@@ -184,6 +218,10 @@ class WritingReport(DataClassSerializationMixin):
                 lines.append(f"  Unsupported:         {self.unsupported_claims}")
             if self.contradicted_claims is not None:
                 lines.append(f"  Contradicted:        {self.contradicted_claims}")
+            if self.quotation_warnings is not None:
+                lines.append(f"  Quotation Warnings:  {self.quotation_warnings}")
+            if self.identifier_warnings is not None:
+                lines.append(f"  Identifier Warnings: {self.identifier_warnings}")
             lines.append("")
 
         has_citation_section = (
@@ -215,6 +253,7 @@ class WritingReport(DataClassSerializationMixin):
             ("Voice match", self.voice_match),
             ("Banned words", self.banned_words),
             ("AI-style warnings", self.ai_style_warnings),
+            ("Redundancy findings", self.redundancy_findings_count),
         ]
         has_metrics = any(v is not None for _, v in metrics)
         if has_metrics:
@@ -230,6 +269,13 @@ class WritingReport(DataClassSerializationMixin):
             lines.append(f"  Semantic Review:     {self.semantic_meaning_status}")
         elif self.meaning_preservation != "NOT_EVALUATED":
             lines.append(f"{'Meaning preservation':<28}{self.meaning_preservation}")
+
+        if self.consistency_review_status is not None:
+            lines.append("")
+            lines.append("Consistency Review:")
+            lines.append(f"  Verdict:             {self.consistency_review_status}")
+            if self.consistency_findings_count is not None:
+                lines.append(f"  Findings:            {self.consistency_findings_count}")
 
         if self.changes:
             lines.append("")

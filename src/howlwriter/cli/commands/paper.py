@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import sys
 
+from howlwriter.academic.length import resolve_length_bounds
 from howlwriter.academic.pipeline import run_academic_pipeline
 from howlwriter.academic.research import load_sources_file, save_sources_file
 from howlwriter.academic.spec import load_assignment_spec
@@ -80,8 +81,17 @@ def run(args: argparse.Namespace) -> int:
         slug = re.sub(r"[\s_-]+", "_", slug)[:40] or "academic_paper"
         out_path = Path(f"{slug}.md")
 
+    bounds = resolve_length_bounds(spec)
+    lc = spec.length_constraints
+
     print(f"Executing academic paper workflow for: {spec.title}")
-    print(f"  Target Words:  {spec.target_words} (±{spec.word_tolerance_percent:.0f}%)")
+    if lc.target_page_min is not None and lc.target_page_max is not None:
+        print(f"  Target Pages:  {lc.target_page_min:g}–{lc.target_page_max:g}")
+        if lc.max_pages is not None:
+            print(f"  Maximum Pages: {lc.max_pages:g}")
+    print(f"  Target Words:  {bounds.target_words} (range: {bounds.min_words}–{bounds.max_words})")
+    if spec.requirements:
+        print(f"  Required Criteria: {len(spec.requirements)}")
     print(f"  Style:         {spec.citation_style.upper()}")
     print("  Running research and evidence collection...")
 
