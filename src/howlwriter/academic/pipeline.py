@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import time
-from typing import Any
+from typing import Any, Callable
 
 from howlwriter.academic.citations import AcademicCitationManager, CitationAnalysis
 from howlwriter.academic.length import (
@@ -70,11 +70,22 @@ def run_academic_pipeline(
     run_id: str | None = None,
     cwd: Path | str | None = None,
     max_length_retries: int = 2,
+    stage_callback: Callable[[str, str, dict[str, Any]], None] | None = None,
 ) -> AcademicPipelineResult:
     """Executes the full researched academic paper pipeline."""
     start_time = time.time()
     active_run_id = run_id or generate_run_id()
     cfg = config or default_config()
+
+    def _notify(stage_id: str, status: str, label: str, data: dict[str, Any] | None = None) -> None:
+        if stage_callback is not None:
+            try:
+                payload = {"label": label}
+                if data:
+                    payload.update(data)
+                stage_callback(stage_id, status, payload)
+            except Exception:
+                pass
 
     spec = (
         assignment
@@ -82,12 +93,20 @@ def run_academic_pipeline(
         else load_assignment_spec(assignment)
     )
 
+    _notify("validate", "DONE", "Assignment Validated", {
+        "title": spec.title,
+        "topic": spec.topic,
+        "target_words": spec.target_words,
+        "minimum_sources": spec.source_requirements.minimum_sources,
+    })
+
     bridge = get_howlplane_bridge()
     can_use_models = not deterministic_only and (
         bridge.is_available() or custom_backend is not None
     )
 
     # 1. RESEARCH & SOURCE COLLECTION
+    _notify("research", "RUNNING", "Research & Source Discovery")
     t_res_start = time.time()
     researcher = AcademicResearcher(existing_sources=existing_sources)
     sources = researcher.execute_research(
@@ -109,8 +128,14 @@ def run_academic_pipeline(
                 retrieved_text=f"Core topic overview: {spec.topic}",
             )
         ]
+    _notify("research", "DONE", "Research & Source Discovery", {
+        "sources_count": len(sources),
+        "duration": researcher_duration,
+        "provider": researcher_provider,
+    })
 
     # 2. DRAFTING (WRITER ROLE)
+    _notify("drafting", "RUNNING", "Drafting Paper")
     t_writer_start = time.time()
     writer_provider: str | None = None
     writer_stated_claims: list[dict] = []
@@ -137,8 +162,14 @@ def run_academic_pipeline(
         draft_doc = Document.parse(body_text, title=spec.title, mode=WritingMode.ACADEMIC)
 
     writer_duration = round(time.time() - t_writer_start, 2)
+    _notify("drafting", "DONE", "Drafting Paper", {
+        "words": count_body_words(draft_doc.text),
+        "provider": writer_provider or "deterministic",
+        "duration": writer_duration,
+    })
 
     # 3. WORD COUNT & BOUNDED LENGTH CORRECTION
+    _notify("length_check", "RUNNING", "Word Count & Length Check")
     actual_words = count_body_words(draft_doc.text)
     min_words, max_words = calculate_word_tolerance(
         spec.target_words, spec.word_tolerance_percent
@@ -167,17 +198,39 @@ def run_academic_pipeline(
                 actual_words, spec.target_words, spec.word_tolerance_percent
             )
             retries += 1
+    _notify("length_check", "DONE", "Word Count & Length Check", {
+        "actual_words": actual_words,
+        "target_words": spec.target_words,
+        "status": wc_status,
+        "min_words": min_words,
+        "max_words": max_words,
+    })
 
     # 4. OUTLINE CONFORMANCE CHECK
+    _notify("outline_check", "RUNNING", "Outline Conformance")
     outline_res = check_outline_conformance(draft_doc, spec.outline)
+    _notify("outline_check", "DONE", "Outline Conformance", {
+        "status": outline_res.status,
+        "required": outline_res.required_topics_count,
+        "present": outline_res.present_topics_count,
+    })
 
     # 5. CLAIM VERIFICATION & PROVENANCE GRAPH
+    _notify("claim_verification", "RUNNING", "Claim & Provenance Verification")
     verifier = AcademicVerifier()
     provenance_graph, verif_summary = verifier.build_provenance_and_verify(
         draft_doc, sources, stated_claims=writer_stated_claims
     )
+    _notify("claim_verification", "DONE", "Claim & Provenance Verification", {
+        "supported": verif_summary.supported_claims,
+        "partially_supported": verif_summary.partially_supported_claims,
+        "unsupported": verif_summary.unsupported_claims,
+        "contradicted": verif_summary.contradicted_claims,
+        "total_claims": len(provenance_graph.claims),
+    })
 
     # 6. HUMANIZE (ACADEMIC CONTEXT)
+    _notify("humanizing", "RUNNING", "Safe Prose Humanizing")
     lint_before = LintEngine().run(draft_doc, cfg)
     humanizer_provider: str | None = None
     humanize_duration: float | None = None
@@ -196,13 +249,23 @@ def run_academic_pipeline(
     else:
         safe_res = SafeRewriter().rewrite(draft_doc, cfg)
         transformed_doc = safe_res.document
+    _notify("humanizing", "DONE", "Safe Prose Humanizing", {
+        "provider": humanizer_provider or "deterministic",
+        "duration": humanize_duration,
+    })
 
     # 7. LINT & RED PEN ON TRANSFORMED DOCUMENT
+    _notify("lint_redpen", "RUNNING", "Deterministic Lint & Red Pen")
     lint_after = LintEngine().run(transformed_doc, cfg)
     claims_for_redpen = list(provenance_graph.claims.values())
     red_pen_findings = RedPenEngine().critique(transformed_doc, claims=claims_for_redpen)
+    _notify("lint_redpen", "DONE", "Deterministic Lint & Red Pen", {
+        "lint_count": len(lint_after),
+        "red_pen_count": len(red_pen_findings),
+    })
 
     # 8. MEANING / SEMANTIC REVIEW
+    _notify("meaning_review", "RUNNING", "Meaning Preservation Review")
     meaning_det = MeaningPreservationReviewer().compare(draft_doc, transformed_doc)
     semantic_res: SemanticMeaningResult | None = None
     meaning_reviewer_provider: str | None = None
@@ -223,8 +286,15 @@ def run_academic_pipeline(
         meaning_review_duration = semantic_res.duration_seconds
     elif humanizer_provider is not None:
         reviewer_independence = "NOT_REVIEWED"
+    _notify("meaning_review", "DONE", "Meaning Preservation Review", {
+        "deterministic_status": meaning_det.status,
+        "semantic_status": semantic_res.verdict if semantic_res else None,
+        "reviewer_provider": meaning_reviewer_provider,
+        "independence": reviewer_independence,
+    })
 
     # 9. APA 7 CITATIONS & REFERENCES SECTION ATTACHMENT
+    _notify("citations_references", "RUNNING", "APA 7 Citations & References")
     citation_mgr = AcademicCitationManager()
     citation_analysis = citation_mgr.analyze_and_build_references(
         transformed_doc, sources
@@ -232,6 +302,11 @@ def run_academic_pipeline(
     final_document = citation_mgr.attach_references(
         transformed_doc, citation_analysis
     )
+    _notify("citations_references", "DONE", "APA 7 Citations & References", {
+        "in_text_citations": citation_analysis.in_text_citation_count,
+        "references_count": len(citation_analysis.used_sources) or len(sources),
+        "warnings_count": len(citation_analysis.warnings),
+    })
 
     # 10. EVALUATE FINAL READINESS STATUS
     # Academic criteria for READY:
@@ -271,6 +346,11 @@ def run_academic_pipeline(
         final_status = "READY"
 
     total_duration = round(time.time() - start_time, 2)
+    _notify("final_report", "DONE", "Final Report & Dogfood Record", {
+        "status": final_status,
+        "run_id": active_run_id,
+        "total_duration": total_duration,
+    })
 
     report = WritingReport(
         status=final_status,
