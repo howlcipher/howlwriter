@@ -174,3 +174,44 @@ def test_the_statement_serializes_for_the_provenance_record():
     assert payload["section"] == "Method"
     assert payload["used_generative_ai"] is True
     assert payload["reference"]["available"] is False
+
+
+def test_a_low_freedom_run_that_still_wrote_most_words_says_so():
+    """Freedom measures constraint, not how much text the model produced.
+
+    A densely structured academic outline can score LOW -- thesis, claims,
+    headings, enforced order -- while leaving the model to write 95% of the
+    sentences. Claiming the model was "limited to connective prose" because the
+    label said LOW would be exactly the overstatement this module prevents.
+    """
+    provenance = _writer_run(
+        freedom="LOW",
+        claims_supplied=3,
+        preserved_supplied=1,
+        required_points_supplied=10,
+        required_points_represented=10,
+        user_words_supplied=65,
+        artifact_words=1600,
+    )
+    statement = build_ai_use_statement(provenance).statement
+
+    assert "most of the sentence-level wording" in statement
+    assert "limited to development, transitions" not in statement
+    assert "65 were supplied directly by the author" in statement
+    assert "not a measure of authorship" in statement
+
+
+def test_a_low_freedom_run_where_the_author_wrote_most_of_it_says_that_instead():
+    provenance = _writer_run(
+        freedom="LOW",
+        claims_supplied=3,
+        preserved_supplied=4,
+        required_points_supplied=6,
+        required_points_represented=6,
+        user_words_supplied=500,
+        artifact_words=900,
+    )
+    statement = build_ai_use_statement(provenance).statement
+
+    assert "limited to development, transitions, and connective prose" in statement
+    assert "most of the sentence-level wording" not in statement

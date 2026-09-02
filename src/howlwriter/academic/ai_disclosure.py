@@ -107,6 +107,24 @@ class AIUseStatement:
         return "\n".join(lines).rstrip()
 
 
+#: Share of the finished text the author must have supplied before a claim
+#: that the model was "limited to" connective prose is defensible.
+_SUBSTANTIAL_AUTHOR_SHARE = 0.25
+
+
+def _wrote_most_of_the_words(contribution) -> bool:
+    """Whether the model produced the bulk of the sentences, regardless of label.
+
+    Freedom measures how constrained the model was. It does not measure how
+    much of the text the model wrote, and a densely structured academic outline
+    can score LOW while still leaving 95% of the words to the model.
+    """
+    if not contribution.artifact_words:
+        return False
+    share = contribution.user_words_supplied / contribution.artifact_words
+    return share < _SUBSTANTIAL_AUTHOR_SHARE
+
+
 def _build_reference(provenance: GenerationProvenance) -> AIReferenceEntry:
     """An APA tool reference, when the run supplies what the template needs."""
     models = provenance.models_used()
@@ -196,12 +214,28 @@ def build_ai_use_statement(
                 "produced by a generative model under those constraints."
             )
         else:
-            parts.append(
-                "HowlWriter expanded the author's outline into prose. The "
-                "author supplied the thesis, the argument structure, the "
-                "required claims, and selected wording; the model's role was "
-                "limited to development, transitions, and connective prose."
-            )
+            # "Limited to development and transitions" is only true when the
+            # author actually supplied a substantial share of the prose. A
+            # heavily structured outline can still leave the model writing
+            # almost every sentence, and claiming otherwise because the
+            # freedom label says LOW would be exactly the overstatement this
+            # function exists to prevent.
+            if _wrote_most_of_the_words(contribution):
+                parts.append(
+                    "HowlWriter expanded the author's outline into prose. The "
+                    "author supplied the thesis, the argument structure, the "
+                    "required claims, and selected wording, but most of the "
+                    "sentence-level wording in the final text was produced by "
+                    "a generative model working inside those constraints."
+                )
+            else:
+                parts.append(
+                    "HowlWriter expanded the author's outline into prose. The "
+                    "author supplied the thesis, the argument structure, the "
+                    "required claims, and selected wording; the model's role "
+                    "was limited to development, transitions, and connective "
+                    "prose."
+                )
         parts.append(
             f"The author supplied {contribution.claims_supplied} claim(s), "
             f"{contribution.preserved_supplied} passage(s) reproduced verbatim, "
@@ -209,6 +243,15 @@ def build_ai_use_statement(
             f"which {contribution.required_points_represented} are represented "
             "in the final text."
         )
+        if contribution.user_words_supplied and contribution.artifact_words:
+            # The plainest fact available, and the one a reader most needs: how
+            # many words the author wrote against how many are in the document.
+            parts.append(
+                f"Of roughly {contribution.artifact_words} words in the final "
+                f"text, {contribution.user_words_supplied} were supplied "
+                "directly by the author as claims, preserved passages, or "
+                "examples. This is a word count, not a measure of authorship."
+            )
     elif wrote:
         parts.append(
             "HowlWriter drafted this document from an assignment specification "
