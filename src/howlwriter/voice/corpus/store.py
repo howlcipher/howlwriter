@@ -38,7 +38,8 @@ from typing import Any
 import yaml
 
 from howlwriter.domain.io import atomic_write_text
-from howlwriter.domain.voice import VoiceOverrides, VoiceProfile
+from howlwriter.domain.voice import StructuralVector, VoiceOverrides, VoiceProfile
+from howlwriter.voice.corpus.features import DocumentFeatures
 
 PROFILE_FILE = "profile.json"
 SOURCES_FILE = "sources.json"
@@ -178,6 +179,31 @@ class VoiceStore:
 
     # --- reading -----------------------------------------------------
 
+    def load_structural_vectors(self) -> list[StructuralVector]:
+        """Load compact structural vectors cached from training documents."""
+        docs = self.load_features()
+        vectors: list[StructuralVector] = []
+        for key, entry in docs.items():
+            if not isinstance(entry, dict):
+                continue
+            feat_dict = entry.get("features")
+            if not isinstance(feat_dict, dict):
+                continue
+            context = str(entry.get("context") or "")
+            model_traits = entry.get("model_traits") or {}
+            opening = model_traits.get("opening_behavior", "")
+            closing = model_traits.get("conclusion_behavior", "")
+            features = DocumentFeatures.from_dict(feat_dict)
+            if features.words > 0:
+                vectors.append(
+                    features.to_structural_vector(
+                        context=context,
+                        opening_class=opening,
+                        closing_class=closing,
+                    )
+                )
+        return vectors
+
     def load_profile(self) -> VoiceProfile:
         path = self.directory / PROFILE_FILE
         if not path.is_file():
@@ -185,7 +211,15 @@ class VoiceStore:
                 f"no voice named '{self.name}' in {self.root}. "
                 f"Build one with: howlwriter voice build --name {self.name} --source <path>"
             )
-        return VoiceProfile.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        profile = VoiceProfile.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        if not profile.structural_vectors:
+            vectors = self.load_structural_vectors()
+            if vectors:
+                profile.structural_vectors = vectors
+                for ctx_name, ctx in profile.contexts.items():
+                    if not ctx.structural_vectors:
+                        ctx.structural_vectors = [v for v in vectors if v.context == ctx_name]
+        return profile
 
     def load_sources(self) -> dict[str, SourceRecord]:
         path = self.directory / SOURCES_FILE

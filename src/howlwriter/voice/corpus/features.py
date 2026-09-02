@@ -23,6 +23,7 @@ from dataclasses import asdict, dataclass
 import math
 import re
 import statistics
+from typing import Any
 
 from howlwriter.domain.document import Document
 from howlwriter.domain.voice import VoiceDistributions
@@ -135,6 +136,36 @@ class DocumentFeatures:
 
     def to_dict(self) -> dict[str, float]:
         return asdict(self)
+
+    def to_structural_vector(
+        self,
+        *,
+        context: str = "",
+        opening_class: str = "",
+        closing_class: str = "",
+    ) -> Any:
+        from howlwriter.domain.voice import StructuralVector
+
+        return StructuralVector(
+            words=self.words,
+            paragraphs=self.paragraphs,
+            paragraph_words_mean=self.paragraph_words_mean,
+            paragraph_words_stdev=self.paragraph_words_stdev,
+            paragraph_sentences_mean=self.paragraph_sentences_mean,
+            sentence_length_mean=self.sentence_length_mean,
+            sentence_length_stdev=self.sentence_length_stdev,
+            short_sentence_rate=self.short_sentence_rate,
+            long_sentence_rate=self.long_sentence_rate,
+            single_sentence_paragraph_rate=self.single_sentence_paragraph_rate,
+            transition_rate=self.transition_rate,
+            sentence_initial_conjunction_rate=self.sentence_initial_conjunction_rate,
+            first_person_rate=self.first_person_rate,
+            parenthetical_rate=self.parenthetical_rate,
+            question_rate=self.question_rate,
+            opening_class=opening_class,
+            closing_class=closing_class,
+            context=context,
+        )
 
     @classmethod
     def from_dict(cls, data: dict) -> "DocumentFeatures":

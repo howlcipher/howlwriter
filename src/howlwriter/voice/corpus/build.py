@@ -565,6 +565,7 @@ def build_voice(
         contexts=aggregated.contexts,
         distributions=aggregated.distributions,
         rate_distributions=aggregated.rate_distributions,
+        structural_vectors=aggregated.structural_vectors,
         overrides=overrides,
         corpus_summary=summary,
         built_at=utc_now(),

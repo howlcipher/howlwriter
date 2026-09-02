@@ -42,8 +42,8 @@ ProfileType = Literal["personal_voice", "shared_style"]
 TraitSource = Literal["deterministic", "model", "user"]
 
 #: The serialization version this build writes. Bumped to 2 when rate
-#: distributions were added.
-VOICE_PROFILE_VERSION = 2
+#: distributions were added, and 3 when structural vectors were added.
+VOICE_PROFILE_VERSION = 3
 
 #: The oldest version still recognised as corpus-built. A v1 profile predates
 #: rate distributions but is otherwise a real corpus build, so it must keep
@@ -151,6 +151,35 @@ class RateDistribution(DataClassSerializationMixin):
 
 
 @dataclass
+class StructuralVector(DataClassSerializationMixin):
+    """Compact deterministic style measurements for one document.
+
+    Only structural statistics are persisted; no prose, paths, or document
+    identifiers. Used as empirical anchors for per-piece structural realization
+    to preserve natural covariance between structural dimensions.
+    """
+
+    words: int = 0
+    paragraphs: int = 0
+    paragraph_words_mean: float = 0.0
+    paragraph_words_stdev: float = 0.0
+    paragraph_sentences_mean: float = 0.0
+    sentence_length_mean: float = 0.0
+    sentence_length_stdev: float = 0.0
+    short_sentence_rate: float = 0.0
+    long_sentence_rate: float = 0.0
+    single_sentence_paragraph_rate: float = 0.0
+    transition_rate: float = 0.0
+    sentence_initial_conjunction_rate: float = 0.0
+    first_person_rate: float = 0.0
+    parenthetical_rate: float = 0.0
+    question_rate: float = 0.0
+    opening_class: str = ""
+    closing_class: str = ""
+    context: str = ""
+
+
+@dataclass
 class VoiceContext(DataClassSerializationMixin):
     """Context-specific tendencies layered on top of the global profile.
 
@@ -166,6 +195,8 @@ class VoiceContext(DataClassSerializationMixin):
     #: Zero-inflated behaviours measured within this context only. Same shape as
     #: the global map; empty when the slice holds too few documents to support it.
     rate_distributions: dict[str, RateDistribution] = field(default_factory=dict)
+    #: Compact structural vectors measured within this context only.
+    structural_vectors: list[StructuralVector] = field(default_factory=list)
     document_count: int = 0
     word_count: int = 0
     confidence: float = 0.0
@@ -182,6 +213,10 @@ class VoiceContext(DataClassSerializationMixin):
             key: RateDistribution.from_dict(value) if isinstance(value, dict) else value
             for key, value in (rebuilt.rate_distributions or {}).items()
         }
+        rebuilt.structural_vectors = [
+            StructuralVector.from_dict(item) if isinstance(item, dict) else item
+            for item in (rebuilt.structural_vectors or [])
+        ]
         return rebuilt
 
 
@@ -334,6 +369,9 @@ class VoiceProfile(DataClassSerializationMixin):
     #: profile built before this existed, which is why every reader treats an
     #: absent entry as "not measured" rather than as "never occurs".
     rate_distributions: dict[str, RateDistribution] = field(default_factory=dict)
+    #: Compact structural vectors from training documents used as empirical
+    #: anchors for per-piece structural realization.
+    structural_vectors: list[StructuralVector] = field(default_factory=list)
     overrides: VoiceOverrides | None = None
     corpus_summary: CorpusSummary | None = None
     validation: ValidationSummary | None = None
@@ -392,6 +430,10 @@ class VoiceProfile(DataClassSerializationMixin):
             key: RateDistribution.from_dict(value) if isinstance(value, dict) else value
             for key, value in (rebuilt.rate_distributions or {}).items()
         }
+        rebuilt.structural_vectors = [
+            StructuralVector.from_dict(item) if isinstance(item, dict) else item
+            for item in (rebuilt.structural_vectors or [])
+        ]
         rebuilt.distributions = _rebuild(VoiceDistributions, rebuilt.distributions)
         rebuilt.overrides = _rebuild(VoiceOverrides, rebuilt.overrides)
         rebuilt.corpus_summary = _rebuild(CorpusSummary, rebuilt.corpus_summary)

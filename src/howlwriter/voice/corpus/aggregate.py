@@ -27,6 +27,7 @@ import statistics
 from howlwriter.domain.voice import (
     CorpusSummary,
     RateDistribution,
+    StructuralVector,
     TraitValue,
     VoiceContext,
     VoiceDistributions,
@@ -128,6 +129,7 @@ class AggregateResult:
     traits: dict[str, TraitValue] = field(default_factory=dict)
     distributions: VoiceDistributions | None = None
     rate_distributions: dict[str, RateDistribution] = field(default_factory=dict)
+    structural_vectors: list[StructuralVector] = field(default_factory=list)
     contexts: dict[str, VoiceContext] = field(default_factory=dict)
     sufficiency: str = SUFFICIENCY_INSUFFICIENT
     sufficiency_warnings: list[str] = field(default_factory=list)
@@ -543,6 +545,15 @@ def aggregate(documents: list[DocumentEvidence]) -> AggregateResult:
     result.traits = _deterministic_traits(usable)
     result.traits.update(_model_traits(usable))
     result.sufficiency, result.sufficiency_warnings = assess_sufficiency(usable)
+    result.structural_vectors = [
+        doc.features.to_structural_vector(
+            context=doc.context,
+            opening_class=(doc.model_traits or {}).get("opening_behavior", ""),
+            closing_class=(doc.model_traits or {}).get("conclusion_behavior", ""),
+        )
+        for doc in usable
+        if getattr(doc, "features", None) is not None and doc.words > 0
+    ]
 
     # --- context blocks ---
     by_context: dict[str, list[DocumentEvidence]] = {}
@@ -572,6 +583,15 @@ def aggregate(documents: list[DocumentEvidence]) -> AggregateResult:
             if name not in result.traits or result.traits[name].value != value.value
         }
         sufficiency, _ = assess_sufficiency(members)
+        context_vectors = [
+            doc.features.to_structural_vector(
+                context=context,
+                opening_class=(doc.model_traits or {}).get("opening_behavior", ""),
+                closing_class=(doc.model_traits or {}).get("conclusion_behavior", ""),
+            )
+            for doc in members
+            if getattr(doc, "features", None) is not None and doc.words > 0
+        ]
         result.contexts[context] = VoiceContext(
             name=context,
             traits=distinct,
@@ -579,6 +599,7 @@ def aggregate(documents: list[DocumentEvidence]) -> AggregateResult:
             # its when-present percentiles are suppressed by the same floor
             # that guards the global map rather than by a separate rule.
             rate_distributions=_rate_distributions(members),
+            structural_vectors=context_vectors,
             distributions={
                 "sentence_length_mean": context_features.sentence_length_mean,
                 "sentence_length_median": context_features.sentence_length_median,
