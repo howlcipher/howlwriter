@@ -1,0 +1,19 @@
+title: "Automated Incident Remediation: Balancing Speed and Safety in Site Reliability Engineering"
+topic: "Automated incident response workflows in SRE, comparing algorithmic self-healing systems against human-in-the-loop escalation patterns."
+type: "academic"
+target_words: 900
+word_tolerance_percent: 15.0
+citation_style: "apa7"
+source_requirements:
+  minimum_sources: 4
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - "Compare automated circuit breaking and pod restarts against manual operator interventions."
+  - "Analyze the risk of positive feedback loops and automated remediation cascade failures."
+  - "Propose a structured boundary framework for safe autonomous remediation."
+outline:
+  - "The Evolution of Automated Incident Response in SRE"
+  - "Failure Modes of Unbounded Self-Healing Systems"
+  - "Safety Guardrails and Human-in-the-Loop Boundaries"
+  - "Conclusion and Strategic SRE Recommendations"

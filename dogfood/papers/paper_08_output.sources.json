@@ -1,0 +1,131 @@
+[
+  {
+    "id": "S001",
+    "title": "Comparative Analysis of eBPF-Based Runtime Security Monitoring Tools in Monitoring and Threat Detection on Kubernetes",
+    "authors": [
+      "Syairozi, Aldien Asy",
+      "Arizal, ."
+    ],
+    "publisher": "SCITEPRESS - Science and Technology Publications",
+    "publication_date": "2025-01-01",
+    "url": "https://doi.org/10.5220/0014272700004928",
+    "doi": "10.5220/0014272700004928",
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Published academic work by SCITEPRESS - Science and Technology Publications: Comparative Analysis of eBPF-Based Runtime Security Monitoring Tools in Monitoring and Threat Detection on Kubernetes",
+    "reliability_notes": "Retrieved from Crossref API (type: proceedings-article)."
+  },
+  {
+    "id": "S002",
+    "title": "Container Instrumentation and Enforcement System for Runtime Security of Kubernetes Platform with eBPF",
+    "authors": [
+      "Gwak, Songi",
+      "Doan, Thien-Phuc",
+      "Jung, Souhwan"
+    ],
+    "publisher": "Tech Science Press",
+    "publication_date": "2023-01-01",
+    "url": "https://doi.org/10.32604/iasc.2023.039565",
+    "doi": "10.32604/iasc.2023.039565",
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Published academic work by Tech Science Press: Container Instrumentation and Enforcement System for Runtime Security of Kubernetes Platform with eBPF",
+    "reliability_notes": "Retrieved from Crossref API (type: journal-article)."
+  },
+  {
+    "id": "S003",
+    "title": "Midterm Status Report of the ILC Technology Network Activities",
+    "authors": [
+      "ILC Technology Network"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2026-03-01",
+    "url": "http://arxiv.org/abs/2603.01172v1",
+    "doi": null,
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "The ILC Technology Network (ITN) was established in 2022 by the ILC International Development Team, a subcommittee of the International Committee for Future Accelerators, to advance engineering studies toward the realisation of the International Linear Collider (ILC). While the ITN work packages focus on engineering activities for the ILC, their topics are also relevant to a broad range of accelerator applications in particle physics and beyond. These work packages are being carried out now by laboratories in Asia and Europe in close collaboration. This report summarises the current status of the ITN activities.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S004",
+    "title": "XI Commandments of Kubernetes Security: A Systematization of Knowledge Related to Kubernetes Security Practices",
+    "authors": [
+      "Md. Shazibul Islam Shamim",
+      "Farzana Ahamed Bhuiyan",
+      "Akond Rahman"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2020-06-27",
+    "url": "http://arxiv.org/abs/2006.15275v1",
+    "doi": null,
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Kubernetes is an open-source software for automating management of computerized services. Organizations, such as IBM, Capital One and Adidas use Kubernetes to deploy and manage their containers, and have reported benefits related to deployment frequency. Despite reported benefits, Kubernetes deployments are susceptible to security vulnerabilities, such as those that occurred at Tesla in 2018. A systematization of Kubernetes security practices can help practitioners mitigate vulnerabilities in their Kubernetes deployments. The goal of this paper is to help practitioners in securing their Kubernetes installations through a systematization of knowledge related to Kubernetes security practices. We systematize knowledge by applying qualitative analysis on 104 Internet artifacts. We identify 11 security practices that include (i) implementation of role-based access control (RBAC) authorization to provide least privilege, (ii) applying security patches to keep Kubernetes updated, and (iii) implementing pod and network specific security policies.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S005",
+    "title": "Engineering Real-Time Observability and Kernel-Level Security in Microservices via eBPF-Driven Analytics",
+    "authors": [
+      "Balarama Krishna Alti"
+    ],
+    "publisher": "Auricle Technologies, Pvt., Ltd.",
+    "publication_date": "2026-07-23",
+    "url": "https://doi.org/10.59543/jidmis.v3.847",
+    "doi": "10.59543/jidmis.v3.847",
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Cloud-native systems have emerged as a design paradigm based on distributed microservices architectures, which are inherently complex, and run-time observability and performance assurance have become a major challenge. Traditional observability techniques are mostly based on user space instrumentation, which constrains the observability into system level behavior and makes it difficult to diagnose performance degradation based on resource contention and kernel-mediated interactions. This research explored the possibility of implementing the concept of kernel-level observability on microservices-based environments with an extended version of the Berkeley Packet Filter (eBPF) technology. Architecture empirical testing was performed on a publicly available performance data of microservices, and analyzed in a reproducible Google Colab environment. The evaluated overheads of system performance and the fidelity of observability as well as the ability to detect deviations were measured at scale with greater numbers of microservices. It was demonstrated that the overheads incurred by kernel-level observability were modest and scalable and that signal granularity and observability fidelity were significantly improved. The quality of detection and shorter latency of performance deviation were seen to be enhanced over user-space observability alone and especially as system scale was taken into account. Such results show that kernel-level instrumentation may give actionable system-level information that is challenging to gain using application-level monitoring. The paper provides a systems and software engineering vision of observability to show how observability mechanisms at the kernel level can be systematically engineered into distributed microservices systems. The findings confirm the argument that observability is a first-class architectural issue and it has a complementary role of the kernel-level and user-space telemetry in the creation of reliable and diagnosable distributed systems.",
+    "reliability_notes": "Retrieved from Crossref API (type: journal-article)."
+  },
+  {
+    "id": "S006",
+    "title": "Unleashing Unprivileged eBPF Potential with Dynamic Sandboxing",
+    "authors": [
+      "Soo Yee Lim",
+      "Xueyuan Han",
+      "Thomas Pasquier"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2023-08-03",
+    "url": "http://arxiv.org/abs/2308.01983v2",
+    "doi": null,
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "For safety reasons, unprivileged users today have only limited ways to customize the kernel through the extended Berkeley Packet Filter (eBPF). This is unfortunate, especially since the eBPF framework itself has seen an increase in scope over the years. We propose SandBPF, a software-based kernel isolation technique that dynamically sandboxes eBPF programs to allow unprivileged users to safely extend the kernel, unleashing eBPF's full potential. Our early proof-of-concept shows that SandBPF can effectively prevent exploits missed by eBPF's native safety mechanism (i.e., static verification) while incurring 0%-10% overhead on web server benchmarks.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S007",
+    "title": "eBPF-Based Real-Time DDoS Mitigation for IoT Edge Devices",
+    "authors": [
+      "Abdurrahman Tolay"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2025-07-13",
+    "url": "http://arxiv.org/abs/2508.00851v1",
+    "doi": null,
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "The rapid expansion of the Internet of Things (IoT) has intensified security challenges, notably from Distributed Denial of Service (DDoS) attacks launched by compromised, resource-constrained devices. Traditional defenses are often ill-suited for the IoT paradigm, creating a need for lightweight, high-performance, edge-based solutions. This paper presents the design, implementation, and evaluation of an IoT security framework that leverages the extended Berkeley Packet Filter (eBPF) and the eXpress Data Path (XDP) for in-kernel mitigation of DDoS attacks. The system uses a rate-based detection algorithm to identify and block malicious traffic at the earliest stage of the network stack. The framework is evaluated using both Docker-based simulations and real-world deployment on a Raspberry Pi 4, showing over 97% mitigation effectiveness under a 100 Mbps flood. Legitimate traffic remains unaffected, and system stability is preserved even under attack. These results confirm that eBPF/XDP provides a viable and highly efficient solution for hardening IoT edge devices against volumetric network attacks.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S008",
+    "title": "Understanding Performance of eBPF Maps",
+    "authors": [
+      "Liu, Chang",
+      "Tak, Byungchul",
+      "Wang, Long"
+    ],
+    "publisher": "ACM",
+    "publication_date": "2024-08-04",
+    "url": "https://doi.org/10.1145/3672197.3673430",
+    "doi": "10.1145/3672197.3673430",
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Published academic work by ACM: Understanding Performance of eBPF Maps",
+    "reliability_notes": "Retrieved from Crossref API (type: proceedings-article)."
+  }
+]

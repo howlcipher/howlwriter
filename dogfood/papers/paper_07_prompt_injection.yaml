@@ -1,0 +1,20 @@
+title: "Defending Multi-Agent Architectures Against Indirect Prompt Injection and Memory Poisoning"
+topic: "Threat modeling, attack vectors, and defense-in-depth countermeasures for indirect prompt injection and episodic memory poisoning in autonomous LLM agent systems."
+type: "academic"
+target_words: 1450
+word_tolerance_percent: 15.0
+citation_style: "apa7"
+source_requirements:
+  minimum_sources: 5
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - "Formalize the threat model of untrusted data ingestion into multi-agent workflows."
+  - "Evaluate defenses including dual-LLM sandwiching, instruction hierarchy enforcement, and input taint tracking."
+  - "Analyze long-term memory poisoning in vector databases and persistent scratchpads."
+outline:
+  - "Introduction to Adversarial Machine Learning in Agentic Systems"
+  - "Mechanisms of Indirect Prompt Injection and Memory Poisoning"
+  - "Architectural and Cryptographic Defense Paradigms"
+  - "Evaluation of Defensive Trade-offs: Latency, Cost, and Utility"
+  - "Conclusion and Open Security Challenges"

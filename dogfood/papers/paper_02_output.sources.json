@@ -1,0 +1,136 @@
+[
+  {
+    "id": "S001",
+    "title": "Human-in-the-Loop Control Patterns in Automated Enterprise Workflows",
+    "authors": [
+      "Gujarathi, Makarand"
+    ],
+    "publisher": "Ess & Ess Research Publications",
+    "publication_date": "2025-02-07",
+    "url": "https://doi.org/10.15662/ijfist.2025.0801002",
+    "doi": "10.15662/ijfist.2025.0801002",
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Enterprise workflows have absorbed three layers of automation in the last decade \u2014 rule engines, RPA bots, and now AI agents \u2014 and the practical question has shifted from \u201cwhat can we automate\u201d to \u201cwhere and how does the human stay in control.\u201d This article argues that Human-in-the-Loop (HITL) is not a single mechanism but a set of distinct control patterns, each suited to a particular failure mode, latency budget, and accountability profile. We define five canonical patterns \u2014 approval-and-gate, escalation-on-exception, confidence-threshold routing, structured-override, and audit-in-the-loop \u2014 and analyse each against enterprise workflow context, latency cost, accountability load, and operational trade-offs. We then present a routing framework that maps workflow properties (irreversibility of action, error cost, regulatory exposure, frequency, latency budget) to pattern choice, and we close with a worked multi-pattern deployment drawn from an invoice-and-procurement automation environment where three patterns coexist in a single workflow. The intended reader is the enterprise architect, automation lead, or AI-governance owner who must decide which patterns to deploy, where, and at what cost. We treat HITL as a first-class architectural concern rather than as a fallback for the cases where automation has not yet arrived, and we close with recommendations that emphasise explicit pattern selection over implicit reliance on whatever defaults the chosen platform provides.",
+    "reliability_notes": "Retrieved from Crossref API (type: journal-article)."
+  },
+  {
+    "id": "S002",
+    "title": "Review for \"Building Workflows for Interactive Human in the Loop Automated Experiment (hAE) in STEM-EELS\"",
+    "authors": [],
+    "publisher": "Royal Society of Chemistry (RSC)",
+    "publication_date": "2025-02-03",
+    "url": "https://doi.org/10.1039/d5dd00033e/v2/review2",
+    "doi": "10.1039/d5dd00033e/v2/review2",
+    "access_date": "2026-08-31",
+    "source_type": "other",
+    "retrieved_text": "Published academic work by Royal Society of Chemistry (RSC): Review for \"Building Workflows for Interactive Human in the Loop Automated Experiment (hAE) in STEM-EELS\"",
+    "reliability_notes": "Retrieved from Crossref API (type: peer-review)."
+  },
+  {
+    "id": "S003",
+    "title": "Quantifying Algorithmic Friction in Automated Resume Screening Systems",
+    "authors": [
+      "Ibrahim Denis Fofanah"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2026-02-03",
+    "url": "http://arxiv.org/abs/2602.04087v1",
+    "doi": null,
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Automated resume screening systems are now a central part of hiring at scale, yet there is growing evidence that rigid screening logic can exclude qualified candidates before human review. In prior work, we introduced the concept of Artificial Frictional Unemployment to describe labor market inefficiencies arising from automated recruitment systems. This paper extends that framework by focusing on measurement. We present a method for quantifying algorithmic friction in resume screening pipelines by modeling screening as a classification task and defining friction as excess false negative rejection caused by semantic misinterpretation. Using controlled simulations, we compare deterministic keyword-based screening with vector-space semantic matching under identical qualification conditions. The results show that keyword-based screening exhibits high levels of algorithmic friction, while semantic representations substantially reduce false negative rejection without compromising precision. By treating algorithmic friction as a system-level property, this study provides an empirical basis for evaluating how recruitment system design affects matching efficiency in modern labor markets.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S004",
+    "title": "Effective Self-Healing Networks against Attacks or Disasters in Resource Allocation Control",
+    "authors": [
+      "Yukio Hayashi",
+      "Atsushi Tanaka",
+      "Jun Matsukubo"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2020-08-03",
+    "url": "http://arxiv.org/abs/2008.00651v2",
+    "doi": null,
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "With increasing threats by large attacks or disasters, the time has come to reconstruct network infrastructures such as communication or transportation systems rather than to recover them as before in case of accidents, because many real networks are extremely vulnerable. Thus, we consider self-healing mechanisms by rewirings (reuse or addition of links) to be sustainable and resilient networks even against malicious attacks. In distributed local process for healing, the key strategies are the extension of candidates of linked nodes and enhancing loops by applying a message-passing algorithm inspired from statistical physics. Simulation results show that our proposed combination of ring formation and enhancing loops is particularly effective in comparison with the conventional methods, when more than half damaged links alive or are compensated from reserved ones.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S005",
+    "title": "SRE and DevOps: Monitoring and Incident Response in Multi-Cloud Environments",
+    "authors": [
+      "Amgothu, Sudheer",
+      "Kankanala, Giridhar"
+    ],
+    "publisher": "International Journal of Science and Research",
+    "publication_date": "2023-09-05",
+    "url": "https://doi.org/10.21275/sr230903224924",
+    "doi": "10.21275/sr230903224924",
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Published academic work by International Journal of Science and Research: SRE and DevOps: Monitoring and Incident Response in Multi-Cloud Environments",
+    "reliability_notes": "Retrieved from Crossref API (type: journal-article)."
+  },
+  {
+    "id": "S006",
+    "title": "Automated Incident Response for Industrial Control Systems Leveraging Software-defined Networking",
+    "authors": [
+      "Patzer, Florian",
+      "Meshram, Ankush",
+      "He\u00df, Maximilian"
+    ],
+    "publisher": "SCITEPRESS - Science and Technology Publications",
+    "publication_date": "2019-01-01",
+    "url": "https://doi.org/10.5220/0007359503190327",
+    "doi": "10.5220/0007359503190327",
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Published academic work by SCITEPRESS - Science and Technology Publications: Automated Incident Response for Industrial Control Systems Leveraging Software-defined Networking",
+    "reliability_notes": "Retrieved from Crossref API (type: proceedings-article)."
+  },
+  {
+    "id": "S007",
+    "title": "SUT System Description for NIST SRE 2016",
+    "authors": [
+      "Hossein Zeinali",
+      "Hossein Sameti",
+      "Nooshin Maghsoodi"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2017-06-08",
+    "url": "http://arxiv.org/abs/1706.05077v1",
+    "doi": null,
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "This paper describes the submission to fixed condition of NIST SRE 2016 by Sharif University of Technology (SUT) team. We provide a full description of the systems that were included in our submission. We start with an overview of the datasets that were used for training and development. It is followed by describing front-ends which contain different VAD and feature types. UBM and i-vector extractor training are the next details in this paper. As one of the important steps in system preparation, preconditioning the i-vectors are explained in more details. Then, we describe the classifier and score normalization methods. And finally, some results on SRE16 evaluation dataset are reported and analyzed.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S008",
+    "title": "THUEE system description for NIST 2020 SRE CTS challenge",
+    "authors": [
+      "Yu Zheng",
+      "Jinghan Peng",
+      "Miao Zhao",
+      "Yufeng Ma",
+      "Min Liu",
+      "Xinyue Ma",
+      "Tianyu Liang",
+      "Tianlong Kong",
+      "Liang He",
+      "Minqiang Xu"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2022-10-12",
+    "url": "http://arxiv.org/abs/2210.06111v1",
+    "doi": null,
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "This paper presents the system description of the THUEE team for the NIST 2020 Speaker Recognition Evaluation (SRE) conversational telephone speech (CTS) challenge. The subsystems including ResNet74, ResNet152, and RepVGG-B2 are developed as speaker embedding extractors in this evaluation. We used combined AM-Softmax and AAM-Softmax based loss functions, namely CM-Softmax. We adopted a two-staged training strategy to further improve system performance. We fused all individual systems as our final submission. Our approach leads to excellent performance and ranks 1st in the challenge.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  }
+]

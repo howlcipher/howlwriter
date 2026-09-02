@@ -1,0 +1,22 @@
+title: "eBPF-Based Runtime Security and Observability in Modern Linux Cloud Infrastructure"
+topic: "Analyzing extended Berkeley Packet Filter (eBPF) technology for kernel-level security monitoring, container runtime protection, network observability, and performance overhead in Kubernetes clusters."
+type: "academic"
+target_words: 2200
+word_tolerance_percent: 15.0
+citation_style: "apa7"
+source_requirements:
+  minimum_sources: 6
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - "Explain the Linux kernel eBPF verifier, JIT compiler, and safe execution guarantees."
+  - "Compare eBPF runtime security architectures (Cilium, Tetragon, Falco) against ptrace and LSM hooks."
+  - "Evaluate kernel verifier constraints, tail call limitations, and ring buffer throughput under heavy network I/O."
+outline:
+  - "Introduction to In-Kernel Programmability and eBPF Evolution"
+  - "The eBPF Safety Model: Kernel Verifier, Maps, and Helper Functions"
+  - "Runtime Security Enforcement: Hooking LSM, Kprobes, and Tracepoints"
+  - "Network Observability and Service Mesh Bypass Mechanisms"
+  - "Performance Benchmark Analysis and Micro-Overhead Evaluation"
+  - "Security Risks, Vulnerabilities, and Escape Vectors in eBPF Programs"
+  - "Conclusion and Strategic Outlook for Cloud Infrastructure"

@@ -21,3 +21,5 @@ voice_corpus/
 profiles/private/
 *.voice.local.*
 *.local.voice.json
+dogfood/*results*/
+dogfood/*.json

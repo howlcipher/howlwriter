@@ -1,0 +1,128 @@
+[
+  {
+    "id": "S001",
+    "title": "Distributed Adaptive Control of Multi\u2010agent Systems",
+    "authors": [],
+    "publisher": "Wiley",
+    "publication_date": "2016-09-27",
+    "url": "https://doi.org/10.1002/9781119246213.ch9",
+    "doi": "10.1002/9781119246213.ch9",
+    "access_date": "2026-08-31",
+    "source_type": "other",
+    "retrieved_text": "Published academic work by Wiley: Distributed Adaptive Control of Multi\u2010agent Systems",
+    "reliability_notes": "Retrieved from Crossref API (type: other)."
+  },
+  {
+    "id": "S002",
+    "title": "Resilient distributed Nash equilibrium seeking of non-cooperative games for uncertain heterogeneous linear multi-agent systems",
+    "authors": [
+      "Feng, Zhi",
+      "Dong, Xiwang",
+      "Hu, Guoqiang",
+      "Lyu, Jinhu"
+    ],
+    "publisher": "Elsevier",
+    "publication_date": "2025-01-01",
+    "url": "https://doi.org/10.1016/b978-0-44-332988-3.00018-9",
+    "doi": "10.1016/b978-0-44-332988-3.00018-9",
+    "access_date": "2026-08-31",
+    "source_type": "book",
+    "retrieved_text": "Published academic work by Elsevier: Resilient distributed Nash equilibrium seeking of non-cooperative games for uncertain heterogeneous linear multi-agent systems",
+    "reliability_notes": "Retrieved from Crossref API (type: book-chapter)."
+  },
+  {
+    "id": "S003",
+    "title": "Augmenting the action space with conventions to improve multi-agent cooperation in Hanabi",
+    "authors": [
+      "F. Bredell",
+      "H. A. Engelbrecht",
+      "J. C. Schoeman"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2024-12-09",
+    "url": "http://arxiv.org/abs/2412.06333v3",
+    "doi": "10.1007/s10458-025-09709-5",
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "The card game Hanabi is considered a strong medium for the testing and development of multi-agent reinforcement learning (MARL) algorithms, due to its cooperative nature, partial observability, limited communication and remarkable complexity. Previous research efforts have explored the capabilities of MARL algorithms within Hanabi, focusing largely on advanced architecture design and algorithmic manipulations to achieve state-of-the-art performance for various number of cooperators. However, this often leads to complex solution strategies with high computational cost and requiring large amounts of training data. For humans to solve the Hanabi game effectively, they require the use of conventions, which often allows for a means to implicitly convey ideas or knowledge based on a predefined, and mutually agreed upon, set of \"rules\" or principles. Multi-agent problems containing partial observability, especially when limited communication is present, can benefit greatly from the use of implicit knowledge sharing. In this paper, we propose a novel approach to augmenting an agent's action space using conventions, which act as a sequence of special cooperative actions that span over and include multiple time steps and multiple agents, requiring agents to actively opt in for it to reach fruition. These conventions are based on existing human conventions, and result in a significant improvement on the performance of existing techniques for self-play and cross-play for various number of cooperators within Hanabi.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S004",
+    "title": "A Survey of Multi-Agent Deep Reinforcement Learning with Communication",
+    "authors": [
+      "Changxi Zhu",
+      "Mehdi Dastani",
+      "Shihan Wang"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2022-03-16",
+    "url": "http://arxiv.org/abs/2203.08975v2",
+    "doi": null,
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Communication is an effective mechanism for coordinating the behaviors of multiple agents, broadening their views of the environment, and to support their collaborations. In the field of multi-agent deep reinforcement learning (MADRL), agents can improve the overall learning performance and achieve their objectives by communication. Agents can communicate various types of messages, either to all agents or to specific agent groups, or conditioned on specific constraints. With the growing body of research work in MADRL with communication (Comm-MADRL), there is a lack of a systematic and structural approach to distinguish and classify existing Comm-MADRL approaches. In this paper, we survey recent works in the Comm-MADRL field and consider various aspects of communication that can play a role in designing and developing multi-agent reinforcement learning systems. With these aspects in mind, we propose 9 dimensions along which Comm-MADRL approaches can be analyzed, developed, and compared. By projecting existing works into the multi-dimensional space, we discover interesting trends. We also propose some novel directions for designing future Comm-MADRL systems through exploring possible combinations of the dimensions.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S005",
+    "title": "Coordination Overhead and Governance Readiness in Distributed LLM Multi-Agent Systems: An Empirical Architecture Evaluation",
+    "authors": [
+      "Mahajan, Abhinav"
+    ],
+    "publisher": "Elsevier BV",
+    "publication_date": "2026-01-01",
+    "url": "https://doi.org/10.2139/ssrn.6781620",
+    "doi": "10.2139/ssrn.6781620",
+    "access_date": "2026-08-31",
+    "source_type": "other",
+    "retrieved_text": "This paper reports a controlled empirical evaluation of distributed large language model (LLM) multi-agent architectures on a synthetic, short-horizon benchmark. Existing agent benchmarks demonstrate that LLM agents can collaborate, use tools, and operate in interactive environments, but they often undermeasure the internal coordination work required to achieve final task success. We evaluate six architecture conditions-single-agent baseline, orchestrator-worker, graph workflow, blackboard/shared workspace, debate/critic, and bounded peer-to-peer-across 60 stratified tasks and five repeated runs per task-condition pair, for 1,800 Gemini 2.5 Flash executions at temperature 0.7. The study measures task quality, token-weighted and latency-weighted Coordination Overhead Ratio (COR), Governance Readiness Score (GRS), token cost, latency, acceptance-gate outcomes, and failure patterns. All runs completed without runtime errors or acceptance-gate failures. In this controlled short-horizon benchmark, architecture strongly affected coordination overhead, latency, and token use, while architecture explained only a small share of task-quality variance. Blackboard/shared workspace achieved the highest raw mean quality (0.9030), followed by graph workflow (0.8936), but this raw quality advantage was below the preregistered 0.10 practicaleffect threshold and both architectures incurred substantial coordination overhead. GRS was constant at 1.0 across architectures because the shared trace and policy-boundary contract enforced common governance instrumentation; this is interpreted as evaluation-harness validation rather than architecture-specific governance superiority. The results support a task-dependent architecture-selection thesis for controlled short-horizon tasks: multi-agent collaboration should be justified by measurable quality, validation, reliability, or governance benefits that exceed its coordination, cost, and latency burden. The findings should not be generalized to long-horizon web, software-engineering, or enterprise workflows without replication on task suites designed to require delegation, memory, iterative validation, and stateful tool use.",
+    "reliability_notes": "Retrieved from Crossref API (type: posted-content)."
+  },
+  {
+    "id": "S006",
+    "title": "Separating intent from execution: A defense-in-depth security architecture for LLM-based multi-agent systems",
+    "authors": [
+      "Chahine, Khaled"
+    ],
+    "publisher": "Elsevier BV",
+    "publication_date": "2027-01-01",
+    "url": "https://doi.org/10.1016/j.eswa.2026.133781",
+    "doi": "10.1016/j.eswa.2026.133781",
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Published academic work by Elsevier BV: Separating intent from execution: A defense-in-depth security architecture for LLM-based multi-agent systems",
+    "reliability_notes": "Retrieved from Crossref API (type: journal-article)."
+  },
+  {
+    "id": "S007",
+    "title": "Failure Modes in Production Multi-Agent LLM Systems: Lessons from Real Deployments",
+    "authors": [
+      "Ahmed, Alyyan",
+      "Akbar, Munim"
+    ],
+    "publisher": "Elsevier BV",
+    "publication_date": "2026-01-01",
+    "url": "https://doi.org/10.2139/ssrn.7041478",
+    "doi": "10.2139/ssrn.7041478",
+    "access_date": "2026-08-31",
+    "source_type": "other",
+    "retrieved_text": "Multi-agent systems built on large language models (LLMs) are increasingly deployed in production environments where reliability, consistency, and safety are non-negotiable. However, the failure modes of such systems remain poorly understood outside of controlled research settings. This paper draws on direct engineering experience with a production multi-agent auditing platform to identify, categorize, and analyze recurring failure patterns across supervisor routing, inter-agent memory, retrieval-augmented generation (RAG) pipelines, and inference infrastructure. We describe five concrete failure classes-intent misclassification, context amnesia, cache poisoning in retrieval, inference bottlenecks under concurrent load, and cross-session state contamination-and discuss mitigation strategies applied in practice. Observed failures include a supervisor misclassification rate exceeding 80% on boundary-domain queries prior to remediation, response latencies of 20-30 seconds under concurrent load reduced to 3-10 seconds following inference migration, and a retrieval cache defect that went undetected across the entirety of the system's first development phase. Our findings suggest that production multi-agent systems require safety mechanisms at the orchestration layer that go beyond what individual model-level guardrails can provide, with direct implications for AI safety research and deployment governance.",
+    "reliability_notes": "Retrieved from Crossref API (type: posted-content)."
+  },
+  {
+    "id": "S008",
+    "title": "Behavioral Drift in Multi-Agent LLM Systems: Emergent Failure Modes, Cascade Dynamics, and Measurement Challenges",
+    "authors": [
+      "Gagne, Jason"
+    ],
+    "publisher": "Elsevier BV",
+    "publication_date": "2026-01-01",
+    "url": "https://doi.org/10.2139/ssrn.6420858",
+    "doi": "10.2139/ssrn.6420858",
+    "access_date": "2026-08-31",
+    "source_type": "other",
+    "retrieved_text": "We present the first empirical study of longitudinal behavioral drift in multi-agent large language model (LLM) systems over extended interactions (200-500 turns), using calibrated baselines, controlled experimental conditions, and statistical replication (n=12 baselines), measured entirely through external observation without access to model internals. Using a novel black-box measurement framework, we subject groups of three LLM agents to sustained multi-party conversation scenarios and observe their behavioral trajectories across multiple dimensions: output volume, vocabulary diversity, sentiment, and identity adherence. We report several previously undocumented failure modes, including agent collapse (sudden cessation of meaningful output), cascade propagation (one agent's failure triggering degradation in others), compensatory expansion (surviving agents increasing output to fill the void left by a collapsed peer), and hollow verbosity (repetitive, contentless output that maintains volume while losing substance). Critically, we demonstrate that collapse is a triggered failure requiring a perturbation (trait mutation), not spontaneous degradation: zero of twelve baseline runs exhibit collapse, while five of six mutation-fork runs collapse at a deterministic turn. We further show that collapse and hollow verbosity are two expressions of the same underlying failure-loss of generative diversity-where the model either goes silent or enters a repetitive loop. We demonstrate that behavioral drift is path-dependent and that the degree of stochasticity is itself model-dependent. Perhaps most significantly, we find that standard identity probing techniques fail to detect these failures: collapsed agents continue to pass identity checks with high fidelity, revealing a structural dissociation between an agent's capacity for identity recall and its actual conversational behavior. We also document model-dependent observer effects in which the probing mechanism itself alters the system under study in qualitatively different ways depending on the model family. These findings have immediate implications for the governance and monitoring of production multi-agent LLM systems.",
+    "reliability_notes": "Retrieved from Crossref API (type: posted-content)."
+  }
+]

@@ -1,0 +1,21 @@
+title: "Failure Recovery and State Consistency in Autonomous Multi-Agent Architectures"
+topic: "Addressing non-deterministic execution, cascading failure propagation, and distributed state inconsistency in cooperative multi-agent LLM systems."
+type: "academic"
+target_words: 1500
+word_tolerance_percent: 15.0
+citation_style: "apa7"
+source_requirements:
+  minimum_sources: 5
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - "Categorize common failure modes in multi-agent orchestration (e.g. conversational deadlocks, tool invocation timeouts, hallucinated state transitions)."
+  - "Evaluate consensus protocols, vector memory synchronization, and saga pattern transactions for agent state rollbacks."
+  - "Analyze deterministic boundary enforcement and guardrails in production systems."
+outline:
+  - "Introduction and Architecture of Multi-Agent LLM Systems"
+  - "Taxonomy of Multi-Agent Failure Modes"
+  - "Distributed State Synchronization and Memory Consistency Models"
+  - "Fault Isolation, Checkpointing, and Automated Rollback Mechanisms"
+  - "Empirical Evaluation and Architectural Recommendations"
+  - "Conclusion"

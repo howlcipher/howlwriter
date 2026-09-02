@@ -1,0 +1,22 @@
+title: "Memory Safety in Systems Programming: Evaluating Rust Borrow Checking and C++ Formal Verification"
+topic: "A rigorous comparative study of compile-time affine type systems (Rust borrow checker) versus static analysis and formal contract verification in modern C++ (C++20/23) for eliminating memory corruption vulnerabilities."
+type: "academic"
+target_words: 2300
+word_tolerance_percent: 15.0
+citation_style: "apa7"
+source_requirements:
+  minimum_sources: 7
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - "Examine the taxonomy of spatial and temporal memory safety bugs (use-after-free, double free, buffer overflow, data races)."
+  - "Formally explain Rust ownership, lifetime annotations, and the non-lexical lifetimes (NLL) borrow checker."
+  - "Assess C++ lifetime profiles, AddressSanitizer runtime overhead, and formal verification frameworks."
+outline:
+  - "Introduction to the Memory Safety Crisis in Systems Software"
+  - "Taxonomy of Spatial and Temporal Memory Corruption Vulnerabilities"
+  - "Rust's Static Ownership and Borrowing Paradigm"
+  - "C++ Approaches: Lifetime Profiles, Smart Pointers, and Formal Verification"
+  - "Empirical Vulnerability Reduction and Developer Ergonomics"
+  - "Unsafe Seams and FFI Interoperability Challenges"
+  - "Conclusion and the Future of Systems Programming"

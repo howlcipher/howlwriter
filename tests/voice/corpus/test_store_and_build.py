@@ -177,8 +177,8 @@ def test_the_feature_cache_holds_vectors_not_prose(store_root, corpus_dir):
     assert "rollback" not in serialized
     for entry in cache["documents"].values():
         assert set(entry) <= {
-            "content_hash", "features", "context", "classification", "reused",
-            "model_traits",
+            "content_hash", "feature_schema", "features", "context",
+            "classification", "reused", "model_traits",
         }
         assert all(isinstance(v, (int, float)) for v in entry["features"].values())
         # Cached trait labels are short vocabulary values, never prose.
@@ -531,3 +531,44 @@ def test_a_changed_document_is_re_analyzed_not_served_from_cache(
     backend.executed_calls.clear()
     build_voice("subject", [corpus_dir], store_root=store_root, custom_backend=backend)
     assert backend.executed_calls, "a changed document must be re-analyzed"
+
+
+# --- feature schema invalidation --------------------------------------
+
+
+def test_a_new_feature_field_invalidates_the_cached_vectors(store_root, corpus_dir):
+    """A schema change must re-measure, not restore defaults.
+
+    The cache is keyed on the document's content, which answers "is this the
+    same document?" and cannot answer "were these numbers produced by the
+    current measurement code?". When a feature was added during the structural
+    variance work, every unchanged document was restored through `from_dict`,
+    the absent field became the dataclass default, and the build persisted a
+    corpus-wide 0.0 for something never measured -- which then rendered into
+    prompts as "typically 0-0 words".
+    """
+    for index in range(12):
+        (corpus_dir / f"doc{index}.md").write_text(synthetic_prose(index), encoding="utf-8")
+    build_voice("subject", [corpus_dir], store_root=store_root, deterministic_only=True)
+
+    store = VoiceStore("subject", root=store_root)
+    cache = store.load_features()
+    key = next(iter(cache))
+    assert cache[key]["feature_schema"], "cache must record the schema it was written with"
+
+    # Simulate the cache having been written before a field existed.
+    stale = json.loads((store.directory / "features.json").read_text(encoding="utf-8"))
+    for entry in stale["documents"].values():
+        entry["feature_schema"] = "written-by-an-older-schema"
+        entry["features"]["paragraph_words_p90"] = 0.0
+    (store.directory / "features.json").write_text(json.dumps(stale), encoding="utf-8")
+
+    build_voice("subject", [corpus_dir], store_root=store_root, deterministic_only=True)
+
+    rebuilt = VoiceStore("subject", root=store_root).load_features()
+    assert all(
+        entry["reused"] is False for entry in rebuilt.values()
+    ), "a schema mismatch must force re-extraction rather than reuse"
+    assert any(
+        entry["features"]["paragraph_words_p90"] > 0 for entry in rebuilt.values()
+    ), "re-extraction must repopulate the field the stale cache zeroed"

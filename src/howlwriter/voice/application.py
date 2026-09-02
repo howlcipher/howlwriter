@@ -48,6 +48,18 @@ MIN_CONTEXT_TRAIT_CONFIDENCE = 0.35
 #: hiding them would overstate how much the profile knows.
 LOW_CONFIDENCE = 0.45
 
+#: Below this share of agreement, the winning label is a plurality rather than
+#: a property, and the trait is rendered as varying between documents.
+#:
+#: Heuristic, not derived. The reasoning is that a label carrying less than
+#: half the corpus weight is by definition contradicted by most of the corpus,
+#: so 0.50 is the point where "this is how the author writes" stops being a
+#: fair summary. It is deliberately not tuned against any one corpus; raising
+#: it would hedge traits that are genuinely consistent, and lowering it would
+#: restore the failure it exists to prevent, where a fourteen-to-fourteen
+#: split renders as an unqualified instruction.
+MIN_TRAIT_AGREEMENT = 0.50
+
 
 def context_for_mode(mode: object) -> str:
     """The voice context a writing mode should draw on."""
@@ -61,17 +73,58 @@ def context_for_mode(mode: object) -> str:
     return "general"
 
 
-def _describe_range(low: float | None, high: float | None, unit: str) -> str:
+def _has_spread(low: float | None, high: float | None) -> bool:
+    """Whether a p10/p90 pair actually describes a range.
+
+    A missing percentile and a percentile of zero have to be treated the same
+    way. `0.0` is what a stale feature cache leaves behind when a field is
+    restored from a record written before that field existed, and it is also
+    what a degenerate corpus produces. Rendering it anyway yields
+    "typically 0-0 words (mean ~80 words)", which is worse than saying nothing:
+    it hands the model a contradiction and buries the usable mean inside it.
+    """
     if low is None or high is None:
+        return False
+    return high > low > 0
+
+
+def _describe_range(low: float | None, high: float | None, unit: str) -> str:
+    if not _has_spread(low, high):
         return ""
     return f"typically {low:.0f}-{high:.0f} {unit}, and deliberately not uniform"
 
 
+def _is_split(trait: TraitValue) -> bool:
+    """Whether the corpus disagrees with itself about this trait."""
+    return bool(
+        trait.source != "user"
+        and trait.agreement
+        and trait.agreement < MIN_TRAIT_AGREEMENT
+        and trait.secondary
+        and trait.secondary != trait.value
+    )
+
+
 def _trait_line(name: str, trait: TraitValue) -> str:
     label = name.replace("_", " ")
-    line = f"  - {label}: {trait.value}"
     if trait.source == "user":
-        return line + "  (set by you; overrides the corpus)"
+        return f"  - {label}: {trait.value}  (set by you; overrides the corpus)"
+
+    # A plurality label is not a property of the author. Stating one as though
+    # it were is how a trait becomes a signature: a corpus split evenly between
+    # documents that use parentheses and documents that do not renders as
+    # "frequent", and every generated piece then carries one. Saying the
+    # tendency varies is both the honest reading of the evidence and the thing
+    # that lets some pieces come out without the trait at all.
+    if _is_split(trait):
+        line = (
+            f"  - {label}: VARIES -- {trait.value} in about "
+            f"{trait.agreement:.0%} of documents, {trait.secondary} in about "
+            f"{trait.secondary_agreement:.0%}"
+        )
+    else:
+        line = f"  - {label}: {trait.value}"
+
     if trait.confidence < LOW_CONFIDENCE:
         return line + f"  (low confidence {trait.confidence:.2f}; treat as a weak hint)"
     return line
@@ -109,6 +162,18 @@ def render_profile(profile: VoiceProfile | None, mode: object = None) -> str:
         "The same trait should look different in different pieces.",
         "- Match the author's natural VARIATION, not their average. Writing every "
         "sentence at the mean length is a failure, not a match.",
+        "- CONTEXTUAL STRUCTURAL VARIANCE: Match the author's natural variation between documents. "
+        "Do NOT force every generated document into a uniform shape, paragraph count, or rhythm. "
+        "If the author uses a mix of punchy short focus paragraphs and fuller analytical paragraphs, "
+        "reflect that mix naturally based on the idea's requirements.",
+        "- DISTRIBUTION OVER CHECKLIST: Trait rates (e.g. sentence-initial conjunctions, fragments, "
+        "parentheticals, questions, transitions) are overall corpus frequencies, NOT per-paragraph quotas. "
+        "A 10% rate means an occasional occurrence across a piece, NOT every sentence or every paragraph. "
+        "Do NOT force a feature merely because it exists in the profile.",
+        "- ANTI-HYPER-SYMMETRY: Avoid mechanically regular paragraph structures "
+        "(e.g. 4 consecutive paragraphs with identical sentence counts or word counts, "
+        "rigid thesis -> explanation -> explanation -> conclusion blocks, or repeated opening formulas).",
+        "- Never invent fake anecdotes, deliberate misspellings, grammar errors, or contrived quirks.",
         "- Never invent a signature opening, a catchphrase, or a recurring closing move.",
         "- In conversational and social modes, preserve natural conversational pronouns "
         "('I', 'you', 'your business', 'we') and contractions ('isn't', 'don't', 'can't') when natural; "
@@ -132,6 +197,12 @@ def render_profile(profile: VoiceProfile | None, mode: object = None) -> str:
     # --- global tendencies ---
     if profile.traits:
         lines.append("GLOBAL TENDENCIES:")
+        if any(_is_split(trait) for trait in profile.traits.values()):
+            lines.append(
+                "  (A trait marked VARIES is one the corpus is split on. Choose "
+                "whichever side suits this piece and let other pieces differ; "
+                "applying it every time is what turns a tendency into a tell.)"
+            )
         for name, trait in sorted(profile.traits.items()):
             lines.append(_trait_line(name, trait))
         lines.append("")
@@ -145,10 +216,41 @@ def render_profile(profile: VoiceProfile | None, mode: object = None) -> str:
         )
         if sentence_range:
             spread.append(f"  - sentence length: {sentence_range}")
-        if distributions.paragraph_words_mean:
+        if _has_spread(distributions.paragraph_words_p10, distributions.paragraph_words_p90):
+            mean_w = distributions.paragraph_words_mean or 0
+            spread.append(
+                f"  - paragraph length: typically {distributions.paragraph_words_p10:.0f}-"
+                f"{distributions.paragraph_words_p90:.0f} words (mean ~{mean_w:.0f} words), "
+                "with real variation between short focal paragraphs and fuller blocks"
+            )
+        elif distributions.paragraph_words_mean:
             spread.append(
                 f"  - paragraph length: around {distributions.paragraph_words_mean:.0f} "
                 "words on average, with real variation between short and long"
+            )
+        if _has_spread(
+            distributions.paragraph_sentences_p10, distributions.paragraph_sentences_p90
+        ):
+            mean_s = distributions.paragraph_sentences_mean or 0
+            spread.append(
+                f"  - paragraph sentence count: typically {distributions.paragraph_sentences_p10:.0f}-"
+                f"{distributions.paragraph_sentences_p90:.0f} sentences (mean ~{mean_s:.1f})"
+            )
+        if (
+            distributions.single_sentence_paragraph_rate
+            and distributions.single_sentence_paragraph_rate > 0.10
+        ):
+            rate = distributions.single_sentence_paragraph_rate
+            spread.append(
+                f"  - single-sentence paragraphs: present (~{rate:.0%} of paragraphs), "
+                "used selectively for focal emphasis rather than every block"
+            )
+        if distributions.short_sentence_rate and distributions.long_sentence_rate:
+            s_rate = distributions.short_sentence_rate
+            l_rate = distributions.long_sentence_rate
+            spread.append(
+                f"  - sentence cadence mix: blends concise statements (<=9 words: ~{s_rate:.0%}) "
+                f"with developed sentences (>=28 words: ~{l_rate:.0%})"
             )
         if spread:
             lines.append("MEASURED SPREAD (match the range, do not converge on the middle):")
@@ -156,7 +258,7 @@ def render_profile(profile: VoiceProfile | None, mode: object = None) -> str:
             lines.append("")
 
     # --- context adjustments ---
-    if context is not None and context.traits:
+    if context is not None and (context.traits or context.distributions):
         strong = {
             name: trait for name, trait in context.traits.items()
             if trait.confidence >= MIN_CONTEXT_TRAIT_CONFIDENCE
@@ -177,6 +279,27 @@ def render_profile(profile: VoiceProfile | None, mode: object = None) -> str:
                 f"  - {name.replace('_', ' ')}: possibly {trait.value} "
                 "(thin evidence; do not let this override the global tendency)"
             )
+        # Context-specific structural spread if available with confidence
+        if context.confidence >= MIN_CONTEXT_TRAIT_CONFIDENCE and context.distributions:
+            cd = context.distributions
+            ctx_spread = []
+            if _has_spread(cd.get("paragraph_words_p10"), cd.get("paragraph_words_p90")):
+                ctx_spread.append(
+                    f"  - context paragraph length: typically {cd['paragraph_words_p10']:.0f}-"
+                    f"{cd['paragraph_words_p90']:.0f} words"
+                )
+            elif cd.get("paragraph_words_mean") is not None:
+                ctx_spread.append(
+                    f"  - context paragraph length mean: ~{cd['paragraph_words_mean']:.0f} words"
+                )
+            if _has_spread(cd.get("sentence_length_p10"), cd.get("sentence_length_p90")):
+                ctx_spread.append(
+                    f"  - context sentence length: typically {cd['sentence_length_p10']:.0f}-"
+                    f"{cd['sentence_length_p90']:.0f} words"
+                )
+            if ctx_spread:
+                lines.append("  Context Structural Cadence:")
+                lines.extend(ctx_spread)
         lines.append(
             "  These adjust the global tendencies for this context. They do not "
             "replace them, and they never override the mode's own rules."

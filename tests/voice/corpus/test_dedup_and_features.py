@@ -250,3 +250,21 @@ def test_empty_and_whitespace_input_returns_zeroed_features():
         assert features.words == 0
         assert features.sentences == 0
         assert features.sentence_length_mean == 0.0
+
+
+def test_structural_variance_features():
+    # Document with 1 short single-sentence paragraph and 1 multi-sentence paragraph
+    text = (
+        "Short focal point.\n\n"
+        "Here is a second paragraph that develops the concept with multiple sentences in detail. "
+        "It contains enough words to measure paragraph word percentiles accurately. "
+        "A third sentence wraps up the analytical point neatly."
+    )
+    features = extract_features(text)
+    assert features.paragraphs == 2
+    assert features.single_sentence_paragraph_rate == 0.5
+    assert features.short_sentence_rate > 0  # "Short focal point." is 3 words (<=9)
+    assert features.paragraph_sentences_p10 > 0
+    assert features.paragraph_sentences_p90 > features.paragraph_sentences_p10
+    assert features.paragraph_words_p10 > 0
+    assert features.paragraph_words_p90 > features.paragraph_words_p10

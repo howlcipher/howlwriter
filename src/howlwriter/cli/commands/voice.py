@@ -384,6 +384,14 @@ def _verbose_sections(profile: VoiceProfile, store: VoiceStore) -> list[str]:
                 continue
             lines.append(f"  {name.replace('_', ' '):36} {value}")
 
+    for ctx_name, ctx in sorted(profile.contexts.items()):
+        if ctx.distributions:
+            lines += ["", f"Measured {ctx_name.title()} distributions"]
+            for name, value in sorted(ctx.distributions.items()):
+                if value is None:
+                    continue
+                lines.append(f"  {name.replace('_', ' '):36} {value}")
+
     summary = profile.corpus_summary
     if summary is not None and summary.quality_classifications:
         lines += ["", "Document classifications"]

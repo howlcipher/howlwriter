@@ -1,0 +1,21 @@
+title: "Implementing Service Level Objectives and Error Budgets in Microservice Architectures"
+topic: "A critical evaluation of Service Level Indicators (SLIs), Service Level Objectives (SLOs), and Error Budget burn rate alerting in distributed cloud systems."
+type: "academic"
+target_words: 1600
+word_tolerance_percent: 15.0
+citation_style: "apa7"
+source_requirements:
+  minimum_sources: 6
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - "Differentiate between request-based and window-based SLI mathematical formulations."
+  - "Analyze multiwindow multi-burn-rate alerting algorithms for fast vs slow budget depletion."
+  - "Evaluate organizational tensions between feature velocity and error budget freeze policies."
+outline:
+  - "Introduction: Reliability Engineering Beyond Traditional Uptime"
+  - "Mathematical Foundations of SLIs and SLOs"
+  - "Error Budget Calculations and Multiwindow Burn-Rate Alerting"
+  - "Architectural and Organizational Enforcement Policies"
+  - "Case Studies and Failure Modes in Distributed Implementations"
+  - "Conclusion and Future Reliability Research"

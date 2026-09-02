@@ -73,6 +73,13 @@ class TraitValue(DataClassSerializationMixin):
     supporting_documents: int = 0
     supporting_words: int = 0
     agreement: float = 0.0
+    #: The next most common label, when the corpus does not agree with itself.
+    #: `value` is a plurality winner, not a property of the author: a corpus
+    #: split fourteen-to-fourteen still yields a single winning label. Keeping
+    #: the runner-up is what lets the application layer say the tendency varies
+    #: instead of stating the plurality as an absolute.
+    secondary: str = ""
+    secondary_agreement: float = 0.0
     source: TraitSource = "deterministic"
     note: str = ""
 
@@ -128,7 +135,17 @@ class VoiceDistributions(DataClassSerializationMixin):
     sentence_length_p90: float | None = None
     paragraph_sentences_mean: float | None = None
     paragraph_sentences_stdev: float | None = None
+    paragraph_sentences_p10: float | None = None
+    paragraph_sentences_p50: float | None = None
+    paragraph_sentences_p90: float | None = None
     paragraph_words_mean: float | None = None
+    paragraph_words_stdev: float | None = None
+    paragraph_words_p10: float | None = None
+    paragraph_words_p50: float | None = None
+    paragraph_words_p90: float | None = None
+    single_sentence_paragraph_rate: float | None = None
+    short_sentence_rate: float | None = None
+    long_sentence_rate: float | None = None
     lexical_diversity: float | None = None
     mean_word_length: float | None = None
     contraction_rate: float | None = None

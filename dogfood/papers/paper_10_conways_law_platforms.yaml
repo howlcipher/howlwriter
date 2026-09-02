@@ -1,0 +1,22 @@
+title: "Conway's Law in Platform Engineering: Organizational Topologies and Internal Developer Portals"
+topic: "Analyzing how Conway's Law influences internal developer platforms (IDPs), Team Topologies interaction modes, and cognitive load reduction in socio-technical engineering organizations."
+type: "academic"
+target_words: 2100
+word_tolerance_percent: 15.0
+citation_style: "apa7"
+source_requirements:
+  minimum_sources: 6
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - "Formulate the socio-technical feedback loops between team communication boundaries and software architecture."
+  - "Evaluate the four fundamental team types and three interaction modes defined in Team Topologies."
+  - "Analyze empirical evidence on Developer Experience (DevEx), self-service platform adoption, and cognitive load metrics."
+outline:
+  - "Introduction: Socio-Technical Dynamics and Conway's Law"
+  - "The Rise of Platform Engineering and Internal Developer Platforms"
+  - "Team Topologies: Categorization and Interaction Patterns"
+  - "Cognitive Load and Developer Productivity Measurement (SPACE & DevEx)"
+  - "Anti-Patterns: The Ticket-Driven Platform and Governance Friction"
+  - "Empirical Insights and Organizational Strategy"
+  - "Conclusion"

@@ -20,6 +20,7 @@ it found, and a made-up progress bar is worse than none.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from dataclasses import fields as dataclass_fields
 import hashlib
 from pathlib import Path
 import time
@@ -112,6 +113,22 @@ class BuildOutcome:
     validation: validation_stage.ValidationResult
     directory: Path
     warnings: list[str] = field(default_factory=list)
+
+
+def _feature_schema_fingerprint() -> str:
+    """Identity of the DocumentFeatures schema itself.
+
+    The content hash answers "is this the same document?". It cannot answer
+    "were these numbers produced by the current measurement code?". When a new
+    feature is added, every unchanged document would otherwise be restored from
+    a cache that predates the field, `from_dict` would fill it with the
+    dataclass default, and the build would persist a corpus-wide zero for a
+    feature that was never measured. Deriving the fingerprint from the field
+    names means adding a field invalidates the cache on its own, with nothing
+    to remember to bump.
+    """
+    names = ",".join(sorted(f.name for f in dataclass_fields(DocumentFeatures)))
+    return hashlib.sha256(names.encode("utf-8")).hexdigest()[:16]
 
 
 def _fingerprint(path: Path, content_hash: str) -> str:
@@ -210,6 +227,7 @@ def build_voice(
         overrides_raw = existing_overrides.read_text(encoding="utf-8")
 
     cached_features = store.load_features() if reuse_cache and store.exists() else {}
+    schema_fingerprint = _feature_schema_fingerprint()
     cached_sources = store.load_sources() if reuse_cache and store.exists() else {}
 
     # --- 1. discovery ---
@@ -305,6 +323,7 @@ def build_voice(
             cached is not None
             and cached.content_hash == content_hash
             and str(key) in cached_features
+            and cached_features[key].get("feature_schema") == schema_fingerprint
         )
         if unchanged:
             features = DocumentFeatures.from_dict(cached_features[key].get("features", {}))
@@ -363,6 +382,7 @@ def build_voice(
         )
         feature_cache[key] = {
             "content_hash": content_hash,
+            "feature_schema": schema_fingerprint,
             "features": features.to_dict(),
             "context": context_result.context,
             "classification": assessment.classification,

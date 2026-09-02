@@ -1,0 +1,136 @@
+[
+  {
+    "id": "S001",
+    "title": "GraphShield: A Graph-Structured Defense Framework for Prompt Injection in RAG and Multi-Agent LLM Systems",
+    "authors": [
+      "Singh, Shreya"
+    ],
+    "publisher": "Elsevier BV",
+    "publication_date": "2026-01-01",
+    "url": "https://doi.org/10.2139/ssrn.7082874",
+    "doi": "10.2139/ssrn.7082874",
+    "access_date": "2026-08-31",
+    "source_type": "other",
+    "retrieved_text": "GraphShield is a graph-structured defense framework for LLMs that represents system prompts, retrieved knowledge, agents, and parsed instructions as directed Trust-Knowledge Graph (TKG). Security is formalized as reachability from an instruction node to policy node in a trust-threshold subgraph, and operationally instantiated through typed instruction-violation signatures that assign zero trust to pattern-matched instructions, together with provenance filtering of retrieved and agent-supplied content; instructions that clear these checks receive a default bridge trust, so the trust threshold functions as a structural reachability gate rather than a graded per-instruction score. Evaluated on four benchmarks (PromptBench, INJECAGENT, RAGInject-Bench, MultiAgentEscape-Bench) against six defense baselines and a No-Defense reference across three victim models (Qwen2-0.5B, Gemma3-4B, Llama3.2), the full GraphShield configuration achieves block-level F1=0.791; the block-level F1 is invariant across all three victim models by construction (\u00a75.0.1). We select the full configuration for threat-surface coverage and structural completeness against indirect and context-borne attacks rather than to maximize aggregate F1. We frame GraphShield&amp;apos;s contribution as a unified, auditable graph representation for coordinating heterogeneous security controls across RAG and multi-agent systems.",
+    "reliability_notes": "Retrieved from Crossref API (type: posted-content)."
+  },
+  {
+    "id": "S002",
+    "title": "PROMPT PERSISTENCE ATTACKS: LONG-TERM MEMORY POISONING IN LLM-BASED SYSTEMS",
+    "authors": [
+      "Bhatnagar, Pranav"
+    ],
+    "publisher": "Elsevier BV",
+    "publication_date": "2026-01-01",
+    "url": "https://doi.org/10.2139/ssrn.6183548",
+    "doi": "10.2139/ssrn.6183548",
+    "access_date": "2026-08-31",
+    "source_type": "other",
+    "retrieved_text": "Large Language Models (LLMs) are increasingly deployed as persistent, interactive systems that retain information across user interactions. These memory mechanisms are designed to enhance personalization, task continuity, and operational efficiency. However, persistence introduces a new and insufficiently examined security risk: the gradual corruption of long-term memory through legitimate interaction. This paper introduces the concept of Prompt Persistence Attacks, a class of long-horizon adversarial strategies that exploit memory retention in deployed LLMbased systems. Unlike prompt injection or jailbreak attacks that aim to induce immediate policy violations, prompt persistence attacks operate incrementally, shaping system memory over time in ways that remain below conventional detection thresholds. We analyze how contemporary memory architectures used in real-world LLM deployments can be manipulated without violating explicit safety constraints. Through detailed threat modeling and scenario-based analysis, we demonstrate how poisoned memory can bias future reasoning, distort decisionmaking, and undermine alignment guarantees. The paper concludes by outlining the limitations of existing defenses and identifying key research challenges in securing memory-enabled AI systems.",
+    "reliability_notes": "Retrieved from Crossref API (type: posted-content)."
+  },
+  {
+    "id": "S003",
+    "title": "Securing Agentic AI Systems Against Prompt Injection and Memory Poisoning",
+    "authors": [
+      "Singh, Sejal",
+      "Choudhary, Sagar",
+      "Jannat, Jannat"
+    ],
+    "publisher": "Genesis Global Publication",
+    "publication_date": "2026-05-01",
+    "url": "https://doi.org/10.55248/gengpi.07.0526.d13243",
+    "doi": "10.55248/gengpi.07.0526.d13243",
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Published academic work by Genesis Global Publication: Securing Agentic AI Systems Against Prompt Injection and Memory Poisoning",
+    "reliability_notes": "Retrieved from Crossref API (type: journal-article)."
+  },
+  {
+    "id": "S004",
+    "title": "Containment over Detection: Cryptographic Boundary Enforcement for Prompt Injection Defense in Agentic LLM Systems",
+    "authors": [
+      "Sharma, Saurabh"
+    ],
+    "publisher": "Springer Science and Business Media LLC",
+    "publication_date": "2026-07-01",
+    "url": "https://doi.org/10.21203/rs.3.rs-10196595/v1",
+    "doi": "10.21203/rs.3.rs-10196595/v1",
+    "access_date": "2026-08-31",
+    "source_type": "other",
+    "retrieved_text": "Abstract\n                Prompt injection\u2014the manipulation of an LLM-based agent through adversarial content embedded in user input\u2014poses a critical security risk in production agentic systems with access to sensitive datastores and code execution environments. Detection-based defenses (keyword filtering, learned classifiers) suffer from a fundamental accuracy\u2013latency tradeoff and fail to address the root cause: the absence of a syntactic boundary between instructions and data in LLM context windows. We present a containment-based defense architecture that shifts the security objective from detecting malicious input to rendering injection attempts structurally inert. The defense comprises four composable layers: (1) ephemeral cryptographic token generation providing 256 bits of boundary entropy, (2) input canonicalization eliminating encoding-based bypass vectors, (3) token-authenticated XML envelope wrapping with server-side escape validation, and (4) behavioral prompt grounding that leverages the envelope as a trust signal. We formalize the security guarantee and prove that, under a black-box attacker model without oracle access to the runtime token, the probability of crafting a valid boundary escape is negligible (\\(\\le 2^{-256}\\)). The architecture is validated through 15 machine-checkable correctness properties using the Hypothesis property-based testing framework\u2014three of which caught security-critical bugs before production deployment. Empirical evaluation against 547 adversarial patterns drawn from four established attack corpora (Garak, OWASP LLM Top 10, HarmBench prompt injection subset, and a custom multilingual probe set) demonstrates a 94.3% syntactic containment rate; the 5.7% residual failures are confirmed to be model-level semantic jailbreaks orthogonal to input-layer defense. Measured runtime overhead is &lt;0.5ms per request. The evaluation harness and property specifications are released as open-source.",
+    "reliability_notes": "Retrieved from Crossref API (type: posted-content)."
+  },
+  {
+    "id": "S005",
+    "title": "UniGuardian: A Unified Defense for Detecting Prompt Injection, Backdoor Attacks and Adversarial Attacks in Large Language Models",
+    "authors": [
+      "Huawei Lin",
+      "Yingjie Lao",
+      "Tong Geng",
+      "Tan Yu",
+      "Weijie Zhao"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2025-02-18",
+    "url": "http://arxiv.org/abs/2502.13141v1",
+    "doi": null,
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Large Language Models (LLMs) are vulnerable to attacks like prompt injection, backdoor attacks, and adversarial attacks, which manipulate prompts or models to generate harmful outputs. In this paper, departing from traditional deep learning attack paradigms, we explore their intrinsic relationship and collectively term them Prompt Trigger Attacks (PTA). This raises a key question: Can we determine if a prompt is benign or poisoned? To address this, we propose UniGuardian, the first unified defense mechanism designed to detect prompt injection, backdoor attacks, and adversarial attacks in LLMs. Additionally, we introduce a single-forward strategy to optimize the detection pipeline, enabling simultaneous attack detection and text generation within a single forward pass. Our experiments confirm that UniGuardian accurately and efficiently identifies malicious prompts in LLMs.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S006",
+    "title": "Learning the Value Systems of Agents with Preference-based and Inverse Reinforcement Learning",
+    "authors": [
+      "Andr\u00e9s Holgado-S\u00e1nchez",
+      "Holger Billhardt",
+      "Alberto Fern\u00e1ndez",
+      "Sascha Ossowski"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2026-02-04",
+    "url": "http://arxiv.org/abs/2602.04518v1",
+    "doi": "10.1007/s10458-026-09732-0",
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Agreement Technologies refer to open computer systems in which autonomous software agents interact with one another, typically on behalf of humans, in order to come to mutually acceptable agreements. With the advance of AI systems in recent years, it has become apparent that such agreements, in order to be acceptable to the involved parties, must remain aligned with ethical principles and moral values. However, this is notoriously difficult to ensure, especially as different human users (and their software agents) may hold different value systems, i.e. they may differently weigh the importance of individual moral values. Furthermore, it is often hard to specify the precise meaning of a value in a particular context in a computational manner. Methods to estimate value systems based on human-engineered specifications, e.g. based on value surveys, are limited in scale due to the need for intense human moderation. In this article, we propose a novel method to automatically \\emph{learn} value systems from observations and human demonstrations. In particular, we propose a formal model of the \\emph{value system learning} problem, its instantiation to sequential decision-making domains based on multi-objective Markov decision processes, as well as tailored preference-based and inverse reinforcement learning algorithms to infer value grounding functions and value systems. The approach is illustrated and evaluated by two simulated use cases.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S007",
+    "title": "Securing LLM-Agent Long-Term Memory Against Poisoning: Non-Malleable, Origin-Bound Authority with Machine-Checked Guarantees",
+    "authors": [
+      "Yedidel Louck"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2026-06-23",
+    "url": "http://arxiv.org/abs/2606.24322v1",
+    "doi": null,
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "LLM agents increasingly rely on persistent long-term memory, which creates a critical vulnerability that we study here: memory poisoning. An adversary can store untrusted content in one session that later steers a consequential action, such as a payment, a setting change, or data exfiltration, in a future session. Existing defenses base a memory item's authority to act on either its content (detection or trust-scoring) or its derivation history (lineage). We show that both signals are malleable. An attacker can launder an untrusted origin through three channels specific to LLM agents: the agent's own summarization, a trusted-tool echo, and manufactured corroboration. Each makes the content look benign and breaks or flips its derivation edge to ``trusted.'' We formalize malleability for the memory write-retrieve-act pipeline and prove a machine-checked separation theorem. No content- or lineage-based defense is sound under laundering (T1), write-time origin binding is necessary (T2), and non-malleable origin-bound authority with Sybil-resistant corroboration-gated elevation is sufficient (T3). Our construction, TMA-NM (Tamper-evident Memory Authority, Non-Malleable), instantiates non-malleable information-flow control (IFC) for LLM-agent memory. A cross-defense, cross-attack, and cross-model benchmark over eight frontier models shows that existing defenses fail exactly where the theory predicts (up to 68% laundering attack-success), while TMA-NM reaches 0% attack success on both direct and laundering attacks across all models and channels, at full legitimate utility. We release the benchmark, harness, and machine-checked TLA+ models to support reproducibility.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S008",
+    "title": "SecAlign: Defending Against Prompt Injection with Preference Optimization",
+    "authors": [
+      "Sizhe Chen",
+      "Arman Zharmagambetov",
+      "Saeed Mahloujifar",
+      "Kamalika Chaudhuri",
+      "David Wagner",
+      "Chuan Guo"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2024-10-07",
+    "url": "http://arxiv.org/abs/2410.05451v3",
+    "doi": "10.1145/3719027.3744836",
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Large language models (LLMs) are becoming increasingly prevalent in modern software systems, interfacing between the user and the Internet to assist with tasks that require advanced language understanding. To accomplish these tasks, the LLM often uses external data sources such as user documents, web retrieval, results from API calls, etc. This opens up new avenues for attackers to manipulate the LLM via prompt injection. Adversarial prompts can be injected into external data sources to override the system's intended instruction and instead execute a malicious instruction. To mitigate this vulnerability, we propose a new defense called SecAlign based on the technique of preference optimization. Our defense first constructs a preference dataset with prompt-injected inputs, secure outputs (ones that respond to the legitimate instruction), and insecure outputs (ones that respond to the injection). We then perform preference optimization on this dataset to teach the LLM to prefer the secure output over the insecure one. This provides the first known method that reduces the success rates of various prompt injections to <10%, even against attacks much more sophisticated than ones seen during training. This indicates our defense generalizes well against unknown and yet-to-come attacks. Also, SecAlign models are still practical with similar utility to the one before defensive training in our evaluations. Our code is at https://github.com/facebookresearch/SecAlign",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  }
+]

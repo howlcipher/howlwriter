@@ -312,6 +312,38 @@ def test_corpus_sufficiency_caps_the_reported_confidence():
     assert thin_corpus.overall_confidence == "LOW"
 
 
+def test_context_distributions_carry_the_structural_percentiles():
+    """The aggregate must forward the spread, not only the means.
+
+    A context whose percentiles arrive as zeros renders downstream as
+    "typically 0-0 words", so this is where the values have to be real.
+    """
+    result = aggregate(_evidence(12, context="professional"))
+
+    context = result.contexts.get("professional")
+    assert context is not None
+    assert context.distributions["paragraph_words_p90"] > 0
+    assert (
+        context.distributions["paragraph_words_p90"]
+        > context.distributions["paragraph_words_p10"]
+    )
+    assert context.distributions["paragraph_sentences_p50"] > 0
+    assert context.distributions["single_sentence_paragraph_rate"] >= 0
+
+
+def test_a_split_corpus_records_the_runner_up_label():
+    """Agreement alone cannot say what the other half of the corpus did."""
+    from howlwriter.voice.corpus.aggregate import _label_agreement
+
+    label, agreement, runner, runner_share = _label_agreement(
+        [("absent", 1.0)] * 13 + [("prominent", 1.0)] * 12
+    )
+    assert label == "absent"
+    assert runner == "prominent"
+    assert agreement < 0.60
+    assert runner_share > 0.40
+
+
 # --- diversity ---------------------------------------------------------
 
 def test_diversity_accepts_output_that_varies_like_the_corpus():
@@ -344,6 +376,46 @@ def test_diversity_flags_a_shared_opening_across_outputs():
     result = compare(corpus, generated)
     assert result.repeated_openings
     assert any("share the same two-word opening" in note for note in result.notes)
+
+
+def test_a_thin_context_slice_cannot_replace_the_corpus_baseline():
+    """Two documents cannot supply a coefficient of variation.
+
+    A slice that small produces a corpus CV large enough to clear real
+    convergence, so substituting it does not weaken the check, it inverts it.
+    """
+    corpus = [extract_features(synthetic_prose(i, paragraphs=6)) for i in range(12)]
+    thin_slice = [extract_features(synthetic_prose(500 + i, paragraphs=6)) for i in range(2)]
+    generated = [synthetic_prose(100 + i, paragraphs=6) for i in range(10)]
+
+    result = compare(corpus, generated, context_corpus_features=thin_slice)
+
+    assert any("below the" in note and "context slice" in note for note in result.notes)
+
+
+def test_a_sufficient_context_slice_is_used_as_the_baseline():
+    corpus = [extract_features(synthetic_prose(i, paragraphs=6)) for i in range(12)]
+    fat_slice = [extract_features(synthetic_prose(500 + i, paragraphs=6)) for i in range(10)]
+    generated = [synthetic_prose(100 + i, paragraphs=6) for i in range(10)]
+
+    result = compare(corpus, generated, context_corpus_features=fat_slice)
+
+    assert not any("context slice held only" in note for note in result.notes)
+
+
+def test_a_large_length_gap_withholds_a_pass_rather_than_granting_one():
+    """Short outputs against long corpus documents cannot earn a PASS.
+
+    The structural dimensions are dominated by length at that ratio, so a clean
+    sheet means the comparison was never in a position to detect anything.
+    """
+    corpus = [extract_features(synthetic_prose(i, paragraphs=40)) for i in range(10)]
+    generated = [synthetic_prose(100 + i, paragraphs=2) for i in range(10)]
+
+    result = compare(corpus, generated)
+
+    assert result.verdict != PASS
+    assert any("much shorter than the corpus" in note for note in result.notes)
 
 
 def test_diversity_needs_enough_samples_to_say_anything():
