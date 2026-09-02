@@ -3,7 +3,6 @@
  */
 
 import {
-  
   AssignmentSpec,
   DocumentData,
   HowlPipelineResponse,
@@ -16,6 +15,7 @@ import {
   ValidateSpecResponse,
   VoiceDetail,
   VoiceSummary,
+  GenerationProvenance,
 } from '../types';
 
 const API_BASE = '/api';
@@ -210,6 +210,14 @@ export const api = {
   async getVoice(name: string): Promise<VoiceDetail> {
     const res = await fetch(`${API_BASE}/voices/${encodeURIComponent(name)}`);
     return handleResponse<VoiceDetail>(res);
+  },
+
+  // --- Generation provenance (read-only) ---
+
+  async getProvenance(runId: string, includePrompts = false): Promise<GenerationProvenance> {
+    const query = includePrompts ? '?include_prompts=true' : '';
+    const res = await fetch(`${API_BASE}/provenance/${encodeURIComponent(runId)}${query}`);
+    return handleResponse<GenerationProvenance>(res);
   },
 
   async rebuildVoice(

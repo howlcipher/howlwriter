@@ -40,7 +40,11 @@ from howlwriter.domain.generation_provenance import (
 )
 from howlwriter.integration.provenance_capture import ProvenanceRecorder
 from howlwriter.outline.coverage import check_coverage
-from howlwriter.provenance.assemble import build_contribution, summarize_outline
+from howlwriter.provenance.assemble import (
+    build_contribution,
+    save_provenance,
+    summarize_outline,
+)
 from howlwriter.academic.verifier import AcademicVerifier, VerificationSummary
 from howlwriter.academic.writer import ModelAcademicWriter
 from howlwriter.config.defaults import default_config
@@ -674,6 +678,7 @@ def _run_academic_pipeline(
             unsupported=len(provenance_graph.unsupported_claims()),
         )
     provenance.complete = True
+    save_provenance(provenance)
     ai_statement = build_ai_use_statement(provenance)
 
     return AcademicPipelineResult(

@@ -58,7 +58,11 @@ from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import WritingRole
 from howlwriter.integration.provenance_capture import ProvenanceRecorder
 from howlwriter.linting.engine import LintEngine
-from howlwriter.provenance.assemble import build_contribution, summarize_outline
+from howlwriter.provenance.assemble import (
+    build_contribution,
+    save_provenance,
+    summarize_outline,
+)
 from howlwriter.outline.coverage import CoverageReport, check_coverage
 from howlwriter.outline.writer import OutlineWriter
 from howlwriter.linting.rules import AI_STYLE_BANNED_WORD, RuleMatch
@@ -190,6 +194,7 @@ def run_howl_pipeline(
             provenance=provenance,
             stage=_stage,
             start_time=start_time,
+            provenance_level=provenance_level,
         )
 
 
@@ -209,6 +214,7 @@ def _run(
     provenance: GenerationProvenance,
     stage: Any,
     start_time: float,
+    provenance_level: str = LEVEL_SUMMARY,
 ) -> PipelineResult:
     outline_draft = None
     coverage_report: CoverageReport | None = None
@@ -493,6 +499,7 @@ def _run(
                 ),
             )
         provenance.complete = True
+        save_provenance(provenance, level=provenance_level)
 
         return PipelineResult(
             original_document=original_document,

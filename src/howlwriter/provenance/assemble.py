@@ -180,6 +180,55 @@ def write_artifacts(
     return written
 
 
+def provenance_path(run_id: str) -> Path:
+    """Where a run's provenance lives when it is kept.
+
+    Beside the diagnostic run records, for the same reason those live there:
+    outside any repository, under the user's home, private by default. A
+    provenance record is more sensitive than a run record, not less.
+    """
+    from howlwriter.diagnostic.run_record import get_default_runs_dir
+
+    return get_default_runs_dir() / f"{run_id}.provenance.json"
+
+
+def save_provenance(
+    provenance: GenerationProvenance,
+    *,
+    level: str = LEVEL_SUMMARY,
+    mask_paths: bool = False,
+) -> Path | None:
+    """Persist a run's provenance next to its run record.
+
+    Never raises. Diagnostics that can abort a writing job are worse than
+    diagnostics that go missing, which is the rule `RunRecord.save` already
+    follows.
+    """
+    try:
+        if not provenance.run_id:
+            return None
+        target = provenance_path(provenance.run_id)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        record = finalize(provenance, level=level, mask_paths=mask_paths)
+        atomic_write_text(target, record.to_json())
+        return target
+    except Exception:                                   # pragma: no cover
+        return None
+
+
+def load_provenance(run_id: str) -> GenerationProvenance | None:
+    """Read a saved record back, or None when the run kept none."""
+    target = provenance_path(run_id)
+    if not target.is_file():
+        return None
+    try:
+        return GenerationProvenance.from_dict(
+            json.loads(target.read_text(encoding="utf-8"))
+        )
+    except Exception:
+        return None
+
+
 def hash_or_empty(text: str | None) -> str:
     return sha256_text(text) if text else ""
 
@@ -187,6 +236,9 @@ def hash_or_empty(text: str | None) -> str:
 __all__ = [
     "LEVEL_FULL",
     "LEVEL_SUMMARY",
+    "load_provenance",
+    "provenance_path",
+    "save_provenance",
     "ProvenanceArtifacts",
     "build_contribution",
     "finalize",
