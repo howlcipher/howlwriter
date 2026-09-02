@@ -311,6 +311,35 @@ structural one.** Parentheticals and first person now behave like distributions.
 Paragraph and sentence shape still collapse toward a centre, and the profile
 tightens that collapse rather than loosening it.
 
+## 7a. Academic benchmark: a provider-layer ceiling
+
+The first live academic run **failed**, and the failure is worth more than the
+paper would have been.
+
+A 1600-word academic outline reached the writer, which returned
+`Error: timeout waiting for response` after 303 seconds. HowlWriter had asked
+for a 600-second timeout, and HowlPlane passes that value to the subprocess --
+but it never forwards `--print-timeout` to the `agy` CLI, so agy's own
+five-minute default fires first and returns a timeout *string as output* rather
+than the subprocess being killed. HowlWriter then correctly refused to treat
+that string as a draft.
+
+Three things follow, and only the third is actionable here:
+
+1. **The failure surfaced honestly.** The writer raised rather than returning a
+   plausible-looking partial paper, and the runner recorded `status: FAILED`
+   with the error instead of dropping the run from the batch. A benchmark that
+   silently drops its failures improves every statistic computed from what
+   remains.
+2. **The gap is in the sibling repository.** `agent_execution.py` passes
+   `timeout=timeout_seconds` to the subprocess and no `--print-timeout` to the
+   CLI. Fixing it means changing HowlPlane, which is outside this milestone and
+   is recorded rather than reached into.
+3. **Long-form academic generation is currently capped at roughly five minutes
+   of provider time**, whatever HowlWriter requests. The benchmark was re-run at
+   a 900-word target for that reason, and the constraint is noted in the outline
+   file itself so the next person does not rediscover it.
+
 ## 8. Defects found and fixed during this milestone
 
 Beyond the two the previous audit missed (section 2), six were found by using
