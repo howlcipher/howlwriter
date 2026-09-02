@@ -71,6 +71,20 @@ MODERATE_STRUCTURE = 4
 #: rather than dividing by nothing. Roughly a short article.
 _ASSUMED_TARGET_WORDS = 600
 
+#: Kinds that ask for content the user has not written yet. Their presence is
+#: what separates "finish this for me" from "tidy this up".
+_EXPANSION_REQUESTING_KINDS = (
+    NodeKind.IDEA,
+    NodeKind.EXPAND,
+    NodeKind.REQUIRED_POINT,
+    NodeKind.OPTIONAL_POINT,
+    NodeKind.RESEARCH,
+)
+
+#: Share of supplied prose that must be verbatim before an outline reads as a
+#: draft rather than as notes.
+_DRAFT_PRESERVED_SHARE = 0.80
+
 
 @dataclass
 class FreedomAssessment:
@@ -134,11 +148,36 @@ def assess_freedom(outline: Outline) -> FreedomAssessment:
         voice_seeds=len(outline.voice_seeds()),
     )
 
+    # Two routes to MINIMAL, because coverage alone misses the obvious case.
+    # An outline that is one finished draft and nothing else is an editing job
+    # whether or not a target length was ever supplied -- and when none was,
+    # the assumed target would put a complete short post at 20% coverage and
+    # hand the model free rein over something the user had already written.
+    preserved_words = sum(
+        len(node.text.split()) for node in outline.preserved()
+    )
+    asks_for_more = bool(outline.nodes_of(*_EXPANSION_REQUESTING_KINDS))
+    is_draft = (
+        preserved_words > 0
+        and supplied > 0
+        and (preserved_words / supplied) >= _DRAFT_PRESERVED_SHARE
+        and not asks_for_more
+    )
+
     if coverage >= NEAR_COMPLETE_COVERAGE:
         assessment.freedom = GenerationFreedom.MINIMAL
         assessment.reasons.append(
             f"user prose already covers {coverage:.0%} of the target length, "
             "so the remaining task is editing rather than writing"
+        )
+        return assessment
+
+    if is_draft:
+        assessment.freedom = GenerationFreedom.MINIMAL
+        assessment.reasons.append(
+            f"the outline is a finished draft ({preserved_words} verbatim word(s)) "
+            "with nothing marked for expansion, so the task is editing regardless "
+            "of the stated target length"
         )
         return assessment
 

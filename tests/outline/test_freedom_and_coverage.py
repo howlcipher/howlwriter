@@ -230,3 +230,39 @@ def test_findings_serialize_for_the_provenance_record():
 
 def test_missing_and_present_are_distinct_statuses():
     assert PRESENT != MISSING != ALTERED
+
+
+def test_a_finished_draft_with_no_target_length_is_still_minimal():
+    """Coverage alone misses the most obvious editing job.
+
+    Without a stated target the assumed one is a short article, which would put
+    a complete short post at roughly 20% coverage and hand the model free rein
+    over something the user had already finished writing.
+    """
+    outline = load_outline({
+        "topic": "moats",
+        "nodes": [
+            {"kind": "preserve", "text": _VERBATIM + " " + ("Filler sentence here. " * 20)},
+            {"kind": "style_note", "text": "Minimum necessary editing only."},
+        ],
+    })
+    assessment = assess_freedom(outline)
+
+    assert assessment.target_words == 600, "no target was supplied, so the default applies"
+    assert assessment.coverage < 0.70, "coverage alone would not reach MINIMAL"
+    assert assessment.freedom is GenerationFreedom.MINIMAL
+    assert any("finished draft" in r for r in assessment.reasons)
+
+
+def test_a_draft_that_asks_for_expansion_is_not_minimal():
+    """The distinction is whether anything is marked for the model to add."""
+    body = _VERBATIM + " " + ("Filler sentence here. " * 20)
+    outline = load_outline({
+        "topic": "moats",
+        "nodes": [
+            {"kind": "preserve", "text": body},
+            {"kind": "expand", "text": "add a section on distribution"},
+            {"kind": "required_point", "text": "distribution economics"},
+        ],
+    })
+    assert assess_freedom(outline).freedom is not GenerationFreedom.MINIMAL

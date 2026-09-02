@@ -63,6 +63,22 @@ class ProvenanceRecorder:
             _ACTIVE.reset(self._token)
             self._token = None
 
+    def activate(self) -> Any:
+        """Enter without a `with` block, for a body too long to indent.
+
+        The caller owns the token and must release it in a `finally`; see
+        `run_academic_pipeline`.
+        """
+        return _ACTIVE.set(self)
+
+    def deactivate(self, token: Any) -> None:
+        try:
+            _ACTIVE.reset(token)
+        except (ValueError, LookupError):
+            # Token from another context, which means something already reset
+            # it. Clearing outright is still correct and never worse.
+            _ACTIVE.set(None)
+
     # --- capture ------------------------------------------------------
 
     def record(
@@ -196,3 +212,8 @@ def capture_call(
         avoid_provider=avoid_provider,
         started_at=started_at,
     )
+
+
+def reset_recorder() -> None:
+    """Clear any active recorder. Safe to call when none is set."""
+    _ACTIVE.set(None)

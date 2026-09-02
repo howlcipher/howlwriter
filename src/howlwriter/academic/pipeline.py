@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from datetime import datetime, timezone
 import time
 from typing import Any, Callable
 
@@ -31,7 +32,15 @@ from howlwriter.academic.requirements import (
     is_identifier_fabrication_prohibition,
 )
 from howlwriter.academic.research import AcademicResearcher
+from howlwriter.academic.ai_disclosure import build_ai_use_statement
 from howlwriter.academic.spec import AssignmentSpec, load_assignment_spec
+from howlwriter.domain.generation_provenance import (
+    GenerationProvenance,
+    sha256_text as prov_sha256,
+)
+from howlwriter.integration.provenance_capture import ProvenanceRecorder
+from howlwriter.outline.coverage import check_coverage
+from howlwriter.provenance.assemble import build_contribution, summarize_outline
 from howlwriter.academic.verifier import AcademicVerifier, VerificationSummary
 from howlwriter.academic.writer import ModelAcademicWriter
 from howlwriter.config.defaults import default_config
@@ -85,9 +94,35 @@ class AcademicPipelineResult:
     semantic_meaning_result: SemanticMeaningResult | None
     consistency_review_result: ConsistencyReviewResult | None
     report: WritingReport
+    #: Present only when an authorship outline drove the run.
+    authorship_coverage: Any | None = None
+    provenance: Any | None = None
+    ai_use_statement: Any | None = None
 
 
 def run_academic_pipeline(
+    assignment: AssignmentSpec | str | Path | dict[str, Any],
+    *args: Any,
+    **kwargs: Any,
+) -> AcademicPipelineResult:
+    """Public entry point. Guarantees the provenance recorder is released.
+
+    The recorder is activated inside the pipeline body rather than around it,
+    because the spec has to be resolved before the record can describe the run.
+    That leaves an exception path where the ContextVar would stay set and the
+    next run's model calls would be recorded against this one, so the reset is
+    made unconditional here. The signature stays fully positional-compatible:
+    every existing caller passes config and the rest positionally.
+    """
+    from howlwriter.integration.provenance_capture import reset_recorder
+
+    try:
+        return _run_academic_pipeline(assignment, *args, **kwargs)
+    finally:
+        reset_recorder()
+
+
+def _run_academic_pipeline(
     assignment: AssignmentSpec | str | Path | dict[str, Any],
     config: HowlWriterConfig | None = None,
     existing_sources: list[Source] | None = None,
@@ -97,8 +132,18 @@ def run_academic_pipeline(
     cwd: Path | str | None = None,
     max_length_retries: int = 2,
     stage_callback: Callable[[str, str, dict[str, Any]], None] | None = None,
+    outline: Any | None = None,
 ) -> AcademicPipelineResult:
-    """Executes the full researched academic paper pipeline."""
+    """Executes the full researched academic paper pipeline.
+
+    An authorship outline, when supplied, is translated into the assignment
+    spec rather than routed around it, so source relevance and sufficiency,
+    evidence depth, identifier grounding, claim verification, APA formatting,
+    requirement classification, the soft target against the hard ceiling,
+    redundancy, consistency and quotation validation all still run. What the
+    outline adds -- verbatim retention, ordering, claim-to-source assignment --
+    is checked afterwards on the finished document.
+    """
     start_time = time.time()
     active_run_id = run_id or generate_run_id()
     cfg = config or default_config()
@@ -121,6 +166,29 @@ def run_academic_pipeline(
         if isinstance(assignment, AssignmentSpec)
         else load_assignment_spec(assignment)
     )
+
+    recorder = ProvenanceRecorder(run_id=active_run_id)
+    provenance = GenerationProvenance(
+        run_id=active_run_id,
+        workflow="paper-outline" if outline is not None else "paper",
+        writing_mode="academic",
+        outline_present=outline is not None,
+        voice_profile=cfg.voice_profile,
+    )
+    if outline is not None:
+        from howlwriter.academic.outline_bridge import (
+            research_questions,
+            spec_from_outline,
+        )
+        from howlwriter.outline.freedom import assess_freedom
+
+        spec = spec_from_outline(outline, base=spec)
+        assessment = assess_freedom(outline)
+        provenance.generation_freedom = assessment.freedom.value
+        provenance.outline_sha256 = prov_sha256(outline.to_json())
+        provenance.outline_summary = summarize_outline(outline)
+        provenance.research["requested"] = research_questions(outline)
+    recorder_token = recorder.activate()
 
     _notify("validate", "DONE", "Assignment Validated", {
         "title": spec.title,
@@ -578,7 +646,40 @@ def run_academic_pipeline(
     except Exception:
         pass
 
+    recorder.deactivate(recorder_token)
+    provenance.calls = list(recorder.calls)
+    provenance.artifact_sha256 = compute_sha256(final_document.text)
+    provenance.completed_at = datetime.now(timezone.utc).isoformat()
+    provenance.review = {
+        "meaning_preservation": meaning_det.status,
+        "semantic_meaning": semantic_res.verdict if semantic_res else None,
+        "consistency": consistency_res.status if consistency_res else None,
+        "readiness": final_status,
+    }
+    provenance.research.update(
+        {
+            "sources_retrieved": len(sources),
+            "claims_verified": len(provenance_graph.claims),
+            "unsupported_claims": len(provenance_graph.unsupported_claims()),
+        }
+    )
+    authorship_coverage = None
+    if outline is not None:
+        authorship_coverage = check_coverage(outline, final_document.text)
+        provenance.coverage = authorship_coverage.to_dict()
+        provenance.contribution = build_contribution(
+            outline,
+            coverage=provenance.coverage,
+            artifact_text=final_document.text,
+            unsupported=len(provenance_graph.unsupported_claims()),
+        )
+    provenance.complete = True
+    ai_statement = build_ai_use_statement(provenance)
+
     return AcademicPipelineResult(
+        authorship_coverage=authorship_coverage,
+        provenance=provenance,
+        ai_use_statement=ai_statement,
         spec=spec,
         final_document=final_document,
         sources=sources,
