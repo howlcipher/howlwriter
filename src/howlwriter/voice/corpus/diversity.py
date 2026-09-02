@@ -40,8 +40,20 @@ CONVERGENCE_RATIO = 0.45
 MIN_CORPUS_VARIATION = 0.08
 
 #: How many dimensions must converge before the verdict moves.
-WARNING_DIMENSIONS = 2
-FAIL_DIMENSIONS = 4
+WARNING_DIMENSIONS = 4
+FAIL_DIMENSIONS = 7
+
+#: Documents a context slice needs before it may stand in for the whole corpus.
+#:
+#: The comparison here is between coefficients of variation, and a CV computed
+#: from two documents is noise wearing a number. Substituting such a slice does
+#: not merely weaken the check, it inverts it: during this work a two-document
+#: professional slice produced a corpus CV large enough to clear a real
+#: parenthetical convergence that the full corpus caught. Eight is a heuristic
+#: floor, chosen as the point where a CV starts to mean something rather than
+#: from any property of a particular corpus; below it the global corpus is
+#: kept and the length mismatch is reported instead.
+MIN_CONTEXT_SLICE_DOCUMENTS = 8
 
 #: Share of outputs that may share a two-word opening before it is a tic.
 MAX_SHARED_OPENING_SHARE = 0.35
@@ -54,9 +66,17 @@ _DIMENSIONS = (
     "sentence_length_mean",
     "sentence_length_stdev",
     "paragraph_words_mean",
+    "paragraph_words_stdev",
     "paragraph_sentences_mean",
+    "paragraph_sentences_stdev",
+    "single_sentence_paragraph_rate",
+    "short_sentence_rate",
+    "long_sentence_rate",
     "lexical_diversity",
     "transition_rate",
+    "sentence_initial_conjunction_rate",
+    "fragment_rate",
+    "parenthetical_rate",
     "contraction_rate",
     "first_person_rate",
     "question_rate",
@@ -125,6 +145,8 @@ def _repeats(keys: list[str]) -> dict[str, int]:
 def compare(
     corpus_features: list[DocumentFeatures],
     generated_texts: list[str],
+    *,
+    context_corpus_features: list[DocumentFeatures] | None = None,
 ) -> DiversityResult:
     """Compare generated variation against the corpus's own variation.
 
@@ -134,11 +156,29 @@ def compare(
     sentences, and during dogfood a single one of them inflated the baseline
     coefficient of variation elevenfold, which would have reported a false
     convergence failure.
+
+    `context_corpus_features`, when supplied, narrows the baseline to one
+    register so that short-form pieces are not measured against long papers.
+    It is only honoured once the slice is large enough to carry a coefficient
+    of variation; see `MIN_CONTEXT_SLICE_DOCUMENTS` for why a small slice is
+    worse than no slice at all.
     """
     result = DiversityResult(samples=len(generated_texts))
 
-    usable_corpus = [f for f in corpus_features if f.words > 0 and f.sentences > 0]
-    dropped = len(corpus_features) - len(usable_corpus)
+    context_usable = [
+        f for f in (context_corpus_features or []) if f.words > 0 and f.sentences > 0
+    ]
+    use_context = len(context_usable) >= MIN_CONTEXT_SLICE_DOCUMENTS
+    source_corpus = context_usable if use_context else corpus_features
+    if context_corpus_features and not use_context:
+        result.notes.append(
+            f"context slice held only {len(context_usable)} usable document(s), "
+            f"below the {MIN_CONTEXT_SLICE_DOCUMENTS} needed for a meaningful "
+            "variation baseline; compared against the full corpus instead"
+        )
+
+    usable_corpus = [f for f in source_corpus if f.words > 0 and f.sentences > 0]
+    dropped = len(source_corpus) - len(usable_corpus)
     if dropped:
         result.notes.append(
             f"ignored {dropped} corpus feature vector(s) with no measurable text"
@@ -168,7 +208,8 @@ def compare(
     # convergence failure that the sample sizes guaranteed.
     corpus_median = statistics.median(f.words for f in usable_corpus)
     generated_median = statistics.median(f.words for f in generated_features)
-    if generated_median * 4 < corpus_median:
+    length_mismatch = generated_median * 4 < corpus_median
+    if length_mismatch:
         result.notes.append(
             f"generated outputs are much shorter than the corpus "
             f"(median {generated_median:.0f} vs {corpus_median:.0f} words); "
@@ -201,6 +242,11 @@ def compare(
             converged=ratio < CONVERGENCE_RATIO,
         ))
 
+    # Check paragraph count convergence across the batch
+    corpus_p_cv = _coefficient_of_variation([float(f.paragraphs) for f in corpus_features])
+    gen_p_cv = _coefficient_of_variation([float(f.paragraphs) for f in generated_features])
+    paragraph_count_converged = corpus_p_cv >= 0.15 and gen_p_cv < 0.05
+
     result.repeated_openings = _repeats([_opening_key(t) for t in generated_texts])
     result.repeated_closings = _repeats([_closing_key(t) for t in generated_texts])
 
@@ -215,6 +261,11 @@ def compare(
         result.notes.append(
             "generated output varies much less than the corpus on: " + ", ".join(converged)
         )
+    if paragraph_count_converged:
+        result.notes.append(
+            f"generated outputs collapsed to uniform paragraph count "
+            f"(variation {gen_p_cv:.2f} vs corpus {corpus_p_cv:.2f})"
+        )
     if opening_share > MAX_SHARED_OPENING_SHARE:
         result.notes.append(
             f"{worst_opening} of {total} outputs share the same two-word opening"
@@ -224,12 +275,26 @@ def compare(
             f"{worst_closing} of {total} outputs end the same way"
         )
 
-    tic_failure = opening_share > MAX_SHARED_OPENING_SHARE or closing_share > MAX_SHARED_CLOSING_SHARE
+    tic_failure = (
+        opening_share > MAX_SHARED_OPENING_SHARE
+        or closing_share > MAX_SHARED_CLOSING_SHARE
+        or paragraph_count_converged
+    )
 
     if len(converged) >= FAIL_DIMENSIONS or (len(converged) >= WARNING_DIMENSIONS and tic_failure):
         result.verdict = FAIL
     elif len(converged) >= WARNING_DIMENSIONS or tic_failure:
         result.verdict = WARNING
+    elif length_mismatch:
+        # Nothing converged, but across a fourfold length gap the structural
+        # dimensions were never in a position to say so. Reporting PASS here
+        # would sell a result the sample never supported.
+        result.verdict = NOT_EVALUATED
+        result.notes.append(
+            "no convergence detected, but the length difference above leaves the "
+            "structural dimensions unable to support a pass; compare against "
+            "corpus documents of a similar length to get a real verdict"
+        )
     else:
         result.verdict = PASS
         result.notes.append(

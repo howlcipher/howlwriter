@@ -99,8 +99,17 @@ class DocumentFeatures:
     sentence_length_max: int = 0
     paragraph_sentences_mean: float = 0.0
     paragraph_sentences_stdev: float = 0.0
+    paragraph_sentences_p10: float = 0.0
+    paragraph_sentences_p50: float = 0.0
+    paragraph_sentences_p90: float = 0.0
     paragraph_words_mean: float = 0.0
     paragraph_words_stdev: float = 0.0
+    paragraph_words_p10: float = 0.0
+    paragraph_words_p50: float = 0.0
+    paragraph_words_p90: float = 0.0
+    single_sentence_paragraph_rate: float = 0.0
+    short_sentence_rate: float = 0.0
+    long_sentence_rate: float = 0.0
     lexical_diversity: float = 0.0
     mean_word_length: float = 0.0
     long_word_rate: float = 0.0
@@ -257,6 +266,33 @@ def extract_features(text: str, *, headings: int | None = None) -> DocumentFeatu
         statistics.pstdev(paragraph_word_counts) if len(paragraph_word_counts) > 1 else 0.0
     )
 
+    features.short_sentence_rate = (
+        sum(1 for n in sentence_lengths if n <= 9) / sentence_count if sentence_count else 0.0
+    )
+    features.long_sentence_rate = (
+        sum(1 for n in sentence_lengths if n >= 28) / sentence_count if sentence_count else 0.0
+    )
+
+    if paragraph_sentence_counts:
+        features.single_sentence_paragraph_rate = (
+            sum(1 for c in paragraph_sentence_counts if c == 1) / len(paragraph_sentence_counts)
+        )
+        features.paragraph_sentences_p10 = _percentile(
+            [float(c) for c in paragraph_sentence_counts], 0.10
+        )
+        features.paragraph_sentences_p50 = float(statistics.median(paragraph_sentence_counts))
+        features.paragraph_sentences_p90 = _percentile(
+            [float(c) for c in paragraph_sentence_counts], 0.90
+        )
+    if paragraph_word_counts:
+        features.paragraph_words_p10 = _percentile(
+            [float(c) for c in paragraph_word_counts], 0.10
+        )
+        features.paragraph_words_p50 = float(statistics.median(paragraph_word_counts))
+        features.paragraph_words_p90 = _percentile(
+            [float(c) for c in paragraph_word_counts], 0.90
+        )
+
     lowered = [w.lower() for w in words]
     # Type/token ratio rises as documents get shorter, so it is measured over
     # a fixed window; otherwise a 400-word post always looks more varied than
@@ -321,7 +357,17 @@ def to_distributions(features: DocumentFeatures) -> VoiceDistributions:
         sentence_length_p90=features.sentence_length_p90,
         paragraph_sentences_mean=features.paragraph_sentences_mean,
         paragraph_sentences_stdev=features.paragraph_sentences_stdev,
+        paragraph_sentences_p10=features.paragraph_sentences_p10,
+        paragraph_sentences_p50=features.paragraph_sentences_p50,
+        paragraph_sentences_p90=features.paragraph_sentences_p90,
         paragraph_words_mean=features.paragraph_words_mean,
+        paragraph_words_stdev=features.paragraph_words_stdev,
+        paragraph_words_p10=features.paragraph_words_p10,
+        paragraph_words_p50=features.paragraph_words_p50,
+        paragraph_words_p90=features.paragraph_words_p90,
+        single_sentence_paragraph_rate=features.single_sentence_paragraph_rate,
+        short_sentence_rate=features.short_sentence_rate,
+        long_sentence_rate=features.long_sentence_rate,
         lexical_diversity=features.lexical_diversity,
         mean_word_length=features.mean_word_length,
         contraction_rate=features.contraction_rate,

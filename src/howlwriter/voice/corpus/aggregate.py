@@ -216,18 +216,33 @@ def _confidence(documents: int, words: int, agreement: float) -> float:
     return round(max(0.0, min(1.0, evidence * (0.35 + 0.65 * agreement))), 3)
 
 
-def _label_agreement(labels: list[tuple[str, float]]) -> tuple[str, float]:
-    """Weighted majority label, and the share of weight behind it."""
+def _label_agreement(
+    labels: list[tuple[str, float]],
+) -> tuple[str, float, str, float]:
+    """Weighted plurality label, its share, and the runner-up with its share.
+
+    The winner alone is not enough to describe a corpus. A writer who uses the
+    first person in half their documents and none of it in the other half
+    produces a winning label of "absent" backed by less than half the weight,
+    which is a real finding about variation, not a licence to state "absent"
+    as though it were uniform. The runner-up is returned so callers can tell
+    those two situations apart.
+    """
     if not labels:
-        return "", 0.0
+        return "", 0.0, "", 0.0
     totals: dict[str, float] = {}
     for label, weight in labels:
         totals[label] = totals.get(label, 0.0) + weight
     total = sum(totals.values())
     if not total:
-        return "", 0.0
-    winner = max(totals.items(), key=lambda kv: (kv[1], kv[0]))
-    return winner[0], winner[1] / total
+        return "", 0.0, "", 0.0
+    # Tie-break unchanged from when this returned the winner alone: equal
+    # weight resolves on the label, so a rebuild of the same corpus keeps
+    # producing the same profile.
+    ranked = sorted(totals.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)
+    winner, winner_weight = ranked[0]
+    runner, runner_weight = ranked[1] if len(ranked) > 1 else ("", 0.0)
+    return winner, winner_weight / total, runner, runner_weight / total
 
 
 def _aggregate_distributions(documents: list[DocumentEvidence]) -> DocumentFeatures:
@@ -260,7 +275,7 @@ def _deterministic_traits(documents: list[DocumentEvidence]) -> dict[str, TraitV
             (_band(_derived(doc.features, feature), thresholds, labels), doc.weight)
             for doc in documents
         ]
-        label, agreement = _label_agreement(per_document)
+        label, agreement, runner, runner_share = _label_agreement(per_document)
         if not label:
             continue
         traits[trait] = TraitValue(
@@ -269,6 +284,8 @@ def _deterministic_traits(documents: list[DocumentEvidence]) -> dict[str, TraitV
             supporting_documents=len(documents),
             supporting_words=words,
             agreement=round(agreement, 3),
+            secondary=runner,
+            secondary_agreement=round(runner_share, 3),
             source="deterministic",
         )
     return traits
@@ -285,7 +302,7 @@ def _model_traits(documents: list[DocumentEvidence]) -> dict[str, TraitValue]:
         contributors = [doc for doc in documents if doc.model_traits.get(name)]
         if not contributors:
             continue
-        label, agreement = _label_agreement(
+        label, agreement, runner, runner_share = _label_agreement(
             [(doc.model_traits[name], doc.weight) for doc in contributors]
         )
         if not label:
@@ -297,6 +314,8 @@ def _model_traits(documents: list[DocumentEvidence]) -> dict[str, TraitValue]:
             supporting_documents=len(contributors),
             supporting_words=supporting_words,
             agreement=round(agreement, 3),
+            secondary=runner,
+            secondary_agreement=round(runner_share, 3),
             source="model",
             note=(
                 ""
@@ -419,10 +438,31 @@ def aggregate(documents: list[DocumentEvidence]) -> AggregateResult:
             traits=distinct,
             distributions={
                 "sentence_length_mean": context_features.sentence_length_mean,
+                "sentence_length_median": context_features.sentence_length_median,
+                "sentence_length_stdev": context_features.sentence_length_stdev,
+                "sentence_length_p10": context_features.sentence_length_p10,
+                "sentence_length_p90": context_features.sentence_length_p90,
+                "paragraph_sentences_mean": context_features.paragraph_sentences_mean,
+                "paragraph_sentences_stdev": context_features.paragraph_sentences_stdev,
+                "paragraph_sentences_p10": context_features.paragraph_sentences_p10,
+                "paragraph_sentences_p50": context_features.paragraph_sentences_p50,
+                "paragraph_sentences_p90": context_features.paragraph_sentences_p90,
                 "paragraph_words_mean": context_features.paragraph_words_mean,
+                "paragraph_words_stdev": context_features.paragraph_words_stdev,
+                "paragraph_words_p10": context_features.paragraph_words_p10,
+                "paragraph_words_p50": context_features.paragraph_words_p50,
+                "paragraph_words_p90": context_features.paragraph_words_p90,
+                "single_sentence_paragraph_rate": context_features.single_sentence_paragraph_rate,
+                "short_sentence_rate": context_features.short_sentence_rate,
+                "long_sentence_rate": context_features.long_sentence_rate,
                 "contraction_rate": context_features.contraction_rate,
                 "first_person_rate": context_features.first_person_rate,
+                "second_person_rate": context_features.second_person_rate,
                 "transition_rate": context_features.transition_rate,
+                "sentence_initial_conjunction_rate": context_features.sentence_initial_conjunction_rate,
+                "fragment_rate": context_features.fragment_rate,
+                "parenthetical_rate": context_features.parenthetical_rate,
+                "question_rate": context_features.question_rate,
                 "long_word_rate": context_features.long_word_rate,
                 "readability_grade": context_features.readability_grade,
             },

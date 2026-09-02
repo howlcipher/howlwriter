@@ -342,14 +342,49 @@ states plainly that a trait should be realized differently for each topic and
 draft, that natural variation is the thing being matched, and that inventing
 a signature opening or a recurring closing move is a failure.
 
+### Contextual Structural Variance
+
+HowlWriter measures not only central tendencies (means) but an author's
+**structural variation between documents**.
+
+Nothing here is sampled. There is no random number generator anywhere in this
+path. The corpus is measured, the measurements are turned deterministically
+into bounded natural-language guidance, and the model is left to realize that
+guidance for the piece in front of it. "Distribution-aware" is the accurate
+word; "probabilistic" is not, and describing it that way would claim a
+mechanism the code does not have.
+
+- **Paragraph spread and cadence:** percentiles (p10/p50/p90) and variation
+  ratios describe paragraph sizing as a range, so a piece can alternate between
+  single-sentence focus paragraphs and fuller analytical blocks without a
+  planner deciding the shape in advance. A percentile pair that is missing or
+  degenerate is dropped rather than rendered, because "typically 0-0 words" is
+  worse than saying nothing.
+- **Sentence spread:** the observed mix of concise statements (9 words or
+  fewer) and developed sentences (28 words or more).
+- **Distribution, not checklist:** trait frequencies (conjunction starts,
+  fragments, parentheticals, questions) are corpus-wide rates, stated as rates,
+  rather than per-paragraph quotas to be filled.
+- **Split tendencies stay split:** a trait label is a weighted plurality across
+  documents, not a property of the author. When the corpus disagrees with
+  itself -- half the documents in the first person and half not -- the trait is
+  rendered as varying, with both labels and their shares. Collapsing such a
+  split into one absolute label is how a tendency becomes a signature that
+  appears in every generated piece.
+- **Anti-hyper-symmetry:** repetitive mechanical shapes are flagged (identical
+  sentence counts across consecutive paragraphs, or paragraph word counts too
+  uniform to have been written). The thresholds involved are heuristics, and
+  are documented as such at their definitions.
+
 **Zero change is a valid result.** Selecting a voice does not oblige the
 humanizer to rewrite anything; if the draft already reads like you, nothing
 changes.
 
 The `voice_diversity_preservation` check compares generated output against
-the corpus's own variation and reports `PASS` / `WARNING` / `FAIL`. If
-outputs converge, the fix belongs in the application layer -- never in adding
-literal phrases to compensate, which would make the cloning worse.
+the corpus's own variation across 18 structural and stylistic dimensions and
+reports `PASS` / `WARNING` / `FAIL`. If outputs converge, the fix belongs in the
+application layer -- never in adding literal phrases to compensate, which would make
+the cloning worse.
 
 ---
 

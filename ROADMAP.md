@@ -22,7 +22,8 @@ The following capabilities are implemented, tested, and active on `main`:
 | 14 | Local Web Application | Done -- FastAPI backend + React SPA (`howlwriter ui`) with workspace, diff inspection, academic pipeline rail, runs ledger |
 | 15 | Diagnostic run records | Done -- durable local records in `~/.howlwriter/runs/` with SHA-256 hashes, latency metrics, failure classification |
 | 16 | CLI foundation | Done -- all 16 subcommands (`paper writer editor humanize voice fact-check research sources cite references red-pen critique lint finalize howl runs ui`) |
-| 17 | Tests & Verification | Done -- 568 passing tests across unit, integration, dogfood, and web suites |
+| 17 | Tests & Verification | Done -- 585 passing tests across unit, integration, dogfood, and web suites |
+| 18 | Contextual Structural Variance v1 | Done -- between-document structural variance measurement, paragraph & sentence spread percentiles rendered as bounded guidance, split tendencies rendered as varying rather than absolute, extended diversity validation, and hyper-symmetry detection. Context-conditioned pacing is implemented but stays inactive until a context slice carries enough documents to support it |
 
 ## Explicitly Deferred (Named, Not Half-Built)
 

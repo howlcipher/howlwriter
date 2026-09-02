@@ -312,10 +312,14 @@ class ModelHumanizerRewriter:
             "  * Expand the core reasoning into a complete, coherent piece appropriate for the writing mode.",
             "  * Fulfill the prompt by developing the causal argument, concrete implications, and supporting "
             "distinctions, while strictly preserving the author's stated stance.",
+            "  * Model NATURAL STRUCTURAL VARIANCE: let the specific idea dictate paragraph count, length, "
+            "and rhythm within the author's distribution. Do NOT force outputs into an identical stencil.",
             "  * Strip meta-instructions (e.g., 'Make that into a LinkedIn post') from the resulting output.",
             "- If the input is an EXISTING DRAFT OR COMPLETE ESSAY:",
             "  * Follow the MINIMUM NECESSARY EDIT rule strictly: if the text is already natural, direct, "
             "and clear, leave it untouched. ZERO CHANGES is an excellent result for clean human drafts.",
+            "  * Do NOT re-paragraph or rearrange a clean human draft simply because its structure differs "
+            "from the average profile. Voice is subordinate to meaning and authorship.",
             "",
             mode_instructions,
             "",

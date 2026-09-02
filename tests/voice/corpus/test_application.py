@@ -324,3 +324,158 @@ def test_a_shared_style_is_a_distinct_type_from_a_personal_voice(store_root, bui
     assert personal.profile_type == "personal_voice"
     assert shared.profile_type == "shared_style"
     assert json.loads(personal.to_json())["profile_type"] == "personal_voice"
+
+
+def test_structural_variance_rendered_in_voice_application():
+    profile = VoiceProfile(
+        author_name="test_author",
+        version=1,
+        generated_from="corpus_build",
+        distributions=_corpus_distribution(),
+    )
+    rendered = render_profile(profile, WritingMode.LINKEDIN)
+    assert "CONTEXTUAL STRUCTURAL VARIANCE" in rendered
+    assert "DISTRIBUTION OVER CHECKLIST" in rendered
+    assert "ANTI-HYPER-SYMMETRY" in rendered
+    assert "paragraph length:" in rendered
+    assert "sentence length:" in rendered
+
+
+def _corpus_distribution():
+    from howlwriter.domain.voice import VoiceDistributions
+    return VoiceDistributions(
+        sentence_length_mean=18.0,
+        sentence_length_p10=8.0,
+        sentence_length_p90=28.0,
+        paragraph_words_mean=55.0,
+        paragraph_words_p10=22.0,
+        paragraph_words_p90=85.0,
+        paragraph_sentences_mean=2.5,
+        paragraph_sentences_p10=1.0,
+        paragraph_sentences_p90=4.0,
+        single_sentence_paragraph_rate=0.25,
+        short_sentence_rate=0.20,
+        long_sentence_rate=0.15,
+    )
+
+
+# --- structural spread must never render as a degenerate range --------
+
+
+def _profile_with(distributions):
+    return VoiceProfile(
+        author_name="test_author",
+        version=1,
+        generated_from="corpus_build",
+        distributions=distributions,
+    )
+
+
+def test_zeroed_percentiles_fall_back_to_the_mean_instead_of_rendering_a_range():
+    """A 0-0 range is a contradiction, not a measurement.
+
+    Zero is what a percentile becomes when it was never measured. Rendering it
+    produced "paragraph length: typically 0-0 words (mean ~80 words)", which
+    tells the model two incompatible things and buries the usable number inside
+    the broken one.
+    """
+    from howlwriter.domain.voice import VoiceDistributions
+
+    rendered = render_profile(
+        _profile_with(VoiceDistributions(
+            sentence_length_mean=19.9,
+            sentence_length_p10=0.0,
+            sentence_length_p90=0.0,
+            paragraph_words_mean=80.0,
+            paragraph_words_p10=0.0,
+            paragraph_words_p90=0.0,
+            paragraph_sentences_mean=4.0,
+            paragraph_sentences_p10=0.0,
+            paragraph_sentences_p90=0.0,
+        )),
+        WritingMode.LINKEDIN,
+    )
+    assert "0-0" not in rendered
+    assert "paragraph length: around 80 words on average" in rendered
+    assert "paragraph sentence count" not in rendered
+
+
+def test_a_real_spread_still_renders_as_a_range():
+    from howlwriter.domain.voice import VoiceDistributions
+
+    rendered = render_profile(
+        _profile_with(VoiceDistributions(
+            paragraph_words_mean=55.0,
+            paragraph_words_p10=22.0,
+            paragraph_words_p90=85.0,
+            paragraph_sentences_mean=2.5,
+            paragraph_sentences_p10=1.0,
+            paragraph_sentences_p90=4.0,
+        )),
+        WritingMode.LINKEDIN,
+    )
+    assert "typically 22-85 words" in rendered
+    assert "typically 1-4 sentences" in rendered
+
+
+def test_an_old_profile_without_percentiles_still_renders():
+    """Profiles written before the spread fields existed must keep working."""
+    profile = VoiceProfile.from_dict({
+        "author_name": "x",
+        "version": 1,
+        "generated_from": "corpus_build",
+        "distributions": {
+            "sentence_length_mean": 18.0,
+            "sentence_length_p10": 8.0,
+            "sentence_length_p90": 28.0,
+            "paragraph_words_mean": 55.0,
+        },
+    })
+    rendered = render_profile(profile, WritingMode.LINKEDIN)
+    assert "0-0" not in rendered
+    assert "typically 8-28 words" in rendered
+    assert "around 55 words on average" in rendered
+
+
+# --- a split corpus must not render as an absolute --------------------
+
+
+def test_a_trait_the_corpus_disagrees_on_renders_as_varying():
+    """A plurality label is not a property of the author.
+
+    Fourteen documents using parentheses and fourteen not still yields a single
+    winning label. Stating it flatly is what put a parenthetical into every
+    generated post, so the split has to survive into the prompt.
+    """
+    profile = VoiceProfile(
+        author_name="x", version=1, generated_from="corpus_build",
+        traits={
+            "parenthetical_asides": TraitValue(
+                value="frequent", confidence=0.66, agreement=0.47,
+                secondary="rare", secondary_agreement=0.30,
+                supporting_documents=28, supporting_words=40000,
+            ),
+        },
+    )
+    rendered = render_profile(profile, WritingMode.LINKEDIN)
+    assert "parenthetical asides: VARIES" in rendered
+    assert "frequent in about 47% of documents" in rendered
+    assert "rare in about 30%" in rendered
+    assert "turns a tendency into a tell" in rendered
+
+
+def test_a_trait_the_corpus_agrees_on_still_renders_as_an_absolute():
+    """The hedge is for split evidence only; consistent traits are unchanged."""
+    profile = VoiceProfile(
+        author_name="x", version=1, generated_from="corpus_build",
+        traits={
+            "rhetorical_questions": TraitValue(
+                value="none", confidence=0.83, agreement=0.74,
+                secondary="rare", secondary_agreement=0.20,
+                supporting_documents=28, supporting_words=40000,
+            ),
+        },
+    )
+    rendered = render_profile(profile, WritingMode.LINKEDIN)
+    assert "  - rhetorical questions: none" in rendered
+    assert "VARIES" not in rendered

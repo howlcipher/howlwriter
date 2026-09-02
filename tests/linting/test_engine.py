@@ -193,3 +193,68 @@ def test_paragraph_length_symmetry_detected_when_configured():
     text = "A b c. D e f.\n\nG h i. J k l.\n\nM n o. P q r.\n\nS t u. V w x."
     codes = _codes(text, config)
     assert rules.AI_STYLE_PARAGRAPH_LENGTH_SYMMETRY in codes
+
+
+# --- paragraph word-count hyper-symmetry ------------------------------
+
+_SYMMETRY = HowlWriterConfig(banned_patterns=["paragraph_length_symmetry"])
+
+
+def _metronomic_body(words: int, blocks: int) -> str:
+    """Blocks of identical length, which is the tell being detected."""
+    return "\n\n".join(
+        f"Block {index} " + "filler word " * (words - 3) + "ends here."
+        for index in range(blocks)
+    )
+
+
+def test_hyper_uniform_paragraph_word_counts_are_flagged():
+    codes = _codes(_metronomic_body(30, 4), _SYMMETRY)
+    assert rules.AI_STYLE_PARAGRAPH_LENGTH_SYMMETRY in codes
+
+
+def test_a_trailing_hashtag_line_does_not_hide_hyper_symmetry():
+    """The tell has to survive the publishing convention wrapped around it.
+
+    A trailing tag line was being counted as a paragraph, which put a
+    three-word block into every short-form post and dragged the minimum
+    paragraph length under the floor the check requires -- so the rule could
+    never fire on exactly the content it was written for.
+    """
+    codes = _codes(
+        _metronomic_body(30, 4) + "\n\n#Engineering #Systems #Reliability",
+        _SYMMETRY,
+    )
+    assert rules.AI_STYLE_PARAGRAPH_LENGTH_SYMMETRY in codes
+
+
+def test_ordinary_varied_paragraphs_are_not_flagged():
+    body = (
+        "A short opening line.\n\n"
+        + "This paragraph runs considerably longer than the one above it and "
+        "develops the point across several clauses before it finally stops. "
+        "It keeps going for a while yet.\n\n"
+        + "Medium length paragraph sitting between the two extremes here.\n\n"
+        + "Then a much longer closing block that returns to the length of the "
+        "second paragraph and adds a further sentence to make the spread "
+        "unmistakable across the piece as a whole."
+    )
+    codes = _codes(body, _SYMMETRY)
+    assert rules.AI_STYLE_PARAGRAPH_LENGTH_SYMMETRY not in codes
+
+
+def test_short_form_single_sentence_paragraphs_are_not_a_false_positive():
+    """Four one-line paragraphs in a short post are cadence, not a template."""
+    body = (
+        "Latency is a feature.\n\n"
+        "Nobody files a ticket about it.\n\n"
+        "They just leave.\n\n"
+        "Measure it before you argue about it."
+    )
+    codes = _codes(body, _SYMMETRY)
+    assert rules.AI_STYLE_PARAGRAPH_LENGTH_SYMMETRY not in codes
+
+
+def test_symmetry_is_silent_when_the_pattern_is_not_configured():
+    codes = _codes(_metronomic_body(30, 4), HowlWriterConfig(banned_patterns=[]))
+    assert rules.AI_STYLE_PARAGRAPH_LENGTH_SYMMETRY not in codes
