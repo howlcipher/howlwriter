@@ -8,6 +8,7 @@ HowlPlane owns execution, provider resolution, reviewer independence, and contro
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 from typing import Any
@@ -16,6 +17,7 @@ from howlwriter.integration.model_role import (
     ModelRoleNotConfiguredError,
     WritingRole,
 )
+from howlwriter.integration.provenance_capture import capture_call
 
 # Optional dynamic discovery of HowlPlane source tree if not directly in sys.path
 _KNOWN_HOWLPLANE_PATHS = [
@@ -137,7 +139,20 @@ class HowlPlaneWritingBridge:
             cwd=str(cwd) if cwd else None,
         )
 
+        # Captured here, and only here. This is the last point at which the
+        # exact strings being sent are still in hand, so provenance never has
+        # to re-render a prompt afterwards and claim it is the one that ran.
+        started_at = datetime.now(timezone.utc).isoformat()
         result = self.dispatcher.execute(request, custom_backend=custom_backend)
+        capture_call(
+            role=role.value,
+            prompt=prompt,
+            system_instruction=system_instruction,
+            result=result,
+            avoid_provider=avoid_provider,
+            started_at=started_at,
+        )
+
         if not result.success and "No executor or provider configured" in (result.error_message or ""):
             raise ModelRoleNotConfiguredError(role)
 

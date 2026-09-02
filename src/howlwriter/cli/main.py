@@ -18,6 +18,7 @@ from howlwriter.cli.commands import (
     howl,
     humanize,
     lint,
+    outline,
     paper,
     redpen,
     references,
@@ -45,6 +46,7 @@ _COMMAND_MODULES = (
     lint,
     finalize,
     howl,
+    outline,
     runs,
     ui,
 )

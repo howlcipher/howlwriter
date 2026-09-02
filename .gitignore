@@ -23,3 +23,12 @@ profiles/private/
 *.local.voice.json
 dogfood/*results*/
 dogfood/*.json
+
+# Generation provenance. A provenance record contains the user's own outline
+# text and, at full level, every prompt HowlWriter built around it. It is
+# written beside the artifact on request and is never published. Committed
+# fixtures under tests/ are synthetic and deliberately NOT ignored.
+*.provenance.json
+*.manifest.txt
+*.outline.yaml
+!tests/**/*.outline.yaml
