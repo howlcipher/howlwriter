@@ -1,0 +1,132 @@
+[
+  {
+    "id": "S001",
+    "title": "Can Large Language Models (LLMs) Meaningfully Interpret Operational Technology (OT) Software Bills of Materials (SBOMs)?",
+    "authors": [
+      "Iyenghar, Padma"
+    ],
+    "publisher": "SCITEPRESS - Science and Technology Publications",
+    "publication_date": "2026-01-01",
+    "url": "https://doi.org/10.5220/0014741100004015",
+    "doi": "10.5220/0014741100004015",
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Published academic work by SCITEPRESS - Science and Technology Publications: Can Large Language Models (LLMs) Meaningfully Interpret Operational Technology (OT) Software Bills of Materials (SBOMs)?",
+    "reliability_notes": "Retrieved from Crossref API (type: proceedings-article)."
+  },
+  {
+    "id": "S002",
+    "title": "A YANG Data Model for Reporting Software Bills of Materials (SBOMs) and Vulnerability Information",
+    "authors": [
+      "Lear, E.",
+      "Rose, S."
+    ],
+    "publisher": "RFC Editor",
+    "publication_date": "2023-10-01",
+    "url": "https://doi.org/10.17487/rfc9472",
+    "doi": "10.17487/rfc9472",
+    "access_date": "2026-08-31",
+    "source_type": "report",
+    "retrieved_text": "Published academic work by RFC Editor: A YANG Data Model for Reporting Software Bills of Materials (SBOMs) and Vulnerability Information",
+    "reliability_notes": "Retrieved from Crossref API (type: report)."
+  },
+  {
+    "id": "S003",
+    "title": "A Dataset of Software Bill of Materials for Evaluating SBOM Consumption Tools",
+    "authors": [
+      "Rio Kishimoto",
+      "Tetsuya Kanda",
+      "Yuki Manabe",
+      "Katsuro Inoue",
+      "Shi Qiu",
+      "Yoshiki Higo"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2025-04-09",
+    "url": "http://arxiv.org/abs/2504.06880v1",
+    "doi": null,
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "A Software Bill of Materials (SBOM) is becoming an essential tool for effective software dependency management. An SBOM is a list of components used in software, including details such as component names, versions, and licenses. Using SBOMs, developers can quickly identify software components and assess whether their software depends on vulnerable libraries. Numerous tools support software dependency management through SBOMs, which can be broadly categorized into two types: tools that generate SBOMs and tools that utilize SBOMs. A substantial collection of accurate SBOMs is required to evaluate tools that utilize SBOMs. However, there is no publicly available dataset specifically designed for this purpose, and research on SBOM consumption tools remains limited. In this paper, we present a dataset of SBOMs to address this gap. The dataset we constructed comprises 46 SBOMs generated from real-world Java projects, with plans to expand it to include a broader range of projects across various programming languages. Accurate and well-structured SBOMs enable researchers to evaluate the functionality of SBOM consumption tools and identify potential issues. We collected 3,271 Java projects from GitHub and generated SBOMs for 798 of them using Maven with an open-source SBOM generation tool. These SBOMs were refined through both automatic and manual corrections to ensure accuracy, currently resulting in 46 SBOMs that comply with the SPDX Lite profile, which defines minimal requirements tailored to practical workflows in industries. This process also revealed issues with the SBOM generation tools themselves. The dataset is publicly available on Zenodo (DOI: 10.5281/zenodo.14233415).",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S004",
+    "title": "SoK: Analysis of Software Supply Chain Security by Establishing Secure Design Properties",
+    "authors": [
+      "Chinenye Okafor",
+      "Taylor R. Schorlemmer",
+      "Santiago Torres-Arias",
+      "James C. Davis"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2024-06-14",
+    "url": "http://arxiv.org/abs/2406.10109v1",
+    "doi": null,
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "This paper systematizes knowledge about secure software supply chain patterns. It identifies four stages of a software supply chain attack and proposes three security properties crucial for a secured supply chain: transparency, validity, and separation. The paper describes current security approaches and maps them to the proposed security properties, including research ideas and case studies of supply chains in practice. It discusses the strengths and weaknesses of current approaches relative to known attacks and details the various security frameworks put out to ensure the security of the software supply chain. Finally, the paper highlights potential gaps in actor and operation-centered supply chain security techniques",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S005",
+    "title": "Assessing the Security of Software Supply Chains : Software Bill of Materials, Threat Propagation, and Logical Attack Graphs",
+    "authors": [
+      "Soeiro, Lu\u00eds Fernando de Oliveira"
+    ],
+    "publisher": "Agence Bibliographique de l'Enseignement Sup\u00e9rieur",
+    "publication_date": null,
+    "url": "https://doi.org/10.70675/6dd72cb7z7135z4d1dza942z3f6c57308033",
+    "doi": "10.70675/6dd72cb7z7135z4d1dza942z3f6c57308033",
+    "access_date": "2026-08-31",
+    "source_type": "other",
+    "retrieved_text": "\u00c9valuation de la s\u00e9curit\u00e9 des cha\u00eenes d'approvisionnement logicielles : Software Bill of Materials (SBOM), propagation des menaces et graphes d'attaque logiques\n                La cha\u00eene d'approvisionnement logicielle (SSC) devient plus complexe et vuln\u00e9rable avec la diversit\u00e9 croissante des produits logiciels et la difficult\u00e9 \u00e0 suivre leurs d\u00e9pendances. La Software Bill of Materials(SBOM), inventaire des composants, est propos\u00e9e comme solution \u00e0 cette complexit\u00e9. Pourtant, les \u00e9tudes compl\u00e8tes sur les pratiques SBOM \u00e0 partir de fichiers r\u00e9els manquent. Pour faciliter ces recherches, nous pr\u00e9sentons le plus grand jeu de donn\u00e9es SBOM \u00e0 ce jour : plus de 78 000 fichiers uniques d\u00e9dupliqu\u00e9s \u00e0 partir de plus de 94 millions de d\u00e9p\u00f4ts publics.Pour exploiter efficacement les SBOM, surtout \u00e0 grande \u00e9chelle, le secteur a besoin d'outils automatis\u00e9s fiables. Nous analysons empiriquement des SBOM r\u00e9els pour \u00e9valuer huit outils de pointe destin\u00e9s \u00e0 valider et noter leur qualit\u00e9. Nous d\u00e9finissons des m\u00e9triques ind\u00e9pendantes pour juger leur ad\u00e9quation et omparons les r\u00e9sultats des outils \u00e0 nos mesures. Nos conclusions montrent que la plupart des SBOM ne sont pas pr\u00eats \u00e0 l'emploi et que les outils divergent largement.Les outils actuels d'Analyse de Composition Logicielle (SCA), arbres et graphes d'attaque ne refl\u00e8tent pas les interactions affectant la s\u00e9curit\u00e9 dans la SSC. Nous proposons une m\u00e9thode in\u00e9dite pour estimer le niveau de menace, identifiant les \u00e9l\u00e9ments cl\u00e9s qui propagent ou subissent l'attaque. Un ensemble de r\u00e8gles d\u00e9duit la menace selon la vuln\u00e9rabilit\u00e9 des composants et des hypoth\u00e8ses sur les attaquants.MulVal, outil open source de g\u00e9n\u00e9ration de graphes logiques d'attaque, ne traite pas bien la propagation des menaces SSC, le rendant moins efficace contre des attaques r\u00e9centes comme la compromission XZ ou la double attaque 3CX. Nous pr\u00e9sentons une extension MulVal corrigeant cette limite, ajoutant de nouveaux pr\u00e9dicats pour mod\u00e9liser les interactions SSC, les int\u00e9grer aux r\u00e8gles existantes, et incluant 20 sc\u00e9narios et un cadre de tests.",
+    "reliability_notes": "Retrieved from Crossref API (type: dissertation)."
+  },
+  {
+    "id": "S006",
+    "title": "Securing IoT-Driven Supply Chains",
+    "authors": [
+      "Syed, Aamiruddin"
+    ],
+    "publisher": "Apress",
+    "publication_date": "2024-01-01",
+    "url": "https://doi.org/10.1007/979-8-8688-0799-2_7",
+    "doi": "10.1007/979-8-8688-0799-2_7",
+    "access_date": "2026-08-31",
+    "source_type": "book",
+    "retrieved_text": "Published academic work by Apress: Securing IoT-Driven Supply Chains",
+    "reliability_notes": "Retrieved from Crossref API (type: book-chapter)."
+  },
+  {
+    "id": "S007",
+    "title": "Towards Predicting Multi-Vulnerability Attack Chains in Software Supply Chains from Software Bill of Materials Graphs",
+    "authors": [
+      "Laura Baird",
+      "Armin Moin"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2026-04-04",
+    "url": "http://arxiv.org/abs/2604.04977v2",
+    "doi": null,
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Software supply chain security compromises often stem from cascaded interactions of vulnerabilities, for example, between multiple vulnerable components. Yet, Software Bill of Materials (SBOM)-based pipelines for security analysis typically treat scanner findings as independent per-CVE (Common Vulnerabilities and Exposures) records. We propose a new research direction based on learning multi-vulnerability attack chains through a novel SBOM-driven graph-learning approach. This treats SBOM structure and scanner outputs as a dependency-constrained evidence graph rather than a flat list of vulnerabilities. We represent vulnerability-enriched CycloneDX SBOMs as heterogeneous graphs whose nodes capture software components and known vulnerabilities (i.e, CVEs), connected by typed relations, such as dependency and vulnerability links. We train a Heterogeneous Graph Attention Network (HGAT) to predict whether a component is associated with at least one known vulnerability as a feasibility check for learning over this structure. Additionally, we frame the discovery of cascading vulnerabilities as CVE-pair link prediction using a lightweight Multi-Layer Perceptron (MLP) neural network trained on documented multi-vulnerability chains. Validated on 200 real-world SBOMs from the Wild SBOMs public dataset, the HGAT component classifier achieves 91.03% Accuracy and 74.02% F1-score, while the cascade predictor model (MLP) achieves a Receiver Operating Characteristic - Area Under Curve (ROC-AUC) of 0.93 on a seed set of 35 documented attack chains.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S008",
+    "title": "MODERN METHODS OF AUTOMATED SOFTWARE SECURITY ANALYSIS: FROM STATIC ANALYSIS TO COMPREHENSIVE APPROACH",
+    "authors": [
+      "Volkova, A.A."
+    ],
+    "publisher": "Euroasian Scientific and Industrial Chamber, Ltd.",
+    "publication_date": "2024-01-01",
+    "url": "https://doi.org/10.17513/ejnh.34399",
+    "doi": "10.17513/ejnh.34399",
+    "access_date": "2026-08-31",
+    "source_type": "journal_article",
+    "retrieved_text": "Published academic work by Euroasian Scientific and Industrial Chamber, Ltd.: MODERN METHODS OF AUTOMATED SOFTWARE SECURITY ANALYSIS: FROM STATIC ANALYSIS TO COMPREHENSIVE APPROACH",
+    "reliability_notes": "Retrieved from Crossref API (type: journal-article)."
+  }
+]

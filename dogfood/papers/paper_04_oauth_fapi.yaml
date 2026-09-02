@@ -1,0 +1,21 @@
+title: "OAuth 2.1 and FAPI: Modernizing Authorization in High-Assurance Financial APIs"
+topic: "A comprehensive comparative analysis of OAuth 2.1 security consolidations, Proof of Key for Code Exchange (PKCE), Mutual TLS client authentication, and the Financial-grade API (FAPI 2.0) baseline specifications."
+type: "academic"
+target_words: 1400
+word_tolerance_percent: 15.0
+citation_style: "apa7"
+source_requirements:
+  minimum_sources: 5
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - "Detail the deprecation of the implicit grant and resource owner password credentials grants in OAuth 2.1."
+  - "Analyze cryptographic sender-constraining mechanisms (DPoP vs mTLS)."
+  - "Evaluate FAPI 2.0 conformance requirements in open banking ecosystems."
+outline:
+  - "Introduction to Web Authorization Vulnerabilities and OAuth 2.0 Shortcomings"
+  - "Core Security Enhancements in OAuth 2.1"
+  - "Sender-Constrained Tokens: Comparative Analysis of DPoP and mTLS"
+  - "The FAPI 2.0 Security Profile for Open Finance"
+  - "Implementation Impediments and Interoperability"
+  - "Conclusion and Security Outlook"

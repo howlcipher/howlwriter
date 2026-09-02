@@ -1,0 +1,19 @@
+title: "Static Analysis and Verification in Modern Software Supply Chains"
+topic: "Evaluating the efficacy of static application security testing (SAST), software bills of materials (SBOMs), and cryptographic provenance attestations (SLSA) in modern software supply chains."
+type: "academic"
+target_words: 800
+word_tolerance_percent: 15.0
+citation_style: "apa7"
+source_requirements:
+  minimum_sources: 4
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - "Assess false positive rates and developer friction in automated SAST scanners."
+  - "Evaluate SLSA level 3 requirements for hermetic and reproducible builds."
+  - "Discuss the limitations of SBOMs in detecting zero-day runtime vulnerabilities."
+outline:
+  - "Software Supply Chain Vulnerabilities and Attack Vectors"
+  - "Static Analysis and Dependency Attestation Standards"
+  - "Critical Limitations of Pre-Deployment Verification"
+  - "Synthesis and Future Directions"

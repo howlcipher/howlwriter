@@ -1,0 +1,19 @@
+title: "Zero Trust Architecture in Cloud Native Kubernetes Deployments"
+topic: "Implementing Zero Trust Architecture principles, mutual TLS (mTLS), and cryptographic workload identity via SPIFFE/SPIRE in multi-tenant Kubernetes clusters."
+type: "academic"
+target_words: 850
+word_tolerance_percent: 15.0
+citation_style: "apa7"
+source_requirements:
+  minimum_sources: 3
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - "Explain the core tenets of Zero Trust according to NIST SP 800-207."
+  - "Evaluate cryptographic workload attestation using SPIFFE/SPIRE."
+  - "Discuss operational overhead and latency trade-offs in service meshes."
+outline:
+  - "Introduction to Zero Trust in Kubernetes"
+  - "Workload Attestation and Cryptographic Identity"
+  - "Operational Trade-offs and Implementation Challenges"
+  - "Conclusion"
