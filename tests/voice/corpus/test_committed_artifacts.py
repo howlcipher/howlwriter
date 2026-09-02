@@ -166,3 +166,48 @@ def test_the_gitignore_covers_local_voice_artifacts_without_hiding_the_schema():
     assert not ignored("profiles/shared_style.example.yaml")
     assert not ignored("src/howlwriter/domain/voice.py")
     assert not ignored("tests/voice/corpus/test_store_and_build.py")
+
+
+# --- generation provenance artifacts ------------------------------------
+
+def test_no_generation_provenance_artifact_is_tracked():
+    """A provenance record is private user data, like a voice profile.
+
+    At full level it contains every prompt HowlWriter built, and those prompts
+    contain the user's own sentences. The sidecars are written beside whatever
+    artifact the user chose to produce, which means they can land inside a
+    repository, which means this has to be a gate rather than a convention.
+    """
+    tracked = subprocess.run(
+        ["git", "ls-files"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+
+    offenders = [
+        path for path in tracked
+        if path.endswith((".provenance.json", ".manifest.txt"))
+    ]
+    assert not offenders, (
+        "generation provenance artifacts must stay local: " + ", ".join(offenders)
+    )
+
+
+def test_the_gitignore_covers_the_provenance_sidecars():
+    body = (REPO / ".gitignore").read_text(encoding="utf-8")
+    for pattern in ("*.provenance.json", "*.manifest.txt", "*.outline.yaml"):
+        assert pattern in body, f"{pattern} must be ignored"
+
+
+def test_provenance_redaction_removes_credentials_before_anything_is_written():
+    """The one guard that runs on content rather than on filenames."""
+    from howlwriter.domain.generation_provenance import redact
+
+    for secret in (
+        "sk-abcdefghijklmnopqrstuvwxyz012345",
+        "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345",
+        "AKIAIOSFODNN7EXAMPLE",
+    ):
+        assert secret not in redact(f"prompt containing {secret} inline")

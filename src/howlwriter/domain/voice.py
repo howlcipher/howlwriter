@@ -41,8 +41,15 @@ ProfileType = Literal["personal_voice", "shared_style"]
 #: analysis; user traits are explicit overrides and always win.
 TraitSource = Literal["deterministic", "model", "user"]
 
-#: The current serialization version of the v1 half of the schema.
-VOICE_PROFILE_VERSION = 1
+#: The serialization version this build writes. Bumped to 2 when rate
+#: distributions were added.
+VOICE_PROFILE_VERSION = 2
+
+#: The oldest version still recognised as corpus-built. A v1 profile predates
+#: rate distributions but is otherwise a real corpus build, so it must keep
+#: rendering through the corpus path rather than silently falling back to the
+#: legacy renderer and losing its traits, contexts and spread.
+MIN_CORPUS_BUILT_VERSION = 1
 
 #: Context names the builder knows how to aggregate. `unknown` and `mixed`
 #: are classification outcomes, not profile contexts -- documents landing
@@ -80,6 +87,13 @@ class TraitValue(DataClassSerializationMixin):
     #: instead of stating the plurality as an absolute.
     secondary: str = ""
     secondary_agreement: float = 0.0
+    #: True when `value` and `secondary` carry effectively the same weight, so
+    #: `value` won on a tie-break rather than on evidence. The tie-break is
+    #: lexicographic and deterministic, which keeps rebuilds stable but makes
+    #: the winner arbitrary: reporting it as the author's tendency would state
+    #: a coin-flip as a property. The application layer renders a tied trait as
+    #: split without naming a winner.
+    tied: bool = False
     source: TraitSource = "deterministic"
     note: str = ""
 
@@ -88,6 +102,52 @@ class TraitValue(DataClassSerializationMixin):
         if not isinstance(data, dict):
             return cls(value=str(data))
         return super().from_dict(data)
+
+
+@dataclass
+class RateDistribution(DataClassSerializationMixin):
+    """How one behaviour is distributed ACROSS documents, not averaged over them.
+
+    A corpus mean answers "how much of this is there per hundred words of
+    corpus". For a behaviour that many documents simply do not use, that is the
+    wrong question, and the answer describes no real document. Measured on the
+    corpus this was built for, 42% of documents contain no first person at all;
+    the mean rate is 1.01 while the median among documents that do use it is
+    1.36. Writing to the mean produces prose that is neither impersonal like the
+    42% nor personal like the rest.
+
+    So presence and intensity are stored separately: how often the behaviour
+    appears at all, and how strongly it appears in the documents that have it.
+    The percentiles deliberately exclude absent documents -- including them
+    would drag every percentile toward zero and re-create the flattening this
+    exists to prevent.
+
+    `corpus_mean` is retained for continuity with the scalar fields on
+    `VoiceDistributions` and for diagnostics. It is never rendered on its own.
+    """
+
+    #: Share of measured documents where the behaviour appears at all (rate > 0).
+    document_presence_rate: float = 0.0
+    documents_measured: int = 0
+    documents_present: int = 0
+    #: Percentiles among documents where the behaviour is PRESENT. None when too
+    #: few documents carry it to describe a spread without inventing precision.
+    when_present_p10: float | None = None
+    when_present_p50: float | None = None
+    when_present_p90: float | None = None
+    #: The plain corpus-wide mean, kept for continuity. Never rendered alone.
+    corpus_mean: float = 0.0
+
+    @property
+    def is_universal(self) -> bool:
+        """Every measured document uses it, so presence carries no information."""
+        return self.documents_measured > 0 and self.documents_present == self.documents_measured
+
+    @property
+    def has_spread(self) -> bool:
+        """Whether the when-present percentiles describe a real range."""
+        low, high = self.when_present_p10, self.when_present_p90
+        return low is not None and high is not None and high > low > 0
 
 
 @dataclass
@@ -103,6 +163,9 @@ class VoiceContext(DataClassSerializationMixin):
     name: str = ""
     traits: dict[str, TraitValue] = field(default_factory=dict)
     distributions: dict[str, float] = field(default_factory=dict)
+    #: Zero-inflated behaviours measured within this context only. Same shape as
+    #: the global map; empty when the slice holds too few documents to support it.
+    rate_distributions: dict[str, RateDistribution] = field(default_factory=dict)
     document_count: int = 0
     word_count: int = 0
     confidence: float = 0.0
@@ -114,6 +177,10 @@ class VoiceContext(DataClassSerializationMixin):
         rebuilt.traits = {
             key: TraitValue.from_dict(value) if isinstance(value, dict) else value
             for key, value in (rebuilt.traits or {}).items()
+        }
+        rebuilt.rate_distributions = {
+            key: RateDistribution.from_dict(value) if isinstance(value, dict) else value
+            for key, value in (rebuilt.rate_distributions or {}).items()
         }
         return rebuilt
 
@@ -262,6 +329,11 @@ class VoiceProfile(DataClassSerializationMixin):
     traits: dict[str, TraitValue] = field(default_factory=dict)
     contexts: dict[str, VoiceContext] = field(default_factory=dict)
     distributions: VoiceDistributions | None = None
+    #: Cross-document presence and intensity for behaviours a corpus mean
+    #: misdescribes. Keyed by the DocumentFeatures field name. Empty on a v1
+    #: profile built before this existed, which is why every reader treats an
+    #: absent entry as "not measured" rather than as "never occurs".
+    rate_distributions: dict[str, RateDistribution] = field(default_factory=dict)
     overrides: VoiceOverrides | None = None
     corpus_summary: CorpusSummary | None = None
     validation: ValidationSummary | None = None
@@ -272,7 +344,7 @@ class VoiceProfile(DataClassSerializationMixin):
     def is_corpus_built(self) -> bool:
         """True when this profile came from `voice build` rather than a hand
         written file or the legacy corpus-stats learner."""
-        return self.version >= VOICE_PROFILE_VERSION and self.generated_from == "corpus_build"
+        return self.version >= MIN_CORPUS_BUILT_VERSION and self.generated_from == "corpus_build"
 
     def effective_trait(self, name: str, context: str | None = None) -> TraitValue | None:
         """Resolve one trait under the layering rule the whole feature rests on:
@@ -315,6 +387,10 @@ class VoiceProfile(DataClassSerializationMixin):
         rebuilt.contexts = {
             key: VoiceContext.from_dict(value) if isinstance(value, dict) else value
             for key, value in (rebuilt.contexts or {}).items()
+        }
+        rebuilt.rate_distributions = {
+            key: RateDistribution.from_dict(value) if isinstance(value, dict) else value
+            for key, value in (rebuilt.rate_distributions or {}).items()
         }
         rebuilt.distributions = _rebuild(VoiceDistributions, rebuilt.distributions)
         rebuilt.overrides = _rebuild(VoiceOverrides, rebuilt.overrides)

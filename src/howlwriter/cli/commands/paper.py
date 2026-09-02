@@ -10,7 +10,9 @@ import sys
 from howlwriter.academic.length import resolve_length_bounds
 from howlwriter.academic.pipeline import run_academic_pipeline
 from howlwriter.academic.research import load_sources_file, save_sources_file
-from howlwriter.academic.spec import load_assignment_spec
+from howlwriter.academic.spec import AssignmentSpec, load_assignment_spec
+from howlwriter.domain.outline import load_outline
+from howlwriter.provenance.assemble import write_artifacts
 from howlwriter.config.loader import ConfigLoader
 from howlwriter.domain.io import atomic_write_text
 from howlwriter.voice.corpus.resolve import resolve_voice_option
@@ -25,7 +27,18 @@ def add_subparser(
     )
     parser.add_argument(
         "assignment",
+        nargs="?",
+        default=None,
         help="Path to assignment YAML or JSON specification file.",
+    )
+    parser.add_argument(
+        "--outline",
+        default=None,
+        help=(
+            "Path to an authorship outline (YAML or JSON). It is translated "
+            "into the assignment spec rather than routed around it, so every "
+            "research, citation and verification check still runs."
+        ),
     )
     parser.add_argument(
         "--out",
@@ -65,16 +78,61 @@ def add_subparser(
         action="store_true",
         help="Save auxiliary <out>.sources.json and <out>.report.json artifacts.",
     )
+    parser.add_argument(
+        "--provenance",
+        action="store_true",
+        help="Write a local provenance record, manifest and AI-use statement.",
+    )
+    parser.add_argument(
+        "--provenance-level",
+        dest="provenance_level",
+        choices=["summary", "full"],
+        default="summary",
+        help="full also records the exact prompts HowlWriter sent.",
+    )
     parser.set_defaults(handler=run)
     return parser
 
 
+def _source_dir(args: argparse.Namespace) -> Path | None:
+    """Directory a provider should run in.
+
+    An outline-only run has no assignment file, so the outline's own directory
+    stands in rather than passing a path that does not exist.
+    """
+    for candidate in (getattr(args, "assignment", None), getattr(args, "outline", None)):
+        if candidate and Path(candidate).exists():
+            return Path(candidate).parent
+    return None
+
+
 def run(args: argparse.Namespace) -> int:
-    try:
-        spec = load_assignment_spec(args.assignment)
-    except Exception as exc:
-        print(f"error: invalid assignment spec '{args.assignment}': {exc}", file=sys.stderr)
+    outline = None
+    if getattr(args, "outline", None):
+        try:
+            outline = load_outline(args.outline)
+        except Exception as exc:
+            print(f"error: invalid outline '{args.outline}': {exc}", file=sys.stderr)
+            return 1
+
+    if not args.assignment and outline is None:
+        print(
+            "error: provide an assignment spec, or --outline to write from an "
+            "authorship outline",
+            file=sys.stderr,
+        )
         return 1
+
+    if args.assignment:
+        try:
+            spec = load_assignment_spec(args.assignment)
+        except Exception as exc:
+            print(f"error: invalid assignment spec '{args.assignment}': {exc}", file=sys.stderr)
+            return 1
+    else:
+        # The outline carries the title, topic, length and requirements; the
+        # bridge fills the spec from it inside the pipeline.
+        spec = AssignmentSpec(title=outline.title or outline.topic, topic=outline.topic)
 
     config = ConfigLoader().load(project_config_path=args.project_config_path)
 
@@ -121,8 +179,9 @@ def run(args: argparse.Namespace) -> int:
             spec,
             config=config,
             existing_sources=existing_sources,
+            outline=outline,
             deterministic_only=args.deterministic,
-            cwd=Path(args.assignment).parent if Path(args.assignment).exists() else None,
+            cwd=_source_dir(args),
         )
     except Exception as exc:
         print(f"error: academic paper generation failed: {exc}", file=sys.stderr)
@@ -131,6 +190,41 @@ def run(args: argparse.Namespace) -> int:
     # Atomic write of final paper
     atomic_write_text(out_path, result.final_document.text)
     print(f"Wrote {out_path}")
+
+    if getattr(result, "authorship_coverage", None) is not None:
+        coverage = result.authorship_coverage
+        print()
+        print("OUTLINE COVERAGE")
+        print(f"  verdict: {coverage.status}")
+        print(
+            f"  required points: {coverage.required_represented}"
+            f"/{coverage.required_supplied}"
+        )
+        print(
+            f"  preserved text:  {coverage.preserved_retained}"
+            f"/{coverage.preserved_supplied}"
+        )
+        for finding in coverage.findings:
+            if finding.status != "PRESENT":
+                print(f"  {finding.status} [{finding.node_id}] {finding.text[:70]}")
+
+    if getattr(args, "provenance", False) and getattr(result, "provenance", None):
+        written = write_artifacts(
+            result.provenance,
+            out_path,
+            level=args.provenance_level,
+            outline=outline,
+            sources=[s.to_dict() for s in result.sources] if result.sources else None,
+        )
+        statement_path = out_path.with_suffix(".ai-use.txt")
+        atomic_write_text(statement_path, result.ai_use_statement.render() + "\n")
+        for artifact in [*written.written(), statement_path]:
+            print(f"Wrote {artifact}")
+        print(
+            "Provenance and disclosure files are local and private. The "
+            "scholarly References page is unaffected: nothing from these files "
+            "belongs there."
+        )
 
     # Optional auxiliary artifacts
     if args.save_artifacts:

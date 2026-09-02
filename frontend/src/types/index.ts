@@ -392,3 +392,94 @@ export interface VoiceDetail {
   warnings: string[];
   distributions: Record<string, number>;
 }
+
+// --- Generation provenance (read-only) ---
+//
+// Mirrors howlwriter.domain.generation_provenance. `model` is nullable on
+// purpose: providers routinely do not report one, and `model_status` carries
+// that fact rather than the UI inventing a name.
+
+export interface ModelCallRecord {
+  sequence: number;
+  role: string;
+  provider: string;
+  model: string | null;
+  model_status: string;
+  started_at: string;
+  duration_seconds: number | null;
+  success: boolean;
+  timed_out: boolean;
+  error_message: string | null;
+  independence_status: string | null;
+  avoid_provider: string | null;
+  retry_of: number | null;
+  system_instruction: string;
+  user_prompt: string;
+  system_instruction_sha256: string;
+  user_prompt_sha256: string;
+  system_instruction_chars: number;
+  user_prompt_chars: number;
+  response_sha256: string;
+  response_chars: number;
+  token_usage: Record<string, unknown> | null;
+}
+
+export interface ProvenanceTimelineNode {
+  name: string;
+  sequence: number;
+  status: string;
+  model_backed: boolean;
+  duration_seconds: number | null;
+  detail: string;
+  output_sha256: string;
+  calls: number[];
+}
+
+export interface ContributionSummary {
+  claims_supplied: number;
+  claims_represented: number;
+  required_points_supplied: number;
+  required_points_represented: number;
+  preserved_supplied: number;
+  preserved_retained: number;
+  examples_supplied: number;
+  examples_represented: number;
+  voice_seeds_supplied: number;
+  user_words_supplied: number;
+  artifact_words: number;
+  model_added_claims: number;
+  research_grounded_additions: number;
+  unsupported_additions: number;
+  gaps_reported: number;
+}
+
+export interface GenerationProvenance {
+  run_id: string;
+  workflow: string;
+  writing_mode: string | null;
+  generation_freedom: string | null;
+  started_at: string;
+  completed_at: string;
+  provenance_level: string;
+  complete: boolean;
+  outline_present: boolean;
+  outline_summary: Record<string, unknown>;
+  calls: ModelCallRecord[];
+  timeline: ProvenanceTimelineNode[];
+  contribution: ContributionSummary;
+  coverage: Record<string, unknown>;
+  added_claims: Array<Record<string, unknown>>;
+  gaps: string[];
+  warnings: string[];
+  manifest: string;
+  prompts_included: boolean;
+  prompt_note?: string;
+  providers_used: string[];
+  models_used: string[];
+  unknown_model_calls: number;
+  reviewer_independence: string | null;
+  outline_sha256: string;
+  input_sha256: string;
+  draft_sha256: string;
+  artifact_sha256: string;
+}

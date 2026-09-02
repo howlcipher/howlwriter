@@ -20,7 +20,7 @@ global profile it is adjusting.
 from __future__ import annotations
 
 from howlwriter.domain.modes import WritingMode
-from howlwriter.domain.voice import TraitValue, VoiceProfile
+from howlwriter.domain.voice import RateDistribution, TraitValue, VoiceProfile
 
 #: Which context each writing mode draws on. A mode is a task; a context is a
 #: register. LinkedIn writing and a work document share a register even though
@@ -61,6 +61,116 @@ LOW_CONFIDENCE = 0.45
 MIN_TRAIT_AGREEMENT = 0.50
 
 
+#: How each zero-inflated behaviour is named and counted when rendered.
+#:
+#: The unit is not cosmetic. `features.py` measures some of these per hundred
+#: words (pronouns, parentheses, contractions, semicolons, em dashes) and
+#: others as a share of sentences or paragraphs (questions, fragments,
+#: transitions, sentence-initial conjunctions, lists, headings). Rendering a
+#: share of sentences as though it were a count per hundred words would state a
+#: number that is wrong by an order of magnitude, so each entry carries its own
+#: unit and the renderer never guesses.
+_RATE_PRESENTATION: dict[str, tuple[str, str]] = {
+    "first_person_rate": ("first person", "per100"),
+    "second_person_rate": ("second person", "per100"),
+    "parenthetical_rate": ("parentheses", "per100"),
+    "contraction_rate": ("contractions", "per100"),
+    "semicolon_rate": ("semicolons", "per100"),
+    "em_dash_rate": ("em dashes", "per100"),
+    "question_rate": ("questions", "share_sentences"),
+    "exclamation_rate": ("exclamations", "share_sentences"),
+    "transition_rate": ("transitional signposting", "share_sentences"),
+    "sentence_initial_conjunction_rate": ("sentences opening on a conjunction", "share_sentences"),
+    "fragment_rate": ("sentence fragments", "share_sentences"),
+    "list_rate": ("lists", "share_paragraphs"),
+    "heading_rate": ("headings", "share_paragraphs"),
+}
+
+#: Presence above this reads as "essentially always", below it as "rarely".
+#: Between them the split itself is the finding worth reporting.
+_ALWAYS_PRESENT = 0.95
+_RARELY_PRESENT = 0.10
+
+
+def _format_rate(value: float, unit: str) -> str:
+    if unit == "per100":
+        return f"{value:.1f}"
+    return f"{value:.0%}"
+
+
+def _rate_line(name: str, dist: RateDistribution) -> str:
+    """One behaviour, described as presence plus intensity.
+
+    Deliberately prose rather than a number pair. "first_person_rate: 1.01"
+    invites the model to hit 1.01 in every piece, which is the averaging
+    failure re-created at the prompt layer; saying that four pieces in ten use
+    none of it describes a corpus the model can vary within.
+    """
+    label, unit = _RATE_PRESENTATION[name]
+    presence = dist.document_presence_rate
+    tail = ""
+    if dist.has_spread:
+        low = _format_rate(dist.when_present_p10, unit)
+        high = _format_rate(dist.when_present_p90, unit)
+        suffix = " per 100 words" if unit == "per100" else " of sentences" \
+            if unit == "share_sentences" else " of paragraphs"
+        tail = f"; where present, roughly {low} to {high}{suffix}"
+
+    if presence >= _ALWAYS_PRESENT:
+        return f"  - {label}: present in nearly every piece{tail}"
+    if presence <= _RARELY_PRESENT:
+        return f"  - {label}: absent from most pieces ({1 - presence:.0%}){tail}"
+    return (
+        f"  - {label}: absent from about {1 - presence:.0%} of pieces, "
+        f"present in the rest{tail}"
+    )
+
+
+#: Presence gap below which a context is saying the same thing as the global
+#: profile. Reporting it again would double-count one observation.
+_PRESENCE_DIFFERENCE = 0.15
+
+
+def _presence_differs(
+    context_dist: RateDistribution,
+    global_dist: RateDistribution | None,
+) -> bool:
+    if context_dist.documents_measured <= 0:
+        return False
+    if global_dist is None:
+        return True
+    gap = abs(context_dist.document_presence_rate - global_dist.document_presence_rate)
+    return gap >= _PRESENCE_DIFFERENCE
+
+
+def _render_rate_distributions(
+    rates: dict[str, RateDistribution],
+) -> list[str]:
+    lines: list[str] = []
+    renderable = [
+        (name, dist)
+        for name, dist in sorted(rates.items())
+        if name in _RATE_PRESENTATION and dist.documents_measured > 0
+    ]
+    if not renderable:
+        return lines
+    lines.append(
+        "PRESENCE ACROSS PIECES (how often the author reaches for a habit at "
+        "all, and how hard when they do):"
+    )
+    lines.append(
+        "  (These are two separate facts. A habit absent from half the corpus "
+        "is not a habit to use at half strength everywhere -- it is one to use "
+        "fully in some pieces and not at all in others. Let this piece fall "
+        "where its subject puts it; do not average, and do not treat any "
+        "figure below as a target to hit.)"
+    )
+    for name, dist in renderable:
+        lines.append(_rate_line(name, dist))
+    lines.append("")
+    return lines
+
+
 def context_for_mode(mode: object) -> str:
     """The voice context a writing mode should draw on."""
     if isinstance(mode, WritingMode):
@@ -95,14 +205,21 @@ def _describe_range(low: float | None, high: float | None, unit: str) -> str:
 
 
 def _is_split(trait: TraitValue) -> bool:
-    """Whether the corpus disagrees with itself about this trait."""
-    return bool(
-        trait.source != "user"
-        and trait.agreement
-        and trait.agreement < MIN_TRAIT_AGREEMENT
-        and trait.secondary
-        and trait.secondary != trait.value
-    )
+    """Whether the corpus disagrees with itself about this trait.
+
+    Two ways that happens. The plurality can be too thin to speak for the
+    corpus (below `MIN_TRAIT_AGREEMENT`), or it can be no plurality at all --
+    a dead heat that `_label_agreement` resolved alphabetically so rebuilds
+    stay stable. The second case can clear any agreement threshold and still be
+    meaningless, so it is checked separately.
+    """
+    if trait.source == "user":
+        return False
+    if not trait.secondary or trait.secondary == trait.value:
+        return False
+    if getattr(trait, "tied", False):
+        return True
+    return bool(trait.agreement and trait.agreement < MIN_TRAIT_AGREEMENT)
 
 
 def _trait_line(name: str, trait: TraitValue) -> str:
@@ -116,7 +233,17 @@ def _trait_line(name: str, trait: TraitValue) -> str:
     # "frequent", and every generated piece then carries one. Saying the
     # tendency varies is both the honest reading of the evidence and the thing
     # that lets some pieces come out without the trait at all.
-    if _is_split(trait):
+    if getattr(trait, "tied", False):
+        # Naming a winner here would report a tie-break as a finding. The two
+        # labels are given in the order the sort produced, with no claim that
+        # the first one leads.
+        line = (
+            f"  - {label}: SPLIT -- the corpus divides evenly between "
+            f"{trait.value} ({trait.agreement:.0%}) and {trait.secondary} "
+            f"({trait.secondary_agreement:.0%}); neither is this author's "
+            "tendency, so let the piece decide"
+        )
+    elif _is_split(trait):
         line = (
             f"  - {label}: VARIES -- {trait.value} in about "
             f"{trait.agreement:.0%} of documents, {trait.secondary} in about "
@@ -257,6 +384,8 @@ def render_profile(profile: VoiceProfile | None, mode: object = None) -> str:
             lines.extend(spread)
             lines.append("")
 
+    lines.extend(_render_rate_distributions(profile.rate_distributions))
+
     # --- context adjustments ---
     if context is not None and (context.traits or context.distributions):
         strong = {
@@ -275,10 +404,23 @@ def render_profile(profile: VoiceProfile | None, mode: object = None) -> str:
         for name, trait in sorted(strong.items()):
             lines.append(_trait_line(name, trait))
         for name, trait in sorted(weak.items()):
-            lines.append(
-                f"  - {name.replace('_', ' ')}: possibly {trait.value} "
-                "(thin evidence; do not let this override the global tendency)"
-            )
+            label = name.replace("_", " ")
+            if getattr(trait, "tied", False):
+                # Thin evidence and a dead heat are different problems, and the
+                # caveat only fixes the first. Saying "possibly prominent"
+                # about a trait the slice split evenly between prominent and
+                # absent still names a winner that does not exist.
+                lines.append(
+                    f"  - {label}: SPLIT even in this context -- "
+                    f"{trait.value} and {trait.secondary} in equal measure "
+                    "(thin evidence either way; do not let this override the "
+                    "global tendency)"
+                )
+            else:
+                lines.append(
+                    f"  - {label}: possibly {trait.value} "
+                    "(thin evidence; do not let this override the global tendency)"
+                )
         # Context-specific structural spread if available with confidence
         if context.confidence >= MIN_CONTEXT_TRAIT_CONFIDENCE and context.distributions:
             cd = context.distributions
@@ -300,6 +442,21 @@ def render_profile(profile: VoiceProfile | None, mode: object = None) -> str:
             if ctx_spread:
                 lines.append("  Context Structural Cadence:")
                 lines.extend(ctx_spread)
+        # Context presence rates are reported only where the context itself is
+        # well enough evidenced to adjust the global profile, and only where
+        # they actually DIFFER from it. A thin slice repeating the global
+        # presence rate would read as independent confirmation of a number it
+        # simply inherited.
+        if context.confidence >= MIN_CONTEXT_TRAIT_CONFIDENCE and context.rate_distributions:
+            differing = {
+                name: dist
+                for name, dist in context.rate_distributions.items()
+                if _presence_differs(dist, profile.rate_distributions.get(name))
+            }
+            ctx_rates = _render_rate_distributions(differing)
+            if ctx_rates:
+                lines.append("  Context presence (differs from the global figures above):")
+                lines.extend(ctx_rates[2:-1])
         lines.append(
             "  These adjust the global tendencies for this context. They do not "
             "replace them, and they never override the mode's own rules."

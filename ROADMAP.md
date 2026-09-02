@@ -24,6 +24,10 @@ The following capabilities are implemented, tested, and active on `main`:
 | 16 | CLI foundation | Done -- all 16 subcommands (`paper writer editor humanize voice fact-check research sources cite references red-pen critique lint finalize howl runs ui`) |
 | 17 | Tests & Verification | Done -- 585 passing tests across unit, integration, dogfood, and web suites |
 | 18 | Contextual Structural Variance v1 | Done -- between-document structural variance measurement, paragraph & sentence spread percentiles rendered as bounded guidance, split tendencies rendered as varying rather than absolute, extended diversity validation, and hyper-symmetry detection. Context-conditioned pacing is implemented but stays inactive until a context slice carries enough documents to support it |
+| 19 | Distributional Voice Fidelity | Done -- behaviours a corpus mean misdescribes are stored as cross-document presence plus when-present percentiles; corpus percentiles are real order statistics rather than averaged per-document percentiles; plurality ties are reported as split instead of resolved alphabetically; the feature-cache fingerprint now covers changed measurements as well as changed fields |
+| 20 | Outline-Guided Authorship | Done -- versioned `outline/v1` schema, seventeen node kinds, an explicit authority order, generation freedom derived from what the user supplied, a writer stage in front of the existing chain, and a deterministic coverage report checking verbatim retention, required points and ordering against the finished artifact |
+| 21 | Generation Provenance | Done -- every model call captured at the single dispatch boundary with the exact prompt sent, honest `PROVIDER_DID_NOT_REPORT` handling, credential redaction, summary/full levels, local sidecars, a generated manifest, a read-only web inspector, and model-added claims classified and gated by mode |
+| 22 | Generative-AI Disclosure | Done -- an AI Use Statement generated from actual execution, kept separate from the scholarly References page and from workflow provenance, declining to emit an APA reference entry when the provider reported no model rather than substituting its own name |
 
 ## Explicitly Deferred (Named, Not Half-Built)
 
@@ -31,6 +35,24 @@ The following capabilities are implemented, tested, and active on `main`:
 - **Automated Upstream Citation Validation against Remote Registrar APIs.** `WritingRole.CITATION_VALIDATOR` is defined in the role vocabulary; live remote registrar validation is deferred.
 - **Real "Voice Match %" Similarity Metric.** `WritingReport.voice_match` stays `None` and is omitted from rendered reports rather than approximated with a fake percentage.
 - **Multi-file / Project-wide Batch Rewriting.** Every CLI command operates on one file or assignment spec at a time to ensure reviewability and human authority gating.
+
+## Known Limitations Surfaced by Milestone 19-22
+
+- **Structural convergence is not solved.** The diversity checker now runs
+  against generated batches instead of being dead code, and on a fresh
+  twenty-prompt benchmark it returns FAIL for both the medium-only control and
+  full HowlWriter. Generated output varies less than the corpus on sentence
+  length, paragraph size, and lexical diversity. Parentheticals are no longer a
+  signature; overall structural spread still is.
+- **First person is dampened rather than preserved.** On impersonal technical
+  prompts that is arguably correct. Whether it holds for personal input is what
+  the mixed-context benchmark measures, and it is the open question.
+- **Reviewer independence is tracked asymmetrically.** Only the meaning
+  reviewer passes `avoid_provider`. The consistency reviewer requests the same
+  role without it, and the writer has no independence tracking at all.
+- **No APA reference entry can be generated for most runs.** HowlPlane's
+  providers routinely report no model name, and APA's template requires a tool
+  and version.
 
 ## Growth Path
 

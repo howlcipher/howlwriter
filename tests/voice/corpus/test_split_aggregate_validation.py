@@ -335,13 +335,15 @@ def test_a_split_corpus_records_the_runner_up_label():
     """Agreement alone cannot say what the other half of the corpus did."""
     from howlwriter.voice.corpus.aggregate import _label_agreement
 
-    label, agreement, runner, runner_share = _label_agreement(
+    label, agreement, runner, runner_share, tied = _label_agreement(
         [("absent", 1.0)] * 13 + [("prominent", 1.0)] * 12
     )
     assert label == "absent"
     assert runner == "prominent"
     assert agreement < 0.60
     assert runner_share > 0.40
+    # 13 v 12 is close, but it is still a lead the evidence supports.
+    assert tied is False
 
 
 # --- diversity ---------------------------------------------------------

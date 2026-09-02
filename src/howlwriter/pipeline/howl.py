@@ -1,5 +1,18 @@
 """The end-to-end HowlWriter pipeline:
-INPUT -> EDIT -> HUMANIZE -> LINT -> RED PEN -> MEANING REVIEW -> FINAL REVIEW -> OUTPUT.
+[OUTLINE ->] INPUT -> EDIT -> HUMANIZE -> LINT -> RED PEN -> MEANING REVIEW ->
+FINAL REVIEW -> OUTPUT.
+
+Two entry shapes share one chain. Given a file, the pipeline transforms prose
+someone already wrote. Given an outline, it first WRITES that prose, then
+transforms it exactly as before.
+
+The distinction matters for what "meaning preservation" is measured against.
+With a file, the original is the user's draft. With an outline there is no
+draft to preserve, so the writer's own output becomes the baseline the
+humanizer is held to, matching what the academic pipeline already does. What
+the outline guarantees instead -- verbatim retention, required points, ordering
+-- is checked separately and deterministically by the coverage report, because
+a model asked whether it followed an outline will say yes.
 
 Supports both deterministic execution and real model-backed execution wired
 through HowlPlane with independent reviewer guarantees and comprehensive
@@ -9,6 +22,7 @@ provenance reporting.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 import time
 from typing import Any
@@ -26,6 +40,13 @@ from howlwriter.diagnostic.run_record import (
     generate_run_id,
 )
 from howlwriter.domain.document import Document
+from howlwriter.domain.generation_provenance import (
+    LEVEL_SUMMARY,
+    GenerationProvenance,
+    StageRecord,
+    sha256_text,
+)
+from howlwriter.domain.outline import Outline
 from howlwriter.domain.report import ChangeRecord, WritingReport
 from howlwriter.editing.editor import PassthroughEditor
 from howlwriter.facts.extraction import HeuristicClaimExtractor
@@ -35,7 +56,16 @@ from howlwriter.humanize.rewriter import (
 )
 from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import WritingRole
+from howlwriter.integration.provenance_capture import ProvenanceRecorder
 from howlwriter.linting.engine import LintEngine
+from howlwriter.provenance.assemble import (
+    build_contribution,
+    save_provenance,
+    summarize_outline,
+)
+from howlwriter.outline.claims import review_additions
+from howlwriter.outline.coverage import CoverageReport, check_coverage
+from howlwriter.outline.writer import OutlineWriter
 from howlwriter.linting.rules import AI_STYLE_BANNED_WORD, RuleMatch
 from howlwriter.redpen.critic import RedPenEngine, RedPenFinding
 from howlwriter.review.meaning import (
@@ -55,10 +85,62 @@ class PipelineResult:
     meaning_result: MeaningPreservationResult
     semantic_meaning_result: SemanticMeaningResult | None
     report: WritingReport
+    #: Present only for outline-guided runs.
+    coverage: CoverageReport | None = None
+    provenance: GenerationProvenance | None = None
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _cwd_for(path: str | Path | None) -> Path:
+    """Working directory to hand a provider.
+
+    An outline run has no input file, so it falls back to the current
+    directory rather than passing None into a provider that expects a path.
+    """
+    if path is None:
+        return Path.cwd()
+    candidate = Path(path)
+    return candidate.parent if candidate.suffix else candidate
+
+
+def _draft_from_outline(
+    outline: Outline,
+    config: HowlWriterConfig,
+    mode: Any,
+    *,
+    run_id: str,
+    cwd: str | Path | None,
+    custom_backend: Any | None,
+):
+    """Run the writer stage, with the voice profile ranked below the outline.
+
+    The voice block is rendered the same way the Humanizer renders it, so the
+    writer and the humanizer are looking at one description of the author
+    rather than two that could disagree.
+    """
+    from howlwriter.humanize.rewriter import (
+        _load_voice_profile,
+        _mode_specific_instructions,
+    )
+    from howlwriter.voice.application import render_profile
+
+    profile = _load_voice_profile(config.voice_profile)
+    voice_block = render_profile(profile, mode) if profile is not None else ""
+    return OutlineWriter().draft(
+        outline,
+        voice_block=voice_block,
+        mode_rules=_mode_specific_instructions(mode),
+        run_id=run_id,
+        cwd=_cwd_for(cwd),
+        custom_backend=custom_backend,
+    )
 
 
 def run_howl_pipeline(
-    path: str | Path,
+    path: str | Path | None,
     config: HowlWriterConfig,
     deterministic_only: bool = False,
     custom_backend: Any | None = None,
@@ -67,16 +149,108 @@ def run_howl_pipeline(
     word_tolerance_percent: float = 15.0,
     max_words: int | None = None,
     writing_mode: Any | None = None,
+    outline: Outline | None = None,
+    provenance_level: str = LEVEL_SUMMARY,
 ) -> PipelineResult:
     from howlwriter.domain.modes import parse_mode
 
+    if path is None and outline is None:
+        raise ValueError("run_howl_pipeline needs either a path or an outline")
+
     start_time = time.time()
     active_run_id = run_id or generate_run_id()
-    text = Path(path).read_text(encoding="utf-8")
-    mode = parse_mode(writing_mode)
-    original_document = Document.parse(text, title=Path(path).stem, mode=mode)
+    mode = parse_mode(writing_mode or (outline.mode if outline else None))
+
+    recorder = ProvenanceRecorder(run_id=active_run_id)
+    provenance = GenerationProvenance(
+        run_id=active_run_id,
+        workflow="howl-outline" if outline is not None else "howl",
+        writing_mode=mode.value if mode else None,
+        provenance_level=provenance_level,
+        outline_present=outline is not None,
+        voice_profile=config.voice_profile,
+    )
+    stage_index = 0
+
+    def _stage(name: str, **fields: Any) -> None:
+        nonlocal stage_index
+        stage_index += 1
+        provenance.stages.append(
+            StageRecord(name=name, sequence=stage_index, **fields)
+        )
+
+    with recorder:
+        return _run(
+            path=path,
+            config=config,
+            deterministic_only=deterministic_only,
+            custom_backend=custom_backend,
+            active_run_id=active_run_id,
+            target_words=target_words,
+            word_tolerance_percent=word_tolerance_percent,
+            max_words=max_words,
+            mode=mode,
+            outline=outline,
+            recorder=recorder,
+            provenance=provenance,
+            stage=_stage,
+            start_time=start_time,
+            provenance_level=provenance_level,
+        )
+
+
+def _run(
+    *,
+    path: str | Path | None,
+    config: HowlWriterConfig,
+    deterministic_only: bool,
+    custom_backend: Any | None,
+    active_run_id: str,
+    target_words: int | None,
+    word_tolerance_percent: float,
+    max_words: int | None,
+    mode: Any,
+    outline: Outline | None,
+    recorder: ProvenanceRecorder,
+    provenance: GenerationProvenance,
+    stage: Any,
+    start_time: float,
+    provenance_level: str = LEVEL_SUMMARY,
+) -> PipelineResult:
+    outline_draft = None
+    coverage_report: CoverageReport | None = None
+
+    if outline is not None:
+        # WRITE first. There is no prose yet, so nothing downstream of here has
+        # anything to work on until the writer returns.
+        outline_draft = _draft_from_outline(
+            outline, config, mode,
+            run_id=active_run_id, cwd=path, custom_backend=custom_backend,
+        )
+        text = outline_draft.document.text
+        original_document = outline_draft.document
+        provenance.generation_freedom = outline_draft.assessment.freedom.value
+        provenance.outline_sha256 = sha256_text(outline.to_json())
+        provenance.draft_sha256 = sha256_text(text)
+        provenance.added_claims = list(outline_draft.added_claims)
+        provenance.gaps = list(outline_draft.gaps)
+        provenance.warnings.extend(outline_draft.warnings)
+        stage(
+            "outline_writer",
+            model_backed=True,
+            call_sequences=[c.sequence for c in recorder.calls],
+            output_sha256=provenance.draft_sha256,
+            duration_seconds=outline_draft.duration_seconds,
+            detail=f"freedom={outline_draft.assessment.freedom.value}",
+        )
+    else:
+        text = Path(path).read_text(encoding="utf-8")
+        original_document = Document.parse(text, title=Path(path).stem, mode=mode)
+        stage("input", input_sha256=sha256_text(text))
+
     input_sha256 = compute_sha256(text)
     input_chars = len(text)
+    provenance.input_sha256 = input_sha256
 
     # Deterministic lint before transformation for observability report
     lint_before = LintEngine().run(original_document, config)
@@ -103,7 +277,7 @@ def run_howl_pipeline(
             humanize_res = ModelHumanizerRewriter().rewrite(
                 edited_document,
                 config,
-                cwd=Path(path).parent,
+                cwd=_cwd_for(path),
                 custom_backend=custom_backend,
                 run_id=active_run_id,
             )
@@ -145,7 +319,7 @@ def run_howl_pipeline(
                 original_document,
                 final_document,
                 humanizer_provider=humanizer_provider,
-                cwd=Path(path).parent,
+                cwd=_cwd_for(path),
                 custom_backend=custom_backend,
                 run_id=active_run_id,
             )
@@ -276,7 +450,7 @@ def run_howl_pipeline(
                 else None
             ),
             total_duration_seconds=total_duration,
-            input_path=str(path),
+            input_path=str(path) if path else None,
             input_chars=input_chars,
             input_sha256=input_sha256,
             output_chars=len(final_document.text),
@@ -288,6 +462,58 @@ def run_howl_pipeline(
         except Exception:
             pass
 
+        provenance.calls = list(recorder.calls)
+        provenance.artifact_sha256 = compute_sha256(final_document.text)
+        provenance.humanized_sha256 = provenance.artifact_sha256
+        provenance.completed_at = _utc_now()
+        provenance.review = {
+            "meaning_preservation": meaning_result.status,
+            "semantic_meaning": (
+                semantic_meaning_result.verdict if semantic_meaning_result else None
+            ),
+            "reviewer_independence": reviewer_independence,
+            "readiness": status,
+        }
+        if outline is not None:
+            # Checked against the FINAL artifact, not the draft: an outline
+            # guarantee that survives the writer and dies in the humanizer is
+            # not a guarantee.
+            coverage_report = check_coverage(outline, final_document.text)
+            provenance.coverage = coverage_report.to_dict()
+            provenance.outline_summary = summarize_outline(outline)
+            claim_review = review_additions(
+                provenance.added_claims,
+                outline,
+                # The general pipeline has no retrieval behind it, so an
+                # addition here cannot be checked against evidence. It is
+                # surfaced rather than allowed to block, and the academic
+                # pipeline -- which does have evidence -- decides differently.
+                research_backed=False,
+            )
+            provenance.review["model_additions"] = claim_review.to_dict()
+            provenance.warnings.extend(claim_review.notes)
+            provenance.contribution = build_contribution(
+                outline,
+                coverage=provenance.coverage,
+                artifact_text=final_document.text,
+                added_claims=provenance.added_claims,
+                gaps=provenance.gaps,
+                unsupported=len(claim_review.new_factual),
+            )
+            stage(
+                "outline_coverage",
+                status=coverage_report.status,
+                output_sha256=provenance.artifact_sha256,
+                detail=(
+                    f"required {coverage_report.required_represented}/"
+                    f"{coverage_report.required_supplied}, preserved "
+                    f"{coverage_report.preserved_retained}/"
+                    f"{coverage_report.preserved_supplied}"
+                ),
+            )
+        provenance.complete = True
+        save_provenance(provenance, level=provenance_level)
+
         return PipelineResult(
             original_document=original_document,
             final_document=final_document,
@@ -296,6 +522,8 @@ def run_howl_pipeline(
             meaning_result=meaning_result,
             semantic_meaning_result=semantic_meaning_result,
             report=report,
+            coverage=coverage_report,
+            provenance=provenance,
         )
     except Exception as exc:
         total_duration = round(time.time() - start_time, 2)
@@ -310,7 +538,7 @@ def run_howl_pipeline(
                 failure_category=classify_failure(exc),
                 error_message=str(exc),
                 total_duration_seconds=total_duration,
-                input_path=str(path),
+                input_path=str(path) if path else None,
                 input_chars=input_chars,
                 input_sha256=input_sha256,
                 exit_code=1,

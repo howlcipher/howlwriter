@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Copy, Check, Activity } from 'lucide-react';
 import { RunRecord } from '../../types';
+import { ProvenanceInspector } from '../provenance/ProvenanceInspector';
 
 interface RunDetailModalProps {
   isOpen: boolean;
@@ -82,6 +83,12 @@ export const RunDetailModal: React.FC<RunDetailModalProps> = ({
           >
             {JSON.stringify(record, null, 2)}
           </pre>
+
+          {/* Generation provenance, when this run recorded any. The inspector
+              reports its own absence, so no run has to be special-cased here. */}
+          <div style={{ marginTop: '1rem' }}>
+            <ProvenanceInspector runId={record.run_id} />
+          </div>
         </div>
 
         <div className="modal-footer">
