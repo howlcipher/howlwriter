@@ -479,3 +479,111 @@ def test_a_trait_the_corpus_agrees_on_still_renders_as_an_absolute():
     rendered = render_profile(profile, WritingMode.LINKEDIN)
     assert "  - rhetorical questions: none" in rendered
     assert "VARIES" not in rendered
+
+
+# --- rate distributions in the rendered prompt --------------------------
+
+def _rate_profile(**rates):
+    """A corpus-built profile carrying only the rate distributions given."""
+    from howlwriter.domain.voice import RateDistribution, VoiceProfile
+
+    return VoiceProfile(
+        author_name="",
+        version=2,
+        generated_from="corpus_build",
+        profile_name="subject",
+        rate_distributions={
+            name: RateDistribution(*values) for name, values in rates.items()
+        },
+    )
+
+
+def test_a_split_behaviour_renders_as_presence_not_as_an_average():
+    """The whole point: 42% absent is a fact the mean destroys."""
+    profile = _rate_profile(
+        # presence, measured, present, p10, p50, p90, mean
+        first_person_rate=(0.58, 65, 38, 0.8, 1.361, 3.1, 1.012),
+    )
+    rendered = render_profile(profile)
+
+    assert "first person" in rendered
+    assert "42%" in rendered, "the absent share is the finding, and must be stated"
+    assert "0.8 to 3.1 per 100 words" in rendered
+    # The corpus mean describes neither group and must not be handed over as a
+    # figure to write toward.
+    assert "1.0 per 100 words" not in rendered
+    assert "1.012" not in rendered
+
+
+def test_rate_guidance_never_reads_as_a_quota():
+    profile = _rate_profile(first_person_rate=(0.58, 65, 38, 0.8, 1.361, 3.1, 1.012))
+    rendered = render_profile(profile).lower()
+
+    for phrase in ("use first person", "must use", "exactly", "target of", "aim for"):
+        assert phrase not in rendered
+    assert "do not treat any figure below as a target" in rendered
+
+
+def test_share_based_measures_are_not_rendered_as_counts_per_hundred_words():
+    """questions is a share of sentences; parentheses is a count per 100 words.
+
+    Rendering one in the other's unit would be wrong by an order of magnitude.
+    """
+    profile = _rate_profile(
+        question_rate=(0.23, 65, 15, 0.02, 0.091, 0.19, 0.028),
+        parenthetical_rate=(0.77, 65, 50, 0.4, 1.112, 3.8, 1.264),
+    )
+    rendered = render_profile(profile)
+
+    assert "2% to 19% of sentences" in rendered
+    assert "0.4 to 3.8 per 100 words" in rendered
+
+
+def test_a_behaviour_in_every_document_does_not_claim_an_absent_share():
+    profile = _rate_profile(heading_rate=(1.0, 65, 65, 0.1, 0.27, 0.5, 0.3))
+    rendered = render_profile(profile)
+
+    assert "present in nearly every piece" in rendered
+    assert "absent from about 0%" not in rendered
+
+
+def test_a_distribution_with_too_few_present_documents_reports_presence_only():
+    profile = _rate_profile(em_dash_rate=(0.09, 22, 2, None, None, None, 0.05))
+    rendered = render_profile(profile)
+
+    assert "em dashes" in rendered
+    assert "where present" not in rendered, "two documents cannot describe a spread"
+
+
+def test_a_profile_without_rate_distributions_renders_no_presence_block():
+    """A v1 profile predates the field and must not grow an empty section."""
+    profile = _rate_profile()
+    assert "PRESENCE ACROSS PIECES" not in render_profile(profile)
+
+
+def test_a_tied_trait_names_no_winner():
+    """An alphabetical tie-break is not a finding about the author."""
+    from howlwriter.domain.voice import TraitValue, VoiceProfile
+
+    profile = VoiceProfile(
+        author_name="",
+        version=2,
+        generated_from="corpus_build",
+        traits={
+            "sentence_length": TraitValue(
+                value="short",
+                confidence=0.6,
+                agreement=0.417,
+                secondary="very_short",
+                secondary_agreement=0.417,
+                tied=True,
+            )
+        },
+    )
+    rendered = render_profile(profile)
+
+    assert "SPLIT" in rendered
+    assert "divides evenly" in rendered
+    assert "neither is this author's tendency" in rendered
+    # The bare unqualified form is what a tie must never produce.
+    assert "  - sentence length: short\n" not in rendered

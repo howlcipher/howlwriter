@@ -26,11 +26,16 @@ import statistics
 
 from howlwriter.domain.voice import (
     CorpusSummary,
+    RateDistribution,
     TraitValue,
     VoiceContext,
     VoiceDistributions,
 )
-from howlwriter.voice.corpus.features import COMPARABLE_FEATURES, DocumentFeatures
+from howlwriter.voice.corpus.features import (
+    COMPARABLE_FEATURES,
+    DocumentFeatures,
+    percentile as _percentile,
+)
 
 #: Evidence targets. Reaching them means "as much evidence as this measure
 #: can usefully absorb", not "enough to be certain".
@@ -49,6 +54,53 @@ MIN_WORDS = 3_000
 #: this it would just be repeating the global profile with more noise.
 MIN_CONTEXT_DOCUMENTS = 3
 MIN_CONTEXT_WORDS = 1_200
+
+#: Behaviours a corpus-wide mean actively misdescribes.
+#:
+#: These are the measures where a large share of documents sit at exactly zero,
+#: so the mean lands in a gap between "does not do this" and "does this
+#: routinely" and describes neither group. On the corpus this was developed
+#: against, every one of them was absent from at least 23% of documents:
+#: contractions from 63%, em dashes from 82%, questions from 77%, first person
+#: from 42%. The mean first-person rate was 1.01 while the median among
+#: documents that use it was 1.36.
+#:
+#: The list is deliberately fixed rather than derived per corpus. A rule that
+#: promoted a measure into this map only when the current corpus happened to be
+#: zero-inflated would make the profile schema depend on the data, so two
+#: profiles could not be compared field for field. Measures that are not
+#: zero-inflated -- sentence length, paragraph spread, lexical diversity -- are
+#: deliberately absent: for those a mean and a percentile pair are honest, and
+#: adding presence rates would be noise dressed as rigour.
+ZERO_INFLATED_DIMENSIONS = (
+    "first_person_rate",
+    "second_person_rate",
+    "parenthetical_rate",
+    "question_rate",
+    "sentence_initial_conjunction_rate",
+    "fragment_rate",
+    "contraction_rate",
+    "list_rate",
+    "heading_rate",
+    "transition_rate",
+    "exclamation_rate",
+    "semicolon_rate",
+    "em_dash_rate",
+)
+
+#: Documents that must actually contain a behaviour before its when-present
+#: spread is reported. Below this a p10/p90 pair is two or three numbers
+#: wearing the costume of a distribution.
+MIN_PRESENT_FOR_PERCENTILES = 4
+
+#: Agreement gap at or under which a plurality winner is really a tie. The
+#: tie-break in `_label_agreement` is lexicographic, so below this margin the
+#: winning label is decided by alphabetical order rather than by evidence.
+TIE_EPSILON = 0.02
+
+#: Feature names that are order statistics rather than means. Averaging them
+#: across documents is a category error -- see `_aggregate_distributions`.
+_ORDER_STATISTIC_SUFFIXES = ("_p10", "_p50", "_p90", "_median")
 
 SUFFICIENCY_STRONG = "strong"
 SUFFICIENCY_ADEQUATE = "adequate"
@@ -75,6 +127,7 @@ class DocumentEvidence:
 class AggregateResult:
     traits: dict[str, TraitValue] = field(default_factory=dict)
     distributions: VoiceDistributions | None = None
+    rate_distributions: dict[str, RateDistribution] = field(default_factory=dict)
     contexts: dict[str, VoiceContext] = field(default_factory=dict)
     sufficiency: str = SUFFICIENCY_INSUFFICIENT
     sufficiency_warnings: list[str] = field(default_factory=list)
@@ -218,8 +271,9 @@ def _confidence(documents: int, words: int, agreement: float) -> float:
 
 def _label_agreement(
     labels: list[tuple[str, float]],
-) -> tuple[str, float, str, float]:
-    """Weighted plurality label, its share, and the runner-up with its share.
+) -> tuple[str, float, str, float, bool]:
+    """Weighted plurality label, its share, the runner-up with its share, and
+    whether the two are tied.
 
     The winner alone is not enough to describe a corpus. A writer who uses the
     first person in half their documents and none of it in the other half
@@ -227,42 +281,124 @@ def _label_agreement(
     which is a real finding about variation, not a licence to state "absent"
     as though it were uniform. The runner-up is returned so callers can tell
     those two situations apart.
+
+    The tie flag closes the remaining gap. The tie-break below is lexicographic
+    so that rebuilding an unchanged corpus reproduces the same profile, but
+    that stability is presentational, not evidential: when two labels carry the
+    same weight, the winner is chosen by alphabetical order. Observed live, a
+    professional slice split 0.417/0.417 between "short" and "very_short" and
+    reported "short" as the author's sentence length. Returning the flag lets
+    the application layer decline to name a winner it does not have.
     """
     if not labels:
-        return "", 0.0, "", 0.0
+        return "", 0.0, "", 0.0, False
     totals: dict[str, float] = {}
     for label, weight in labels:
         totals[label] = totals.get(label, 0.0) + weight
     total = sum(totals.values())
     if not total:
-        return "", 0.0, "", 0.0
-    # Tie-break unchanged from when this returned the winner alone: equal
-    # weight resolves on the label, so a rebuild of the same corpus keeps
+        return "", 0.0, "", 0.0, False
+    # Equal weight resolves on the label, so a rebuild of the same corpus keeps
     # producing the same profile.
     ranked = sorted(totals.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)
     winner, winner_weight = ranked[0]
     runner, runner_weight = ranked[1] if len(ranked) > 1 else ("", 0.0)
-    return winner, winner_weight / total, runner, runner_weight / total
+    winner_share = winner_weight / total
+    runner_share = runner_weight / total
+    tied = bool(runner) and (winner_share - runner_share) <= TIE_EPSILON
+    return winner, winner_share, runner, runner_share, tied
+
+
+def _is_order_statistic(name: str) -> bool:
+    return name.endswith(_ORDER_STATISTIC_SUFFIXES)
 
 
 def _aggregate_distributions(documents: list[DocumentEvidence]) -> DocumentFeatures:
-    """Word-weighted average of every comparable feature.
+    """Combine every comparable feature across documents.
 
-    Weighting by words as well as by inclusion weight stops a 200-word note
-    from counting as much as a 4000-word paper in the aggregate, while the
-    inclusion weight still lets a low-confidence document count for less.
+    Means, rates and standard deviations are word-weighted averages. Weighting
+    by words as well as by inclusion weight stops a 200-word note from counting
+    as much as a 4000-word paper, while the inclusion weight still lets a
+    low-confidence document count for less.
+
+    Percentiles and medians are NOT averaged. They are order statistics, and
+    the weighted mean of a set of order statistics is not an order statistic of
+    anything: it is pulled toward the centre by construction and toward the
+    longest documents by the weighting. Treating them as just more names in
+    `COMPARABLE_FEATURES` -- which is what happened before -- meant the corpus
+    "10th percentile paragraph length" was the average of each document's own
+    10th percentile, a number that systematically understates how short this
+    author's short paragraphs actually get. Understating spread is precisely
+    the failure the percentile fields were added to prevent.
+
+    The honest cross-document summary of a per-document order statistic is its
+    median across documents: "in a typical piece, paragraphs run from p10 to
+    p90 words". That is also what the rendered guidance claims it is showing.
     """
     combined = DocumentFeatures()
     for name in COMPARABLE_FEATURES:
-        pairs = [
-            (_derived(doc.features, name), doc.weight * max(1, doc.words))
-            for doc in documents
-        ]
-        setattr(combined, name, round(_weighted_mean(pairs), 4))
+        values = [_derived(doc.features, name) for doc in documents]
+        if _is_order_statistic(name):
+            combined_value = statistics.median(values) if values else 0.0
+        else:
+            pairs = [
+                (value, doc.weight * max(1, doc.words))
+                for value, doc in zip(values, documents)
+            ]
+            combined_value = _weighted_mean(pairs)
+        setattr(combined, name, round(combined_value, 4))
     combined.words = sum(doc.words for doc in documents)
     combined.sentences = sum(doc.features.sentences for doc in documents)
     combined.paragraphs = sum(doc.features.paragraphs for doc in documents)
     return combined
+
+
+def _rate_distributions(
+    documents: list[DocumentEvidence],
+) -> dict[str, RateDistribution]:
+    """Measure zero-inflated behaviours as presence plus when-present intensity.
+
+    Two questions, kept apart because a single average answers neither: how
+    often does this author reach for the behaviour at all, and how heavily do
+    they use it when they do. Collapsing them produces guidance like "use first
+    person 1.0 times per hundred words" for an author who writes 42% of their
+    pieces without any first person and the rest with roughly 1.4.
+
+    The percentiles are taken over present documents only. Including the zeros
+    would drag p10 to zero for every behaviour in this map and reduce the
+    spread to "somewhere between none and some", which is the flattening this
+    function exists to undo.
+    """
+    distributions: dict[str, RateDistribution] = {}
+    measured = len(documents)
+    if not measured:
+        return distributions
+
+    for name in ZERO_INFLATED_DIMENSIONS:
+        values = [_derived(doc.features, name) for doc in documents]
+        present = sorted(value for value in values if value > 0)
+        pairs = [
+            (value, doc.weight * max(1, doc.words))
+            for value, doc in zip(values, documents)
+        ]
+        # Enough present documents to describe a spread, or none reported. A
+        # p10/p90 pair drawn from two documents is not a distribution.
+        if len(present) >= MIN_PRESENT_FOR_PERCENTILES:
+            p10 = round(_percentile(present, 0.10), 4)
+            p50 = round(_percentile(present, 0.50), 4)
+            p90 = round(_percentile(present, 0.90), 4)
+        else:
+            p10 = p50 = p90 = None
+        distributions[name] = RateDistribution(
+            document_presence_rate=round(len(present) / measured, 4),
+            documents_measured=measured,
+            documents_present=len(present),
+            when_present_p10=p10,
+            when_present_p50=p50,
+            when_present_p90=p90,
+            corpus_mean=round(_weighted_mean(pairs), 4),
+        )
+    return distributions
 
 
 def _deterministic_traits(documents: list[DocumentEvidence]) -> dict[str, TraitValue]:
@@ -275,7 +411,7 @@ def _deterministic_traits(documents: list[DocumentEvidence]) -> dict[str, TraitV
             (_band(_derived(doc.features, feature), thresholds, labels), doc.weight)
             for doc in documents
         ]
-        label, agreement, runner, runner_share = _label_agreement(per_document)
+        label, agreement, runner, runner_share, tied = _label_agreement(per_document)
         if not label:
             continue
         traits[trait] = TraitValue(
@@ -286,6 +422,7 @@ def _deterministic_traits(documents: list[DocumentEvidence]) -> dict[str, TraitV
             agreement=round(agreement, 3),
             secondary=runner,
             secondary_agreement=round(runner_share, 3),
+            tied=tied,
             source="deterministic",
         )
     return traits
@@ -302,7 +439,7 @@ def _model_traits(documents: list[DocumentEvidence]) -> dict[str, TraitValue]:
         contributors = [doc for doc in documents if doc.model_traits.get(name)]
         if not contributors:
             continue
-        label, agreement, runner, runner_share = _label_agreement(
+        label, agreement, runner, runner_share, tied = _label_agreement(
             [(doc.model_traits[name], doc.weight) for doc in contributors]
         )
         if not label:
@@ -316,6 +453,7 @@ def _model_traits(documents: list[DocumentEvidence]) -> dict[str, TraitValue]:
             agreement=round(agreement, 3),
             secondary=runner,
             secondary_agreement=round(runner_share, 3),
+            tied=tied,
             source="model",
             note=(
                 ""
@@ -401,6 +539,7 @@ def aggregate(documents: list[DocumentEvidence]) -> AggregateResult:
 
     combined = _aggregate_distributions(usable)
     result.distributions = _to_distributions(combined)
+    result.rate_distributions = _rate_distributions(usable)
     result.traits = _deterministic_traits(usable)
     result.traits.update(_model_traits(usable))
     result.sufficiency, result.sufficiency_warnings = assess_sufficiency(usable)
@@ -436,6 +575,10 @@ def aggregate(documents: list[DocumentEvidence]) -> AggregateResult:
         result.contexts[context] = VoiceContext(
             name=context,
             traits=distinct,
+            # A context slice is smaller than the corpus by construction, so
+            # its when-present percentiles are suppressed by the same floor
+            # that guards the global map rather than by a separate rule.
+            rate_distributions=_rate_distributions(members),
             distributions={
                 "sentence_length_mean": context_features.sentence_length_mean,
                 "sentence_length_median": context_features.sentence_length_median,

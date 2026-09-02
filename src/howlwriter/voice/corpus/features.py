@@ -165,6 +165,13 @@ def _percentile(values: list[float], fraction: float) -> float:
     return float(ordered[low] + (ordered[high] - ordered[low]) * (position - low))
 
 
+#: Public alias. Aggregation needs the same linear-interpolation
+#: percentile the per-document extractor uses, so that a corpus-level
+#: percentile and a document-level one are computed the same way rather
+#: than by two implementations that could drift apart.
+percentile = _percentile
+
+
 def _syllables(word: str) -> int:
     """Approximate syllable count: vowel groups, with a silent-e correction."""
     lowered = word.lower().strip("'’-")

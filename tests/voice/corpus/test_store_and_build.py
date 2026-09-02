@@ -572,3 +572,51 @@ def test_a_new_feature_field_invalidates_the_cached_vectors(store_root, corpus_d
     assert any(
         entry["features"]["paragraph_words_p90"] > 0 for entry in rebuilt.values()
     ), "re-extraction must repopulate the field the stale cache zeroed"
+
+
+def test_a_changed_measurement_invalidates_the_cached_vectors(
+    store_root, corpus_dir, monkeypatch
+):
+    """Field names cannot see a redefined measurement.
+
+    The schema fingerprint is derived from the DocumentFeatures field names, so
+    it invalidates itself when a field is added or removed. It is blind to the
+    other half of the problem: redefining how an EXISTING field is computed --
+    counting em dashes differently, changing what makes a fragment -- leaves
+    every field name identical. Without the revision constant, each unchanged
+    document would be restored from a cache holding numbers the current code
+    would never produce, and the profile would silently mix two measurement
+    regimes.
+    """
+    from howlwriter.voice.corpus import build as build_module
+
+    for index in range(12):
+        (corpus_dir / f'doc{index}.md').write_text(synthetic_prose(index), encoding='utf-8')
+
+    build_voice("subject", [corpus_dir], store_root=store_root, deterministic_only=True)
+    first = VoiceStore("subject", root=store_root).load_features()
+    assert first, "the first build must populate the cache"
+
+    # A second build with nothing changed reuses everything, which is the
+    # behaviour the revision must be able to override.
+    build_voice("subject", [corpus_dir], store_root=store_root, deterministic_only=True)
+    unchanged = VoiceStore("subject", root=store_root).load_features()
+    assert any(entry["reused"] for entry in unchanged.values())
+
+    monkeypatch.setattr(build_module, "FEATURE_MEASUREMENT_REVISION", 2)
+    build_voice("subject", [corpus_dir], store_root=store_root, deterministic_only=True)
+    rebuilt = VoiceStore("subject", root=store_root).load_features()
+
+    assert all(
+        entry["reused"] is False for entry in rebuilt.values()
+    ), "bumping the measurement revision must force re-extraction"
+
+
+def test_the_measurement_revision_actually_changes_the_fingerprint(monkeypatch):
+    """Guards the wiring, not just the effect."""
+    from howlwriter.voice.corpus import build as build_module
+
+    before = build_module._feature_schema_fingerprint()
+    monkeypatch.setattr(build_module, "FEATURE_MEASUREMENT_REVISION", 99)
+    after = build_module._feature_schema_fingerprint()
+    assert before != after

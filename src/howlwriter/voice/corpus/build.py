@@ -115,8 +115,21 @@ class BuildOutcome:
     warnings: list[str] = field(default_factory=list)
 
 
+#: Bump when an existing measurement changes meaning.
+#:
+#: The field-name fingerprint below is self-maintaining for ADDED or REMOVED
+#: fields, which is what it was built for. It is blind to the other half of the
+#: problem: redefining how an existing field is computed -- counting em dashes
+#: differently, changing what a fragment is -- leaves the field names identical,
+#: so every unchanged document is restored from a cache holding numbers the
+#: current code would never produce. The profile then mixes two measurement
+#: regimes and nothing reports it. This constant is the manual half, and it is
+#: the only part anyone has to remember.
+FEATURE_MEASUREMENT_REVISION = 1
+
+
 def _feature_schema_fingerprint() -> str:
-    """Identity of the DocumentFeatures schema itself.
+    """Identity of the DocumentFeatures schema AND of the code that fills it.
 
     The content hash answers "is this the same document?". It cannot answer
     "were these numbers produced by the current measurement code?". When a new
@@ -126,9 +139,14 @@ def _feature_schema_fingerprint() -> str:
     feature that was never measured. Deriving the fingerprint from the field
     names means adding a field invalidates the cache on its own, with nothing
     to remember to bump.
+
+    Field names cannot see a changed measurement, so the revision constant is
+    folded in as well: bumping it invalidates every cached vector the same way
+    adding a field does.
     """
     names = ",".join(sorted(f.name for f in dataclass_fields(DocumentFeatures)))
-    return hashlib.sha256(names.encode("utf-8")).hexdigest()[:16]
+    identity = f"{names}|revision={FEATURE_MEASUREMENT_REVISION}"
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
 
 
 def _fingerprint(path: Path, content_hash: str) -> str:
@@ -546,6 +564,7 @@ def build_voice(
         traits=aggregated.traits,
         contexts=aggregated.contexts,
         distributions=aggregated.distributions,
+        rate_distributions=aggregated.rate_distributions,
         overrides=overrides,
         corpus_summary=summary,
         built_at=utc_now(),
