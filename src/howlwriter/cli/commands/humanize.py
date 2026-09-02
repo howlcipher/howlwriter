@@ -79,6 +79,12 @@ def add_subparser(
         default=None,
         help="Write transformed text to this file (default: <path>.humanized.md in model mode).",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Optional seed for deterministic structural realization selection.",
+    )
     parser.set_defaults(handler=run)
     return parser
 
@@ -136,6 +142,22 @@ def run(args: argparse.Namespace) -> int:
     )
 
     humanizer_provider: str | None = None
+    realization = None
+    if config.voice_profile:
+        from howlwriter.humanize.rewriter import _load_voice_profile
+        from howlwriter.voice.realization import derive_structural_realization
+
+        profile = _load_voice_profile(config.voice_profile)
+        if profile is not None:
+            realization = derive_structural_realization(
+                profile=profile,
+                mode=mode,
+                target_words=document.stats.words,
+                input_text=document.text,
+                seed=args.seed,
+                freedom="MINIMAL" if document.stats.words > 100 else "HIGH",
+            )
+
     try:
         # ModelHumanizerRewriter will raise ModelRoleNotConfiguredError if unconfigured
         print("Invoking HUMANIZER role via HowlPlane...")
@@ -144,6 +166,7 @@ def run(args: argparse.Namespace) -> int:
             config,
             cwd=Path(args.path).parent,
             run_id=active_run_id,
+            realization=realization,
         )
         transformed_doc = humanize_res.document
         humanizer_provider = humanize_res.provider

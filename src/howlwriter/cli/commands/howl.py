@@ -105,6 +105,12 @@ def add_subparser(
         action="store_true",
         help="Mask home directory paths in the provenance record.",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Optional seed for deterministic structural realization selection.",
+    )
     parser.set_defaults(handler=run)
     return parser
 
@@ -152,6 +158,7 @@ def run(args: argparse.Namespace) -> int:
         max_words=args.max_words or (outline.max_words if outline else None),
         outline=outline,
         provenance_level=args.provenance_level,
+        seed=args.seed,
     )
 
     if result.lint_matches:

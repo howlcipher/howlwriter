@@ -90,6 +90,12 @@ def add_subparser(
         default="summary",
         help="full also records the exact prompts HowlWriter sent.",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Optional seed for deterministic structural realization selection.",
+    )
     parser.set_defaults(handler=run)
     return parser
 
@@ -182,6 +188,7 @@ def run(args: argparse.Namespace) -> int:
             outline=outline,
             deterministic_only=args.deterministic,
             cwd=_source_dir(args),
+            seed=args.seed,
         )
     except Exception as exc:
         print(f"error: academic paper generation failed: {exc}", file=sys.stderr)

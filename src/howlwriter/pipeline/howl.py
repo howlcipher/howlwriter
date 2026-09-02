@@ -65,7 +65,7 @@ from howlwriter.provenance.assemble import (
 )
 from howlwriter.outline.claims import review_additions
 from howlwriter.outline.coverage import CoverageReport, check_coverage
-from howlwriter.outline.writer import OutlineWriter
+from howlwriter.outline.writer import OutlineDraftResult, OutlineWriter
 from howlwriter.linting.rules import AI_STYLE_BANNED_WORD, RuleMatch
 from howlwriter.redpen.critic import RedPenEngine, RedPenFinding
 from howlwriter.review.meaning import (
@@ -114,22 +114,45 @@ def _draft_from_outline(
     run_id: str,
     cwd: str | Path | None,
     custom_backend: Any | None,
-):
+    target_words: int | None = None,
+    seed: int | None = None,
+) -> tuple[OutlineDraftResult, Any]:
     """Run the writer stage, with the voice profile ranked below the outline.
 
-    The voice block is rendered the same way the Humanizer renders it, so the
-    writer and the humanizer are looking at one description of the author
-    rather than two that could disagree.
+    The voice block is rendered using a per-piece structural realization, so the
+    writer and the humanizer look at a consistent plausible realization rather than
+    static corpus-wide averages.
     """
     from howlwriter.humanize.rewriter import (
         _load_voice_profile,
         _mode_specific_instructions,
     )
     from howlwriter.voice.application import render_profile
+    from howlwriter.voice.realization import derive_structural_realization
 
     profile = _load_voice_profile(config.voice_profile)
-    voice_block = render_profile(profile, mode) if profile is not None else ""
-    return OutlineWriter().draft(
+    realization = None
+    if profile is not None:
+        freedom_val = (
+            getattr(outline.assess_freedom(), "freedom", None)
+            if hasattr(outline, "assess_freedom")
+            else None
+        )
+        realization = derive_structural_realization(
+            profile=profile,
+            mode=mode,
+            outline=outline,
+            target_words=target_words,
+            input_text=outline.topic or outline.title or "",
+            seed=seed,
+            freedom=freedom_val,
+        )
+    voice_block = (
+        render_profile(profile, mode, realization=realization)
+        if profile is not None
+        else ""
+    )
+    draft = OutlineWriter().draft(
         outline,
         voice_block=voice_block,
         mode_rules=_mode_specific_instructions(mode),
@@ -137,6 +160,7 @@ def _draft_from_outline(
         cwd=_cwd_for(cwd),
         custom_backend=custom_backend,
     )
+    return draft, realization
 
 
 def run_howl_pipeline(
@@ -151,6 +175,7 @@ def run_howl_pipeline(
     writing_mode: Any | None = None,
     outline: Outline | None = None,
     provenance_level: str = LEVEL_SUMMARY,
+    seed: int | None = None,
 ) -> PipelineResult:
     from howlwriter.domain.modes import parse_mode
 
@@ -196,6 +221,7 @@ def run_howl_pipeline(
             stage=_stage,
             start_time=start_time,
             provenance_level=provenance_level,
+            seed=seed,
         )
 
 
@@ -216,16 +242,19 @@ def _run(
     stage: Any,
     start_time: float,
     provenance_level: str = LEVEL_SUMMARY,
+    seed: int | None = None,
 ) -> PipelineResult:
     outline_draft = None
     coverage_report: CoverageReport | None = None
+    realization = None
 
     if outline is not None:
         # WRITE first. There is no prose yet, so nothing downstream of here has
         # anything to work on until the writer returns.
-        outline_draft = _draft_from_outline(
+        outline_draft, realization = _draft_from_outline(
             outline, config, mode,
             run_id=active_run_id, cwd=path, custom_backend=custom_backend,
+            target_words=target_words, seed=seed,
         )
         text = outline_draft.document.text
         original_document = outline_draft.document
@@ -235,6 +264,8 @@ def _run(
         provenance.added_claims = list(outline_draft.added_claims)
         provenance.gaps = list(outline_draft.gaps)
         provenance.warnings.extend(outline_draft.warnings)
+        if realization:
+            provenance.structural_realization = realization.to_dict()
         stage(
             "outline_writer",
             model_backed=True,
@@ -247,6 +278,22 @@ def _run(
         text = Path(path).read_text(encoding="utf-8")
         original_document = Document.parse(text, title=Path(path).stem, mode=mode)
         stage("input", input_sha256=sha256_text(text))
+        if config.voice_profile:
+            from howlwriter.humanize.rewriter import _load_voice_profile
+            from howlwriter.voice.realization import derive_structural_realization
+
+            profile = _load_voice_profile(config.voice_profile)
+            if profile is not None:
+                realization = derive_structural_realization(
+                    profile=profile,
+                    mode=mode,
+                    target_words=target_words or original_document.stats.words,
+                    input_text=text,
+                    seed=seed,
+                    freedom="MINIMAL" if original_document.stats.words > 100 else "HIGH",
+                )
+                if realization:
+                    provenance.structural_realization = realization.to_dict()
 
     input_sha256 = compute_sha256(text)
     input_chars = len(text)
@@ -280,6 +327,7 @@ def _run(
                 cwd=_cwd_for(path),
                 custom_backend=custom_backend,
                 run_id=active_run_id,
+                realization=realization,
             )
             final_document = humanize_res.document
             changes.extend(humanize_res.changes)
@@ -327,8 +375,19 @@ def _run(
             reviewer_independence = (
                 semantic_meaning_result.independence_status
             )
+            provenance.reviewer_independence_by_stage["meaning_review"] = (
+                reviewer_independence or "UNKNOWN"
+            )
         elif humanizer_provider is not None:
-            reviewer_independence = "NOT_REVIEWED"
+            reviewer_independence = "NO_REVIEWER"
+            provenance.reviewer_independence_by_stage["meaning_review"] = "NO_REVIEWER"
+
+        if outline_draft and outline_draft.provider and humanizer_provider:
+            provenance.reviewer_independence_by_stage["humanizer_vs_writer"] = (
+                "INDEPENDENT_PROVIDER"
+                if outline_draft.provider != humanizer_provider
+                else "SAME_PROVIDER"
+            )
 
         banned_word_count = sum(
             1 for m in lint_matches if m.rule_code == AI_STYLE_BANNED_WORD
