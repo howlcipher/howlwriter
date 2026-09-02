@@ -340,6 +340,45 @@ Three things follow, and only the third is actionable here:
    a 900-word target for that reason, and the constraint is noted in the outline
    file itself so the next person does not rediscover it.
 
+### What the completed academic run showed
+
+Re-run at a 900-word target, it finished in 369 seconds and produced a real
+paper — and two more defects.
+
+| Measure | Result |
+| --- | --- |
+| Words | 1,544 against a 900 target and an 1,100 hard maximum |
+| Readiness | `NEEDS_REVIEW` (correctly: two unsupported claims and a length overrun) |
+| Sources retrieved | 6 |
+| Claims verified | 19, of which 2 unsupported |
+| Spec-level outline conformance | `PASS` — 4 of 4 sections |
+| Required points represented | 9 of 10 |
+| **Preserved passages retained** | **0 of 1** |
+| Model calls captured | 6 of 6, all with exact prompts, all reporting no model |
+| Reviews | meaning `PASS`, semantic `PASS`, consistency `PASS_WITH_WARNINGS` |
+
+**The preserved sentence was dropped** — 0.14 overlap in the finished paper.
+The cause is a gap in the Phase 3 translation, not in the writer:
+`AssignmentSpec` has no concept of verbatim text, and `spec_from_outline` was
+carrying required points and style notes into `spec.requirements` while leaving
+preserved passages behind entirely. The academic writer never learned the
+sentence was marked preserve. The guarantee that holds byte-for-byte in the
+general pipeline was silently absent from the academic one, and only a live run
+could show it, because every deterministic test checked the bridge's output
+rather than what a writer did with it.
+
+Preserved passages now translate into explicit reproduce-exactly requirements
+stated ahead of everything else, and the author's claims travel with them.
+Three tests hold it, including one that counts preserved nodes in against
+verbatim requirements out, so a dropped one fails rather than passing quietly.
+
+**Model-added claims read as zero, and that figure is not trustworthy here.**
+The academic writer returns `claims_made` with source ids; the classifier reads
+`added_claims`. The two never met, so the classification saw an empty list and
+reported no additions rather than reporting that it had nothing to classify.
+The count is accurate for the general pipeline and meaningless for the academic
+one. Left as found and recorded here rather than papered over.
+
 ## 8. Defects found and fixed during this milestone
 
 Beyond the two the previous audit missed (section 2), six were found by using

@@ -141,3 +141,36 @@ def test_the_bridge_writes_no_pipeline_stage_of_its_own():
     source = inspect.getsource(outline_bridge)
     for forbidden in ("execute_writing_role", "run_academic_pipeline", "AcademicResearcher"):
         assert forbidden not in source
+
+
+def test_preserved_passages_reach_the_academic_writer():
+    """AssignmentSpec has no verbatim concept, so the bridge has to supply one.
+
+    Without this the academic writer never learns a passage was marked
+    preserve. Observed on a live run: a preserved sentence scored 0.14 overlap
+    in the finished paper, so the guarantee that holds byte-for-byte in the
+    general pipeline was silently absent from the academic one.
+    """
+    spec = spec_from_outline(load_outline(_ACADEMIC))
+    verbatim = [r for r in spec.requirements if "EXACTLY" in r]
+
+    assert len(verbatim) == 1
+    assert "Detection is not a solved problem." in verbatim[0]
+    # Stated first, ahead of style notes and topics, because it is the one
+    # instruction whose failure is unrecoverable.
+    assert spec.requirements[0] == verbatim[0]
+
+
+def test_the_authors_claims_reach_the_academic_writer():
+    spec = spec_from_outline(load_outline(_ACADEMIC))
+    claims = [r for r in spec.requirements if r.startswith("Assert and support")]
+
+    assert len(claims) == 3
+    assert any("Valid credentials complicate detection" in c for c in claims)
+
+
+def test_every_preserved_node_survives_translation():
+    """One dropped preserve is one broken promise; count them."""
+    outline = load_outline(_ACADEMIC)
+    spec = spec_from_outline(outline)
+    assert len([r for r in spec.requirements if "EXACTLY" in r]) == len(outline.preserved())

@@ -72,11 +72,30 @@ def _outline_topics(outline: Outline) -> list[str]:
 
 
 def _requirements(outline: Outline) -> list[str]:
-    """Author instructions the pipeline's requirement classifier can act on."""
+    """Author instructions the pipeline's requirement classifier can act on.
+
+    Preserved passages come FIRST and are stated as reproduce-exactly
+    instructions. `AssignmentSpec` has no concept of verbatim text, so without
+    this the academic writer never learns a passage was marked preserve, and
+    drops it. Observed live: a preserved sentence scored 0.14 overlap in a
+    finished paper -- the guarantee that holds byte-for-byte in the general
+    pipeline was silently absent from the academic one.
+    """
     requirements: list[str] = []
+    for node in outline.preserved():
+        if node.text.strip():
+            requirements.append(
+                "Reproduce this sentence EXACTLY, character for character, "
+                f"somewhere in the paper: {node.text.strip()}"
+            )
     for node in outline.nodes_of(NodeKind.STYLE_NOTE, NodeKind.ENDING):
         if node.text.strip():
             requirements.append(node.text.strip())
+    for node in outline.claims():
+        if node.text.strip():
+            requirements.append(
+                f"Assert and support the author's claim: {node.text.strip()}"
+            )
     for node in outline.nodes_of(NodeKind.REQUIRED_POINT):
         if node.text.strip():
             requirements.append(f"Address: {node.text.strip()}")
