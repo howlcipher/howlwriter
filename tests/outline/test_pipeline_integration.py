@@ -246,3 +246,66 @@ def test_a_full_sidecar_contains_the_exact_prompts(tmp_path):
 
     body = written.provenance_json.read_text(encoding="utf-8")
     assert "AUTHORITY ORDER" in body
+
+
+def test_outline_and_deterministic_are_refused_with_a_reason(tmp_path):
+    """An outline is not prose yet, so there is nothing to transform.
+
+    Without the guard this surfaced as a bare "writer is not configured",
+    which is true but does not tell the user the two flags cannot go together.
+    """
+    import pytest
+    import yaml
+
+    from howlwriter.cli.commands.howl import run
+
+    outline_path = tmp_path / "o.yaml"
+    outline_path.write_text(yaml.safe_dump(_OUTLINE), encoding="utf-8")
+
+    class Args:
+        path = None
+        outline = str(outline_path)
+        deterministic = True
+        mode = None
+        voice = None
+        voice_profile = None
+        project_config_path = None
+        out = None
+        target_words = None
+        max_words = None
+        provenance = False
+        provenance_level = "summary"
+        mask_paths = False
+
+    with pytest.raises(ValueError, match="cannot be combined with --deterministic"):
+        run(Args())
+
+
+def test_a_path_and_an_outline_together_are_refused(tmp_path):
+    import pytest
+    import yaml
+
+    from howlwriter.cli.commands.howl import run
+
+    outline_path = tmp_path / "o.yaml"
+    outline_path.write_text(yaml.safe_dump(_OUTLINE), encoding="utf-8")
+    draft = tmp_path / "draft.md"
+    draft.write_text("Already written.\n", encoding="utf-8")
+
+    class Args:
+        path = str(draft)
+        outline = str(outline_path)
+        deterministic = False
+        mode = None
+        voice = None
+        voice_profile = None
+        project_config_path = None
+        out = None
+        target_words = None
+        max_words = None
+        provenance = False
+        provenance_level = "summary"
+        mask_paths = False
+
+    with pytest.raises(ValueError, match="not both"):
+        run(Args())

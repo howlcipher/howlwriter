@@ -120,6 +120,15 @@ def run(args: argparse.Namespace) -> int:
             "would have nothing to add to a draft that already exists"
         )
 
+    if args.outline and args.deterministic:
+        raise ValueError(
+            "--outline cannot be combined with --deterministic: an outline is "
+            "not prose yet, so there is nothing for the deterministic path to "
+            "transform. Writing from an outline requires a configured writer "
+            "role. Use `howlwriter outline validate` to check an outline "
+            "without running a model."
+        )
+
     outline = load_outline(args.outline) if args.outline else None
     mode = parse_mode(args.mode or (outline.mode if outline else None))
     config = ConfigLoader().load(
