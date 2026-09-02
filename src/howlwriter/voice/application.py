@@ -404,10 +404,23 @@ def render_profile(profile: VoiceProfile | None, mode: object = None) -> str:
         for name, trait in sorted(strong.items()):
             lines.append(_trait_line(name, trait))
         for name, trait in sorted(weak.items()):
-            lines.append(
-                f"  - {name.replace('_', ' ')}: possibly {trait.value} "
-                "(thin evidence; do not let this override the global tendency)"
-            )
+            label = name.replace("_", " ")
+            if getattr(trait, "tied", False):
+                # Thin evidence and a dead heat are different problems, and the
+                # caveat only fixes the first. Saying "possibly prominent"
+                # about a trait the slice split evenly between prominent and
+                # absent still names a winner that does not exist.
+                lines.append(
+                    f"  - {label}: SPLIT even in this context -- "
+                    f"{trait.value} and {trait.secondary} in equal measure "
+                    "(thin evidence either way; do not let this override the "
+                    "global tendency)"
+                )
+            else:
+                lines.append(
+                    f"  - {label}: possibly {trait.value} "
+                    "(thin evidence; do not let this override the global tendency)"
+                )
         # Context-specific structural spread if available with confidence
         if context.confidence >= MIN_CONTEXT_TRAIT_CONFIDENCE and context.distributions:
             cd = context.distributions

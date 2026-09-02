@@ -587,3 +587,49 @@ def test_a_tied_trait_names_no_winner():
     assert "neither is this author's tendency" in rendered
     # The bare unqualified form is what a tie must never produce.
     assert "  - sentence length: short\n" not in rendered
+
+
+def test_a_tied_trait_in_a_thin_context_is_still_reported_as_split():
+    """Thin evidence and a dead heat are different problems.
+
+    The "thin evidence" caveat stops a weak context from overriding the global
+    profile. It does not stop the line from naming a winner, and on the real
+    corpus the professional slice split first-person presence exactly evenly
+    between prominent and absent while rendering "possibly prominent".
+    """
+    from howlwriter.domain.voice import TraitValue, VoiceContext, VoiceProfile
+
+    profile = VoiceProfile(
+        author_name="",
+        version=2,
+        generated_from="corpus_build",
+        contexts={
+            "professional": VoiceContext(
+                name="professional",
+                document_count=3,
+                word_count=2371,
+                confidence=0.20,
+                traits={
+                    "first_person_presence": TraitValue(
+                        value="prominent",
+                        confidence=0.20,
+                        agreement=0.417,
+                        secondary="absent",
+                        secondary_agreement=0.417,
+                        tied=True,
+                    ),
+                    "second_person_address": TraitValue(
+                        value="light", confidence=0.20, agreement=0.83,
+                    ),
+                },
+            )
+        },
+    )
+    rendered = render_profile(profile, "linkedin")
+
+    assert "first person presence: SPLIT even in this context" in rendered
+    assert "prominent and absent in equal measure" in rendered
+    # The thin-evidence caveat must survive alongside it, not be replaced by it.
+    assert "do not let this override the global tendency" in rendered
+    # A trait that is genuinely one-sided keeps the simpler wording.
+    assert "second person address: possibly light" in rendered
