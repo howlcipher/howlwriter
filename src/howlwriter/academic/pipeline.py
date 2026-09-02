@@ -106,7 +106,7 @@ class AcademicPipelineResult:
 
 
 def run_academic_pipeline(
-    assignment: AssignmentSpec | str | Path | dict[str, Any],
+    assignment: AssignmentSpec | str | Path | dict[str, Any] | None,
     *args: Any,
     **kwargs: Any,
 ) -> AcademicPipelineResult:
@@ -128,7 +128,7 @@ def run_academic_pipeline(
 
 
 def _run_academic_pipeline(
-    assignment: AssignmentSpec | str | Path | dict[str, Any],
+    assignment: AssignmentSpec | str | Path | dict[str, Any] | None,
     config: HowlWriterConfig | None = None,
     existing_sources: list[Source] | None = None,
     deterministic_only: bool = False,
@@ -166,11 +166,18 @@ def _run_academic_pipeline(
             except Exception:
                 pass
 
-    spec = (
-        assignment
-        if isinstance(assignment, AssignmentSpec)
-        else load_assignment_spec(assignment)
-    )
+    if assignment is None and outline is None:
+        raise ValueError(
+            "run_academic_pipeline needs either an assignment spec or an outline"
+        )
+    if assignment is None:
+        # An outline carries the title, topic, length and requirements, so it
+        # can stand alone. The bridge below fills the spec from it.
+        spec = AssignmentSpec()
+    elif isinstance(assignment, AssignmentSpec):
+        spec = assignment
+    else:
+        spec = load_assignment_spec(assignment)
 
     recorder = ProvenanceRecorder(run_id=active_run_id)
     provenance = GenerationProvenance(

@@ -25,7 +25,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import re
 
-from howlwriter.domain.outline import NodeKind, Outline, OutlineNode
+from howlwriter.domain.outline import (
+    ADVISORY_KINDS,
+    NodeKind,
+    Outline,
+    OutlineNode,
+)
 
 #: Share of a required point's meaningful words that must appear in the
 #: artifact before it counts as represented. Heuristic. Set where a genuine
@@ -41,6 +46,9 @@ ALTERATION_OVERLAP = 0.50
 PRESENT = "PRESENT"
 MISSING = "MISSING"
 ALTERED = "ALTERED"
+#: Reported so the user can see whether a seed was picked up, but never a
+#: reason to fail: the node asked to be transformed.
+NOT_TRACED = "NOT_TRACED"
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -234,6 +242,7 @@ def check_coverage(outline: Outline, artifact_text: str) -> CoverageReport:
 
     # --- required points, checked by overlap ---
     required = [n for n in outline.required_points() if n.kind is not NodeKind.PRESERVE]
+    advisory = [n for n in outline.all_nodes() if n.kind in ADVISORY_KINDS]
     represented_ids: set[str] = {
         f.node_id for f in report.findings if f.status == PRESENT
     }
@@ -258,6 +267,26 @@ def check_coverage(outline: Outline, artifact_text: str) -> CoverageReport:
         )
     report.required_supplied = len(required) + report.preserved_supplied
     report.required_represented = len(represented_ids)
+
+    # Advisory nodes are reported but never gate the verdict.
+    for node in advisory:
+        score = _overlap(node.text, artifact_words)
+        traced = score >= REPRESENTATION_OVERLAP
+        if traced:
+            represented_ids.add(node.id)
+        report.findings.append(
+            PointFinding(
+                node.id,
+                node.kind.value,
+                node.text,
+                PRESENT if traced else NOT_TRACED,
+                score,
+                "" if traced else (
+                    "not traceable to the artifact by wording, which is not a "
+                    "failure: this node asked to be expanded rather than kept"
+                ),
+            )
+        )
 
     examples = outline.nodes_of(NodeKind.EXAMPLE, NodeKind.EXPERIENCE)
     report.examples_supplied = len(examples)

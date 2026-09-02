@@ -126,11 +126,26 @@ INSTRUCTION_KINDS = frozenset(
 FACTUAL_KINDS = frozenset({NodeKind.THESIS, NodeKind.CLAIM})
 
 
-#: Kinds the finished artifact is not expected to contain. See
+#: Kinds the finished artifact is not expected to contain verbatim. See
 #: `OutlineNode.is_required` for why each one is here.
 NON_REPRESENTED_KINDS = frozenset(
-    {NodeKind.OPTIONAL_POINT, NodeKind.SOURCE, NodeKind.VOICE_SEED}
+    {
+        NodeKind.OPTIONAL_POINT,
+        NodeKind.SOURCE,
+        NodeKind.VOICE_SEED,
+        # An IDEA is a seed the user handed over precisely so it could be
+        # transformed. Holding it to a lexical-overlap test punishes the
+        # expansion it asked for: measured live, "Code becomes less of a moat"
+        # became a post whose entire thesis was that point, and scored 0.50 --
+        # below the threshold, and reported MISSING. Ideas are still tracked
+        # and reported; they just do not fail a run that did what they asked.
+        NodeKind.IDEA,
+    }
 ) | INSTRUCTION_KINDS
+
+#: Kinds reported in the coverage findings for information, without a missing
+#: one failing the run.
+ADVISORY_KINDS = frozenset({NodeKind.IDEA, NodeKind.OPTIONAL_POINT})
 
 
 class GenerationFreedom(enum.Enum):

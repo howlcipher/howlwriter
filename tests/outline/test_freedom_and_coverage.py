@@ -266,3 +266,41 @@ def test_a_draft_that_asks_for_expansion_is_not_minimal():
         ],
     })
     assert assess_freedom(outline).freedom is not GenerationFreedom.MINIMAL
+
+
+def test_an_idea_that_was_expanded_beyond_recognition_does_not_fail_the_run():
+    """An idea is a seed the user handed over so it could be transformed.
+
+    Measured live: "Code becomes less of a moat" became a post whose entire
+    thesis was that point, scored 0.50 overlap, and was reported MISSING.
+    Holding a seed to a lexical-overlap test punishes the expansion it asked
+    for. Ideas are still tracked so the user can see whether one was picked up.
+    """
+    from howlwriter.outline.coverage import NOT_TRACED
+
+    outline = load_outline({"topic": "moats", "nodes": [
+        {"kind": "idea", "text": "Code becomes less of a moat."},
+        {"kind": "required_point", "text": "proprietary data and distribution"},
+    ]})
+    artifact = (
+        "Building software has never been cheaper, and what used to be "
+        "defensible no longer is. What survives is proprietary data and "
+        "distribution."
+    )
+    report = check_coverage(outline, artifact)
+
+    assert report.status == PASS, "an untraceable idea must not fail the run"
+    idea = next(f for f in report.findings if f.kind == "idea")
+    assert idea.status == NOT_TRACED
+    assert "not a failure" in idea.detail
+    # The required point still gates normally.
+    assert report.required_supplied == 1
+
+
+def test_a_missing_required_point_still_fails_alongside_an_advisory_idea():
+    outline = load_outline({"topic": "moats", "nodes": [
+        {"kind": "idea", "text": "Code becomes less of a moat."},
+        {"kind": "required_point", "text": "proprietary data and distribution"},
+    ]})
+    report = check_coverage(outline, "Some unrelated prose about gardening tools.")
+    assert report.status == FAIL
