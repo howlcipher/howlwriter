@@ -20,6 +20,7 @@ global profile it is adjusting.
 from __future__ import annotations
 
 from howlwriter.domain.modes import WritingMode
+from howlwriter.domain.structural_realization import StructuralRealization
 from howlwriter.domain.voice import RateDistribution, TraitValue, VoiceProfile
 
 #: Which context each writing mode draws on. A mode is a task; a context is a
@@ -257,12 +258,19 @@ def _trait_line(name: str, trait: TraitValue) -> str:
     return line
 
 
-def render_profile(profile: VoiceProfile | None, mode: object = None) -> str:
+def render_profile(
+    profile: VoiceProfile | None,
+    mode: object = None,
+    realization: StructuralRealization | None = None,
+) -> str:
     """Render a profile for the Humanizer prompt.
 
     Handles both schema generations: a legacy hand-written profile renders its
     scalar fields and its representative examples exactly as before, while a
     corpus-built profile renders traits, the selected context, and overrides.
+
+    When `realization` is supplied, per-piece soft structural targets are rendered
+    instead of static corpus-wide ranges, breaking model attractor convergence.
     """
     if profile is None:
         return "None"
@@ -334,57 +342,63 @@ def render_profile(profile: VoiceProfile | None, mode: object = None) -> str:
             lines.append(_trait_line(name, trait))
         lines.append("")
 
-    # --- measured ranges, expressed as spread ---
-    distributions = profile.distributions
-    if distributions is not None:
-        spread: list[str] = []
-        sentence_range = _describe_range(
-            distributions.sentence_length_p10, distributions.sentence_length_p90, "words"
-        )
-        if sentence_range:
-            spread.append(f"  - sentence length: {sentence_range}")
-        if _has_spread(distributions.paragraph_words_p10, distributions.paragraph_words_p90):
-            mean_w = distributions.paragraph_words_mean or 0
-            spread.append(
-                f"  - paragraph length: typically {distributions.paragraph_words_p10:.0f}-"
-                f"{distributions.paragraph_words_p90:.0f} words (mean ~{mean_w:.0f} words), "
-                "with real variation between short focal paragraphs and fuller blocks"
-            )
-        elif distributions.paragraph_words_mean:
-            spread.append(
-                f"  - paragraph length: around {distributions.paragraph_words_mean:.0f} "
-                "words on average, with real variation between short and long"
-            )
-        if _has_spread(
-            distributions.paragraph_sentences_p10, distributions.paragraph_sentences_p90
-        ):
-            mean_s = distributions.paragraph_sentences_mean or 0
-            spread.append(
-                f"  - paragraph sentence count: typically {distributions.paragraph_sentences_p10:.0f}-"
-                f"{distributions.paragraph_sentences_p90:.0f} sentences (mean ~{mean_s:.1f})"
-            )
-        if (
-            distributions.single_sentence_paragraph_rate
-            and distributions.single_sentence_paragraph_rate > 0.10
-        ):
-            rate = distributions.single_sentence_paragraph_rate
-            spread.append(
-                f"  - single-sentence paragraphs: present (~{rate:.0%} of paragraphs), "
-                "used selectively for focal emphasis rather than every block"
-            )
-        if distributions.short_sentence_rate and distributions.long_sentence_rate:
-            s_rate = distributions.short_sentence_rate
-            l_rate = distributions.long_sentence_rate
-            spread.append(
-                f"  - sentence cadence mix: blends concise statements (<=9 words: ~{s_rate:.0%}) "
-                f"with developed sentences (>=28 words: ~{l_rate:.0%})"
-            )
-        if spread:
-            lines.append("MEASURED SPREAD (match the range, do not converge on the middle):")
-            lines.extend(spread)
-            lines.append("")
+    if realization is not None:
+        from howlwriter.voice.realization import render_structural_realization_prompt
 
-    lines.extend(_render_rate_distributions(profile.rate_distributions))
+        lines.extend(render_structural_realization_prompt(realization))
+        lines.append("")
+    else:
+        # --- measured ranges, expressed as spread ---
+        distributions = profile.distributions
+        if distributions is not None:
+            spread: list[str] = []
+            sentence_range = _describe_range(
+                distributions.sentence_length_p10, distributions.sentence_length_p90, "words"
+            )
+            if sentence_range:
+                spread.append(f"  - sentence length: {sentence_range}")
+            if _has_spread(distributions.paragraph_words_p10, distributions.paragraph_words_p90):
+                mean_w = distributions.paragraph_words_mean or 0
+                spread.append(
+                    f"  - paragraph length: typically {distributions.paragraph_words_p10:.0f}-"
+                    f"{distributions.paragraph_words_p90:.0f} words (mean ~{mean_w:.0f} words), "
+                    "with real variation between short focal paragraphs and fuller blocks"
+                )
+            elif distributions.paragraph_words_mean:
+                spread.append(
+                    f"  - paragraph length: around {distributions.paragraph_words_mean:.0f} "
+                    "words on average, with real variation between short and long"
+                )
+            if _has_spread(
+                distributions.paragraph_sentences_p10, distributions.paragraph_sentences_p90
+            ):
+                mean_s = distributions.paragraph_sentences_mean or 0
+                spread.append(
+                    f"  - paragraph sentence count: typically {distributions.paragraph_sentences_p10:.0f}-"
+                    f"{distributions.paragraph_sentences_p90:.0f} sentences (mean ~{mean_s:.1f})"
+                )
+            if (
+                distributions.single_sentence_paragraph_rate
+                and distributions.single_sentence_paragraph_rate > 0.10
+            ):
+                rate = distributions.single_sentence_paragraph_rate
+                spread.append(
+                    f"  - single-sentence paragraphs: present (~{rate:.0%} of paragraphs), "
+                    "used selectively for focal emphasis rather than every block"
+                )
+            if distributions.short_sentence_rate and distributions.long_sentence_rate:
+                s_rate = distributions.short_sentence_rate
+                l_rate = distributions.long_sentence_rate
+                spread.append(
+                    f"  - sentence cadence mix: blends concise statements (<=9 words: ~{s_rate:.0%}) "
+                    f"with developed sentences (>=28 words: ~{l_rate:.0%})"
+                )
+            if spread:
+                lines.append("MEASURED SPREAD (match the range, do not converge on the middle):")
+                lines.extend(spread)
+                lines.append("")
+
+        lines.extend(_render_rate_distributions(profile.rate_distributions))
 
     # --- context adjustments ---
     if context is not None and (context.traits or context.distributions):

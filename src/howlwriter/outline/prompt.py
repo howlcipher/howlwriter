@@ -41,8 +41,9 @@ AUTHORITY_INSTRUCTION = """AUTHORITY ORDER -- when two things below conflict, th
 9. The writing mode's own rules.
 10. The context-specific voice profile.
 11. The global voice profile.
-12. Your connective prose.
-13. Your general stylistic preferences.
+12. Per-piece structural realization (soft guidance; outline and content win).
+13. Your connective prose.
+14. Your general stylistic preferences.
 
 A lower item NEVER silently rewrites a higher one. If following a lower item
 would require changing a higher one, follow the higher one and leave the lower

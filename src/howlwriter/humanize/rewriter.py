@@ -126,17 +126,24 @@ def _load_voice_profile(value: str | None) -> VoiceProfile | None:
     except Exception:
         return None
 
-    # Overrides are stored beside the profile so a rebuild cannot overwrite
-    # them, which means they have to be re-attached when loading from a voice
-    # directory. A standalone profile file simply has none.
-    overrides_path = path.parent / "overrides.yaml"
-    if profile.is_corpus_built and overrides_path.is_file():
+    # Overrides and cached features are stored beside the profile so a rebuild
+    # cannot overwrite them, which means they have to be re-attached when
+    # loading from a voice directory. A standalone profile file simply has none.
+    if profile.is_corpus_built:
         try:
             from howlwriter.voice.corpus.store import VoiceStore
 
-            profile.overrides = VoiceStore(
-                path.parent.name, root=path.parent.parent
-            ).load_overrides()
+            store = VoiceStore(path.parent.name, root=path.parent.parent)
+            overrides_path = path.parent / "overrides.yaml"
+            if overrides_path.is_file():
+                profile.overrides = store.load_overrides()
+            if not profile.structural_vectors:
+                vectors = store.load_structural_vectors()
+                if vectors:
+                    profile.structural_vectors = vectors
+                    for ctx_name, ctx in profile.contexts.items():
+                        if not ctx.structural_vectors:
+                            ctx.structural_vectors = [v for v in vectors if v.context == ctx_name]
         except Exception:
             pass
     return profile
@@ -208,17 +215,23 @@ def _mode_specific_instructions(mode: Any) -> str:
     ])
 
 
-def _render_voice_profile(profile: VoiceProfile | None, mode: Any = None) -> str:
+def _render_voice_profile(
+    profile: VoiceProfile | None,
+    mode: Any = None,
+    realization: Any | None = None,
+) -> str:
     """Render a VoiceProfile for the prompt.
 
     Delegates to voice/application.py, which handles both schema
     generations: a hand-written profile renders exactly as it always has,
     while a corpus-built one renders contextual tendencies and is framed as a
     distribution rather than a target.
+
+    When `realization` is supplied, per-piece soft structural targets are rendered.
     """
     from howlwriter.voice.application import render_profile
 
-    return render_profile(profile, mode)
+    return render_profile(profile, mode, realization=realization)
 
 
 class ModelHumanizerRewriter:
@@ -233,6 +246,7 @@ class ModelHumanizerRewriter:
         cwd: Path | str | None = None,
         custom_backend: Any | None = None,
         run_id: str | None = None,
+        realization: Any | None = None,
     ) -> ModelHumanizeResult:
         if len(document.text) > MAX_SINGLE_PASS_CHARS:
             raise ValueError(
@@ -263,7 +277,7 @@ class ModelHumanizerRewriter:
         )
 
         voice_profile = _load_voice_profile(config.voice_profile)
-        voice_text = _render_voice_profile(voice_profile, document.mode)
+        voice_text = _render_voice_profile(voice_profile, document.mode, realization=realization)
 
         mode_label = (
             document.mode.value

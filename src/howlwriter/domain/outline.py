@@ -190,8 +190,9 @@ class AuthorityLayer(enum.IntEnum):
     WRITING_MODE = 9
     CONTEXTUAL_PROFILE = 10
     GLOBAL_PROFILE = 11
-    MODEL_CONNECTIVE_PROSE = 12
-    MODEL_STYLE_PREFERENCE = 13
+    STRUCTURAL_REALIZATION = 12
+    MODEL_CONNECTIVE_PROSE = 13
+    MODEL_STYLE_PREFERENCE = 14
 
 
 #: Which layer each node kind speaks with. Used by the writer prompt and by the
