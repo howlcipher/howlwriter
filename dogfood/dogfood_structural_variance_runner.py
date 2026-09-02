@@ -249,13 +249,28 @@ def generate_full_howlwriter_output(
     prompt_text: str,
     voice_profile_path: str,
     provider: str = "agy",
+    seed: int | None = None,
 ) -> str:
     """Generate Full HowlWriter output with LinkedIn mode + active contextual voice."""
     cfg = default_config()
     cfg.voice_profile = voice_profile_path
     doc = Document.parse(prompt_text, title="sparse_prompt", mode=WritingMode.LINKEDIN)
+    realization = None
+    if cfg.voice_profile:
+        from howlwriter.humanize.rewriter import _load_voice_profile
+        from howlwriter.voice.realization import derive_structural_realization
+
+        profile = _load_voice_profile(cfg.voice_profile)
+        if profile is not None:
+            realization = derive_structural_realization(
+                profile=profile,
+                mode=WritingMode.LINKEDIN,
+                target_words=doc.stats.words if doc.stats.words > 80 else 200,
+                input_text=doc.text,
+                seed=seed,
+            )
     rewriter = ModelHumanizerRewriter()
-    res = rewriter.rewrite(doc, cfg)
+    res = rewriter.rewrite(doc, cfg, realization=realization)
     return res.document.text.strip()
 
 
@@ -320,16 +335,15 @@ def compute_batch_stats(texts: list[str]) -> dict[str, Any]:
 
 
 def _verdict_payload(result: Any) -> dict[str, Any]:
-    """Serialize a diversity result, dimensions included.
-
-    The per-dimension ratios are the only part of the verdict that can be
-    re-checked later. Reporting the verdict without them leaves a reader
-    holding a conclusion and no way to test it.
-    """
+    """Serialize a diversity result, dimensions and rhetorical signatures included."""
     return {
         "verdict": result.verdict,
         "converged_dimensions": result.converged_dimensions,
         "notes": result.notes,
+        "opening_classes": getattr(result, "opening_classes", {}),
+        "closing_classes": getattr(result, "closing_classes", {}),
+        "rhetorical_signatures": getattr(result, "rhetorical_signatures", {}),
+        "top_rhetorical_signature_share": getattr(result, "top_rhetorical_signature_share", 0.0),
         "dimensions": [
             {
                 "name": d.name,
@@ -415,7 +429,9 @@ def main():
         # C. Full HowlWriter
         t_full_start = time.time()
         try:
-            full_out = generate_full_howlwriter_output(text, profile_path, provider="agy")
+            full_out = generate_full_howlwriter_output(
+                text, profile_path, provider="agy", seed=idx
+            )
         except Exception as e:
             print(f"  [ERROR] Full HowlWriter failed: {e}")
             full_out = ""
