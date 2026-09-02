@@ -180,7 +180,21 @@ howlwriter finalize original.md revised.md
 # Academic paper / assignment writing from a typed specification
 howlwriter paper assignment.yaml --out paper.md
 howlwriter paper assignment.yaml --out paper.md --deterministic
+
+# Outline-guided authorship: write from your ideas, claims, structure and
+# sentences. The more you supply, the less the model is free to invent.
+howlwriter outline validate post.yaml     # check it, and see the freedom level
+howlwriter outline show post.yaml
+howlwriter howl --outline post.yaml --provenance
+howlwriter paper --outline paper.yaml --provenance-level full
 ```
+
+Outline mode reports, deterministically and without asking the model, whether
+your verbatim passages survived, whether every required point is represented,
+and whether your ordering held. `--provenance` writes a local, gitignored record
+of every model call including the exact prompt HowlWriter sent. See
+[docs/outline-authorship.md](docs/outline-authorship.md) and
+[docs/provenance.md](docs/provenance.md).
 
 `howlwriter writer <prompt>` drafts prose from notes using the configured Writer role, and `howlwriter research <query>` retrieves scholarly sources. When no model providers are wired in, model-only roles exit with a clear `ModelRoleNotConfiguredError` message rather than doing nothing silently. See [docs/academic-paper.md](docs/academic-paper.md) for details on academic workflows.
 
@@ -246,6 +260,20 @@ cd frontend && npm install && npm run build
 - Semantic reviewers vary by provider/model.
 - Small local models may produce malformed structured Humanizer output.
 - Author review remains necessary for final publication.
+- Generated batches still converge structurally. The diversity checker runs
+  against generated output and currently returns FAIL on a twenty-prompt
+  benchmark for both the medium-only control and full HowlWriter: output varies
+  less than the corpus on sentence length, paragraph size and lexical
+  diversity. Parentheticals are no longer a recognizable signature; overall
+  structural spread still is.
+- Most runs cannot produce an APA reference entry for the tool, because the
+  configured providers report no model name and APA's template requires a tool
+  and a version. The disclosure statement is still generated; the reference is
+  withheld with the reason stated rather than filled in with a guess.
+- Reviewer independence is tracked only for the meaning reviewer against the
+  humanizer. The consistency reviewer and the writer have none.
+- HowlWriter records what it sent and what came back. It has no access to any
+  model's internal reasoning and makes no claim about it.
 
 See [docs/humanization.md](docs/humanization.md) and
 [docs/academic-paper.md](docs/academic-paper.md) for detailed discussions.
