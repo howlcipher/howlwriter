@@ -8,22 +8,26 @@ src/howlwriter/
 │                 ProvenanceGraph, VoiceProfile, WritingReport, WritingMode
 ├── config/       HowlWriterConfig schema, built-in defaults, the layered loader
 ├── linting/      LintEngine + builtin_rules/ (one module per rule family)
-├── humanize/     detector (reuses LintEngine) + SafeRewriter
-├── editing/      PassthroughEditor + the model-backed Editor Protocol
+├── humanize/     detector (reuses LintEngine) + SafeRewriter + ModelHumanizer
+├── editing/      PassthroughEditor + the model-backed Editor seam
 ├── redpen/       RedPenEngine (criticism, not rewriting)
-├── facts/        HeuristicClaimExtractor + the ClaimVerifier Protocol
-├── research/     the Researcher Protocol (no real implementation)
+├── facts/        HeuristicClaimExtractor + ClaimVerifier
+├── research/     the Researcher Protocol & query model
+├── academic/     Researched academic paper pipeline: Crossref/arXiv retrieval,
+│                 structured drafting, length remediation, outline conformance,
+│                 identifier grounding, requirements classification, and verifier
 ├── citations/    CitationStyle registry + the APA7Formatter
 ├── voice/        Voice corpus profiling (voice/corpus/: discovery,
 │                 extraction, cleanup, quality, dedup, features, traits,
 │                 split, aggregation, validation, the private store) plus
 │                 CorpusStatsLearner and the VoiceAnalyzer Protocol.
 │                 See docs/voice-corpus.md
-├── review/       MeaningPreservationReviewer + the WritingRole registry
-├── integration/  ModelBackedRole / ModelRoleNotConfiguredError -- the one
-│                 seam every model-backed capability above shares
-├── pipeline/      run_howl_pipeline -- the one genuinely-working
-│                 end-to-end path
+├── review/       MeaningPreservationReviewer + WritingRole registry
+├── diagnostic/   Run records (run_record.py) for durable local telemetry
+├── web/          FastAPI backend + React SPA local web application
+├── integration/  HowlPlaneWritingBridge / ModelRoleNotConfiguredError --
+│                 the shared seam executing WritingRoles via HowlPlane
+├── pipeline/     run_howl_pipeline -- end-to-end editorial pipeline
 └── cli/          argparse root + one module per subcommand, zero business
                   logic of its own
 ```
@@ -69,17 +73,11 @@ rewrite the humanizer performs on its own.
 `integration/model_role.py` defines `WritingRole` (WRITER, EDITOR,
 HUMANIZER, VOICE_REVIEWER, FACT_CHECKER, RESEARCHER, RED_PEN,
 CITATION_VALIDATOR, FINAL_REVIEWER), `ModelRoleNotConfiguredError`, and
-`NotConfiguredRole`. Every capability that needs a model --
-`humanize.rewriter.HumanizerRewriter`, the model-backed mode of
-`editing.editor.Editor`, `facts.verification.ClaimVerifier`,
-`research.researcher.Researcher`, `voice.model_hook.VoiceAnalyzer`,
-`review.meaning.ModelMeaningReviewer` -- is a typed `Protocol` plus a
-`NotConfigured*` default that raises a named error instead of silently
-faking a result. HowlWriter never calls a model API itself; this is the
-seam where an external executor (e.g. one HowlPlane supplies) would plug
-in. See [docs/howlplane-integration.md](howlplane-integration.md) for why
-that binding doesn't exist yet, and why that's not a bug HowlWriter should
-paper over on its own.
+`NotConfiguredRole`. Capabilities that use a model route through
+`integration/howlplane_bridge.py::HowlPlaneWritingBridge`, binding writing
+roles to HowlPlane's `RoleDispatcher`. When no executor is configured for a
+role, HowlWriter raises `ModelRoleNotConfiguredError` rather than faking a
+result. See [docs/howlplane-integration.md](howlplane-integration.md).
 
 ## The lint engine and everything that reuses it
 
@@ -93,20 +91,17 @@ maintaining a second, driftable pattern list, and `redpen/critic.py`
 imports the same filler-phrase constants from
 `linting/builtin_rules/banned_patterns.py` for the same reason.
 
-## The `howl` pipeline
+## End-to-end pipelines
 
-`pipeline/howl.py::run_howl_pipeline()` is the one genuinely-working
-end-to-end path: `INPUT -> EDIT -> HUMANIZE -> LINT -> RED PEN ->
-FINAL REVIEW -> OUTPUT`. Every stage is real and deterministic; nothing in
-it calls a model. See the root [README](../README.md) for the
-stage-by-stage table of what each step actually does and doesn't do.
+- **The `howl` pipeline (`pipeline/howl.py`):** Runs the full editorial
+  sequence `INPUT -> EDIT -> HUMANIZE -> LINT -> RED PEN -> FINAL REVIEW -> OUTPUT`.
+- **The `paper` pipeline (`academic/pipeline.py`):** Runs the researched
+  academic workflow `SPEC -> RETRIEVAL -> DRAFTING -> LENGTH REMEDIATION -> OUTLINE CHECK -> VERIFICATION -> CITATIONS -> REVIEW -> OUTPUT`.
 
 ## The CLI
 
-`cli/main.py` builds one `argparse` subcommand per capability
-(`writer editor humanize voice fact-check research sources cite references
-red-pen critique lint finalize howl`) and dispatches to
-`cli/commands/<name>.py`. Every command module parses its own arguments and
+`cli/main.py` builds one `argparse` subcommand per capability and dispatches
+to `cli/commands/<name>.py`. Every command module parses its own arguments and
 calls straight into the corresponding `howlwriter.<domain>` function --
 there is no business logic in the CLI package. A `ModelRoleNotConfiguredError`
 raised by any command surfaces as a clean one-line stderr message and exit
@@ -114,11 +109,9 @@ code 2, never a traceback.
 
 ## Explicit non-goals for v1
 
-- No PDF/DOCX/HTML ingestion -- `Document.parse()` handles plain
-  text/Markdown only.
-- No multi-file or directory-wide operations -- every command operates on
-  one file (or one sources file) at a time.
-- No real model execution anywhere in this codebase, by design.
-- No attempt at a defensible "voice match %" without both a learned
-  profile and a real comparison implementation -- the field stays `None`
-  and is omitted from rendered reports rather than approximated.
+- No multi-file or directory-wide batch operations -- every command operates
+  on one file (or one assignment spec) at a time to keep human authority primary.
+- No attempt at an invented "voice match %" without a validated distance
+  metric -- the field stays `None` and is omitted from rendered reports
+  rather than approximated.
+

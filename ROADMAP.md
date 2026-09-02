@@ -1,90 +1,41 @@
 # Roadmap
 
-## MVP scope (this milestone)
+## Completed Milestones
 
-All fifteen items from the initial MVP scope are done:
+The following capabilities are implemented, tested, and active on `main`:
 
-| # | Item | Status |
+| # | Capability | Implementation Status |
 | --- | --- | --- |
 | 1 | Repository architecture | Done -- see [docs/architecture.md](docs/architecture.md) |
 | 2 | Document/domain model | Done -- span-addressable `Document`, `Claim`, `Source`/`Evidence`, `ProvenanceGraph`, `VoiceProfile`, `WritingReport` |
-| 3 | Configurable style linting | Done -- `LintEngine`, 10 built-in rule families, all config-gated |
-| 4 | Humanizer interface | Done -- deterministic detection (real) + `HumanizerRewriter` Protocol (unconfigured) |
-| 5 | Editor interface | Done -- `PassthroughEditor` (real) + `Editor` model-backed mode (unconfigured) |
+| 3 | Configurable style linting | Done -- `LintEngine`, built-in rule families, LinkedIn anti-slop rules, all config-gated |
+| 4 | Humanizer interface | Done -- deterministic detection + `SafeRewriter` + model-backed `ModelHumanizer` via HowlPlane bridge |
+| 5 | Editor interface | Done -- `PassthroughEditor` (real) + model-backed `Editor` seam |
 | 6 | Red Pen interface | Done -- `RedPenEngine`, deterministic, never auto-rewrites |
-| 7 | Claim extraction model | Done -- `HeuristicClaimExtractor` (real); `ClaimVerifier` unconfigured |
-| 8 | Source/provenance model | Done -- `ProvenanceGraph` with real, working query methods |
-| 9 | Basic APA 7 citation representation | Done -- `APA7Formatter`, all forms, missing-metadata warnings |
-| 10 | Voice Profile representation | Done -- `VoiceProfile` + `CorpusStatsLearner` (real); `VoiceAnalyzer` unconfigured |
-| 11 | Meaning-preservation review interface | Done -- `MeaningPreservationReviewer` (real heuristic diff); `ModelMeaningReviewer` unconfigured |
-| 12 | HowlPlane integration boundary | Done -- `.ai-project.toml`, validated against HowlPlane's own `ai project validate` |
-| 13 | CLI foundation | Done -- all 13 subcommands (`writer editor humanize voice fact-check research sources cite references red-pen critique lint finalize howl`) |
-| 14 | Tests | Done -- 124 passing tests, one module per package |
-| 15 | Documentation | Done -- this file plus the seven docs in `docs/` |
+| 7 | Claim extraction & verification | Done -- `HeuristicClaimExtractor` (real) + `AcademicClaimVerifier` populating `ProvenanceGraph` |
+| 8 | Source / provenance model | Done -- `ProvenanceGraph` with referential integrity, source relevance & evidence depth tiers |
+| 9 | APA 7 citation & reference formatting | Done -- `APA7Formatter`, in-text and reference page generation with missing-metadata warnings |
+| 10 | Voice Corpus Profiling & registry | Done -- multi-format corpus extraction (DOCX, ODT, RTF, HTML, TXT, MD, PDF), ~35 style features, train/holdout split, discrete traits, leakage scrubbing, local private store `~/.howlwriter/voices/` |
+| 11 | Meaning-preservation review | Done -- deterministic heuristic diffing (numbers, dates, hedges, attributions) + model-backed semantic review |
+| 12 | HowlPlane role binding | Done -- `HowlPlaneWritingBridge` binding `WritingRole` to HowlPlane's `RoleDispatcher` with independent reviewer tracking |
+| 13 | Academic paper pipeline | Done -- `howlwriter paper` with assignment specification, outline enforcement, identifier grounding, and bounded length remediation |
+| 14 | Local Web Application | Done -- FastAPI backend + React SPA (`howlwriter ui`) with workspace, diff inspection, academic pipeline rail, runs ledger |
+| 15 | Diagnostic run records | Done -- durable local records in `~/.howlwriter/runs/` with SHA-256 hashes, latency metrics, failure classification |
+| 16 | CLI foundation | Done -- all 16 subcommands (`paper writer editor humanize voice fact-check research sources cite references red-pen critique lint finalize howl runs ui`) |
+| 17 | Tests & Verification | Done -- 568 passing tests across unit, integration, dogfood, and web suites |
 
-The first usable flow (INPUT -> EDIT -> HUMANIZE -> LINT -> RED PEN ->
-FINAL REVIEW -> OUTPUT) genuinely works end to end via
-`howlwriter howl <file>`, against real fixtures, not a stub.
+## Explicitly Deferred (Named, Not Half-Built)
 
-## Explicitly deferred (named, not half-built)
+- **Alternative Citation Styles (MLA / Chicago / IEEE / Harvard).** `CitationStyle` reserves the names; APA 7 is the primary production implementation.
+- **Automated Upstream Citation Validation against Remote Registrar APIs.** `WritingRole.CITATION_VALIDATOR` is defined in the role vocabulary; live remote registrar validation is deferred.
+- **Real "Voice Match %" Similarity Metric.** `WritingReport.voice_match` stays `None` and is omitted from rendered reports rather than approximated with a fake percentage.
+- **Multi-file / Project-wide Batch Rewriting.** Every CLI command operates on one file or assignment spec at a time to ensure reviewability and human authority gating.
 
-- **Real network research.** `research/researcher.py`'s `Researcher` is
-  Protocol-only. Building even a minimal HTTP fetch here risks exactly the
-  provider-coupling and duplicated execution logic HowlPlane is meant to
-  own.
-- **Semantic claim verification.** `facts/verification.py`'s
-  `ClaimVerifier` is Protocol-only -- deciding a claim is `SUPPORTED`
-  needs a model call or a real search backend.
-- **LLM-driven humanization/editing rewrites.** `HumanizerRewriter` and
-  the model-backed mode of `Editor` are Protocol-only; the deterministic
-  `SafeRewriter` and `PassthroughEditor` are the complete MVP deliverable
-  here.
-- **MLA/Chicago/IEEE/Harvard citation styles.** `CitationStyle` reserves
-  the names; only APA7 has an implementation.
-- **Citation validation.** `WritingRole.CITATION_VALIDATOR` is part of the
-  role vocabulary; nothing implements it yet.
-- **PDF/DOCX/HTML ingestion.** `Document.parse()` handles plain
-  text/Markdown only.
-- **A real `VoiceAnalyzer` implementation.** `CorpusStatsLearner` is the
-  complete real MVP voice capability; qualitative (tone/humor) analysis is
-  reserved, unconfigured.
-- **A real "voice match %" metric.** `WritingReport.voice_match` stays
-  `None` and is omitted from rendered reports rather than approximated.
-- **Binding any `WritingRole` to a concrete executor**, including one
-  HowlPlane might supply. Documented as an open integration layer in
-  [docs/howlplane-integration.md](docs/howlplane-integration.md), not
-  filled with a bespoke shim inside HowlWriter.
-- **Multi-file / project-wide operations.** Every CLI command operates on
-  one file (or one sources file) at a time.
+## Growth Path
 
-## Growth path
+Toward future multi-document and extended citation capabilities:
 
-Toward the long-term pipeline in [docs/vision.md](docs/vision.md):
+1. Add MLA citation style as a second concrete implementation to prove multi-style generalization.
+2. Add automated upstream metadata verification against DOI registrars where network access is permitted.
+3. Explore batch project operations under explicit user confirmation boundaries.
 
-```
-INPUT -> RESEARCH -> DRAFT -> HUMANIZE -> VOICE MATCH -> EDIT -> LINT ->
-CLAIM EXTRACTION -> FACT CHECK -> SOURCE VERIFICATION -> RED PEN ->
-INDEPENDENT CRITIQUE -> MINIMAL REWRITE -> MEANING VERIFICATION ->
-CITATION GENERATION -> FINAL OUTPUT
-```
-
-Roughly, in order of what unlocks the most:
-
-1. Resolve the HowlPlane execution-binding gap (see
-   [docs/howlplane-integration.md](docs/howlplane-integration.md)) so at
-   least one `WritingRole` Protocol has a real implementation to test
-   against, end to end.
-2. Wire a configured `Researcher` and `ClaimVerifier` together so
-   `fact-check --verify` can genuinely populate a `ProvenanceGraph`
-   instead of only extracting candidates.
-3. Extend `howl` to call `/cite` and `/references` when a caller supplies
-   collected sources, instead of treating citation generation as fully
-   separate from the pipeline.
-4. Add a real `voice_match` comparison once there's a validated method,
-   and only then add the report line back.
-5. Add MLA next (the second-most-requested academic style after APA), as
-   a second concrete `CitationStyle` implementation to prove the registry
-   generalizes.
-6. Revisit the reviewer-role vocabulary gap once HowlWriter has enough
-   real usage to make a concrete proposal to HowlPlane, per the Freeze's
-   own evidence bar.

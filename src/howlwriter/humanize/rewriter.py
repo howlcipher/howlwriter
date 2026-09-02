@@ -155,7 +155,11 @@ def _mode_specific_instructions(mode: Any) -> str:
             "- Preserve conversational pronouns ('I', 'you', 'your business', 'we') when natural. "
             "NEVER sanitize them into formal third-person ('enterprises', 'organizations', 'one').",
             "- Avoid corporate whitepaper jargon and thesaurus upgrades "
-            "('constructs', 'ceases to function', 'renders vulnerable'). Use crisp, direct language.",
+            "('constructs', 'ceases to function', 'renders vulnerable', 'substitutability', "
+            "'commoditization', 'utilize'). "
+            "NEVER replace normal conversational words "
+            "('developers', 'build', 'use', 'companies', 'cheap', 'replaceable', 'moat') "
+            "with abstract synonyms. Use crisp, direct, punchy language.",
             "- Do NOT strip out essential thesis distinctions or qualifying nuance "
             "('The point is not that X... the real issue is Y'). A substantive contrast that "
             "clarifies the boundary of an argument is NOT generic AI filler.",
@@ -302,11 +306,22 @@ class ModelHumanizerRewriter:
             "that are already present. Never invent personal experience, statistics, "
             "or anecdotes.",
             "",
+            "INPUT ADAPTATION (SPARSE PROMPT VS COMPLETE DRAFT):",
+            "- If the input is a SPARSE ROUGH IDEA, OUTLINE, OR PROMPT "
+            "(e.g. short rough notes, or containing instructions like 'Make that into a LinkedIn post'):",
+            "  * Expand the core reasoning into a complete, coherent piece appropriate for the writing mode.",
+            "  * Fulfill the prompt by developing the causal argument, concrete implications, and supporting "
+            "distinctions, while strictly preserving the author's stated stance.",
+            "  * Strip meta-instructions (e.g., 'Make that into a LinkedIn post') from the resulting output.",
+            "- If the input is an EXISTING DRAFT OR COMPLETE ESSAY:",
+            "  * Follow the MINIMUM NECESSARY EDIT rule strictly: if the text is already natural, direct, "
+            "and clear, leave it untouched. ZERO CHANGES is an excellent result for clean human drafts.",
+            "",
             mode_instructions,
             "",
             "ZERO-CHANGE RULE:",
-            "If the text is already natural, direct, and free of the patterns above, "
-            "return the original text EXACTLY (character-for-character) and set "
+            "If the input is an existing draft and is already natural, direct, and free of the "
+            "patterns above, return the original text EXACTLY (character-for-character) and set "
             "changes_made to an empty list.",
             "",
             "CHANGE REASON TAXONOMY (use these reasons when describing edits):",

@@ -381,6 +381,33 @@ rationale: "<summary explanation of verdict>"
             custom_backend=custom_backend,
         )
 
+        if (
+            not result.success
+            and humanizer_provider
+            and (
+                "avoiding" in (result.error_message or "")
+                or "No executor or provider configured" in (result.error_message or "")
+            )
+        ):
+            # Fallback to executing with the available provider, honestly recording SAME_PROVIDER independence
+            fallback_res = bridge.execute_writing_role(
+                role=self.role,
+                prompt=prompt,
+                context={
+                    "original_title": original.title,
+                    "revised_title": revised.title,
+                    "humanizer_provider": humanizer_provider,
+                    "run_id": run_id,
+                },
+                avoid_provider=None,
+                timeout_seconds=300,
+                cwd=cwd,
+                custom_backend=custom_backend,
+            )
+            if fallback_res.success:
+                result = fallback_res
+                result.independence_status = "SAME_PROVIDER"
+
         if not result.success:
             err = result.error_message or "Reviewer execution failed"
             return SemanticMeaningResult(

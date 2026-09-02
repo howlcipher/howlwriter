@@ -111,7 +111,13 @@ def render_profile(profile: VoiceProfile | None, mode: object = None) -> str:
         "sentence at the mean length is a failure, not a match.",
         "- Never invent a signature opening, a catchphrase, or a recurring closing move.",
         "- In conversational and social modes, preserve natural conversational pronouns "
-        "('I', 'you', 'your business', 'we') when present; do not convert them to stiff formalisms.",
+        "('I', 'you', 'your business', 'we') and contractions ('isn't', 'don't', 'can't') when natural; "
+        "do not convert them to stiff third-person formalisms ('enterprises', 'one', 'market participants').",
+        "- ANTI-THESAURUS RULE: High formality or advanced vocabulary tendencies mean conceptual clarity "
+        "and precise reasoning, NOT thesaurus upgrades. NEVER replace normal conversational words "
+        "('developers', 'build', 'use', 'companies', 'cheap', 'replaceable', 'moat') with hyper-formal "
+        "or academic jargon ('substitutability', 'commoditization', 'utilize', 'construct', "
+        "'vulnerable to substitution').",
         "- Assertive qualification means stating conclusions clearly, NOT stripping "
         "legitimate epistemic hedging ('probably', 'may', 'if') or turning nuanced "
         "hypotheses into blunt absolutes.",
