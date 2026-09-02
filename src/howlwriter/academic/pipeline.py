@@ -662,10 +662,15 @@ def _run_academic_pipeline(
     provenance.calls = list(recorder.calls)
     provenance.artifact_sha256 = compute_sha256(final_document.text)
     provenance.completed_at = datetime.now(timezone.utc).isoformat()
+    # Every read below is a contract with another stage's result dataclass.
+    #  was one of these and did not exist; the field is
+    # , and no deterministic test reached this line because the
+    # consistency reviewer needs both a model and staged content. See
+    # tests/academic/test_provenance_contract.py.
     provenance.review = {
         "meaning_preservation": meaning_det.status,
         "semantic_meaning": semantic_res.verdict if semantic_res else None,
-        "consistency": consistency_res.status if consistency_res else None,
+        "consistency": consistency_res.verdict if consistency_res else None,
         "readiness": final_status,
     }
     provenance.research.update(
