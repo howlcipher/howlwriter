@@ -302,3 +302,93 @@ export interface ProvidersResponse {
   reviewer_independence: string; // INDEPENDENT, SAME_PROVIDER, NOT_REVIEWED, UNAVAILABLE
   reviewer_independence_reason: string;
 }
+
+// --- Personal Voices ---
+//
+// Everything the UI receives about a voice is a summary. There is no field
+// here that can hold a corpus passage, and source paths arrive only from the
+// separate, explicitly-confirmed sources endpoint.
+
+export interface VoiceTrait {
+  name: string;
+  value: string;
+  confidence: number;
+  confidence_band: 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_LOW' | 'UNKNOWN';
+  supporting_documents: number;
+  supporting_words: number;
+  agreement: number;
+  source: 'deterministic' | 'model' | 'user';
+}
+
+export interface VoiceContextBlock {
+  name: string;
+  document_count: number;
+  word_count: number;
+  confidence: number;
+  sufficiency: string;
+  traits: VoiceTrait[];
+}
+
+export interface VoiceCorpusSummary {
+  documents_discovered: number;
+  unique_canonical_files: number;
+  candidate_prose_files: number;
+  included_documents: number;
+  holdout_documents: number;
+  excluded_documents: number;
+  held_for_review_documents: number;
+  exact_duplicates: number;
+  cross_format_duplicates: number;
+  revision_groups: number;
+  extraction_failures: number;
+  scanned_or_unreadable: number;
+  training_words: number;
+  holdout_words: number;
+  sufficiency: string;
+  sufficiency_warnings: string[];
+  words_by_context: Record<string, number>;
+  documents_by_context: Record<string, number>;
+  quality_classifications: Record<string, number>;
+  exclusion_reasons: Record<string, number>;
+}
+
+export interface VoiceValidation {
+  alignment: Record<string, string>;
+  overall_confidence: string;
+  holdout_documents: number;
+  holdout_words: number;
+  diversity_preservation: string;
+  warnings: string[];
+}
+
+export interface VoiceOverrides {
+  preserve: string[];
+  avoid: string[];
+  traits: Record<string, string>;
+  notes: string;
+}
+
+export interface VoiceSummary {
+  name: string;
+  profile_type: 'personal_voice' | 'shared_style';
+  built_at: string;
+  included_documents: number;
+  training_words: number;
+  contexts: string[];
+  overall_confidence: string;
+  sufficiency: string;
+}
+
+export interface VoiceDetail {
+  name: string;
+  profile_type: 'personal_voice' | 'shared_style';
+  built_at: string;
+  version: number;
+  traits: VoiceTrait[];
+  contexts: VoiceContextBlock[];
+  corpus: VoiceCorpusSummary;
+  validation: VoiceValidation;
+  overrides: VoiceOverrides;
+  warnings: string[];
+  distributions: Record<string, number>;
+}

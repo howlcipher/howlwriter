@@ -20,6 +20,10 @@ class WritingRole(enum.Enum):
     EDITOR = "editor"
     HUMANIZER = "humanizer"
     VOICE_REVIEWER = "voice_reviewer"
+    # Abstract style analysis over a corpus of the user's own writing. Kept
+    # distinct from VOICE_REVIEWER, which judges one transformed document
+    # against its original; this role never sees a draft and never edits.
+    VOICE_ANALYST = "voice_analyst"
     FACT_CHECKER = "fact_checker"
     RESEARCHER = "researcher"
     RED_PEN = "red_pen"

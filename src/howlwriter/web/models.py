@@ -95,6 +95,9 @@ class HumanizeRequest(BaseModel):
     config_path: Optional[str] = None
     cwd: Optional[str] = None
     voice_profile: Optional[str] = None
+    #: Name of a personal voice in the local registry. An alternative to
+    #: voice_profile, not an addition: passing both is rejected.
+    voice: Optional[str] = None
 
 
 class ChangeRecordDto(BaseModel):
@@ -138,6 +141,9 @@ class HowlPipelineRequest(BaseModel):
     config_path: Optional[str] = None
     cwd: Optional[str] = None
     voice_profile: Optional[str] = None
+    #: Name of a personal voice in the local registry. An alternative to
+    #: voice_profile, not an addition: passing both is rejected.
+    voice: Optional[str] = None
 
 
 class HowlPipelineResponse(BaseModel):
@@ -171,6 +177,9 @@ class AssignmentSpecDto(BaseModel):
     requirements: list[str] = Field(default_factory=list)
     outline: list[str] = Field(default_factory=list)
     voice_profile: Optional[str] = None
+    #: Name of a personal voice in the local registry. An alternative to
+    #: voice_profile, not an addition: passing both is rejected.
+    voice: Optional[str] = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -297,6 +306,112 @@ class StageDto(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
 
 
+# Voice Models
+#
+# Everything exposed here is a summary. The UI never receives a corpus
+# passage, and by default it never receives a source path either -- a voice is
+# built from someone's own writing, and a browser tab is a poor place for
+# either to surface.
+class VoiceTraitDto(BaseModel):
+    name: str
+    value: str
+    confidence: float = 0.0
+    confidence_band: str = "UNKNOWN"
+    supporting_documents: int = 0
+    supporting_words: int = 0
+    agreement: float = 0.0
+    source: str = "deterministic"
+
+
+class VoiceContextDto(BaseModel):
+    name: str
+    document_count: int = 0
+    word_count: int = 0
+    confidence: float = 0.0
+    sufficiency: str = "unknown"
+    traits: list[VoiceTraitDto] = Field(default_factory=list)
+
+
+class VoiceCorpusSummaryDto(BaseModel):
+    documents_discovered: int = 0
+    unique_canonical_files: int = 0
+    candidate_prose_files: int = 0
+    included_documents: int = 0
+    holdout_documents: int = 0
+    excluded_documents: int = 0
+    held_for_review_documents: int = 0
+    exact_duplicates: int = 0
+    cross_format_duplicates: int = 0
+    revision_groups: int = 0
+    extraction_failures: int = 0
+    scanned_or_unreadable: int = 0
+    training_words: int = 0
+    holdout_words: int = 0
+    sufficiency: str = "unknown"
+    sufficiency_warnings: list[str] = Field(default_factory=list)
+    words_by_context: dict[str, int] = Field(default_factory=dict)
+    documents_by_context: dict[str, int] = Field(default_factory=dict)
+    quality_classifications: dict[str, int] = Field(default_factory=dict)
+    exclusion_reasons: dict[str, int] = Field(default_factory=dict)
+
+
+class VoiceValidationDto(BaseModel):
+    alignment: dict[str, str] = Field(default_factory=dict)
+    overall_confidence: str = "UNKNOWN"
+    holdout_documents: int = 0
+    holdout_words: int = 0
+    diversity_preservation: str = "NOT_EVALUATED"
+    warnings: list[str] = Field(default_factory=list)
+
+
+class VoiceOverridesDto(BaseModel):
+    preserve: list[str] = Field(default_factory=list)
+    avoid: list[str] = Field(default_factory=list)
+    traits: dict[str, str] = Field(default_factory=dict)
+    notes: str = ""
+
+
+class VoiceSummaryDto(BaseModel):
+    """One row in the voice list."""
+
+    name: str
+    profile_type: str = "personal_voice"
+    built_at: str = ""
+    included_documents: int = 0
+    training_words: int = 0
+    contexts: list[str] = Field(default_factory=list)
+    overall_confidence: str = "UNKNOWN"
+    sufficiency: str = "unknown"
+
+
+class VoiceDetailDto(BaseModel):
+    """Everything the UI may show about one voice."""
+
+    name: str
+    profile_type: str = "personal_voice"
+    built_at: str = ""
+    version: int = 0
+    traits: list[VoiceTraitDto] = Field(default_factory=list)
+    contexts: list[VoiceContextDto] = Field(default_factory=list)
+    corpus: VoiceCorpusSummaryDto = Field(default_factory=VoiceCorpusSummaryDto)
+    validation: VoiceValidationDto = Field(default_factory=VoiceValidationDto)
+    overrides: VoiceOverridesDto = Field(default_factory=VoiceOverridesDto)
+    warnings: list[str] = Field(default_factory=list)
+    distributions: dict[str, float] = Field(default_factory=dict)
+
+
+class VoiceRebuildRequest(BaseModel):
+    deterministic: bool = False
+    reuse_cache: bool = True
+
+
+class VoiceBuildResultDto(BaseModel):
+    name: str
+    directory: str = ""
+    detail: Optional[VoiceDetailDto] = None
+    warnings: list[str] = Field(default_factory=list)
+
+
 class JobResponse(BaseModel):
     job_id: str
     run_id: str
@@ -309,7 +424,7 @@ class JobResponse(BaseModel):
     stages: list[StageDto] = Field(default_factory=list)
     error_message: Optional[str] = None
     failure_category: Optional[str] = None
-    result: Optional[AcademicResultDto] = None
+    result: Optional[AcademicResultDto | VoiceBuildResultDto] = None
 
 
 # Run History Models

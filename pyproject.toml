@@ -18,6 +18,13 @@ dev = [
     "pytest>=8.0",
     "flake8>=7.0",
 ]
+corpus = [
+    # PDF text extraction for `howlwriter voice build`. Optional on purpose:
+    # DOCX, ODT, RTF, HTML, TXT and MD are parsed with the standard library,
+    # so the core install stays dependency-light and only PDFs degrade to a
+    # reported "extraction unavailable" when this extra is not installed.
+    "pypdf>=4.0,<8.0",
+]
 web = [
     "fastapi>=0.110,<1.0",
     "uvicorn[standard]>=0.27,<1.0",

@@ -13,6 +13,7 @@ from howlwriter.config.loader import ConfigLoader
 from howlwriter.domain.io import atomic_write_text
 from howlwriter.domain.modes import parse_mode
 from howlwriter.pipeline.howl import run_howl_pipeline
+from howlwriter.voice.corpus.resolve import resolve_voice_option
 
 
 def add_subparser(
@@ -30,6 +31,11 @@ def add_subparser(
         "--mode",
         default=None,
         help="Writing mode (linkedin, academic, technical, casual, ...).",
+    )
+    parser.add_argument(
+        "--voice",
+        default=None,
+        help="Name of a personal voice built with `howlwriter voice build`.",
     )
     parser.add_argument(
         "--voice-profile",
@@ -68,8 +74,10 @@ def run(args: argparse.Namespace) -> int:
     config = ConfigLoader().load(
         mode=mode, project_config_path=args.project_config_path
     )
-    if args.voice_profile:
-        config.voice_profile = args.voice_profile
+    config.voice_profile = resolve_voice_option(
+        voice=getattr(args, "voice", None),
+        voice_profile=args.voice_profile,
+    ) or config.voice_profile
     result = run_howl_pipeline(
         args.path,
         config,

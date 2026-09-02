@@ -9,3 +9,15 @@ dist/
 venv/
 *.howled.md
 .coverage
+
+# Personal voice data. A voice built from someone's own writing is private
+# user data and lives in ~/.howlwriter/voices/ by default, outside any repo.
+# These patterns cover the case where a development or test run is pointed at
+# the working tree instead. The committed schema, the synthetic examples in
+# profiles/*.example.yaml, and the tests are deliberately NOT ignored.
+.voice/
+voices/
+voice_corpus/
+profiles/private/
+*.voice.local.*
+*.local.voice.json

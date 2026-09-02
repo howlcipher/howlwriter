@@ -32,6 +32,11 @@ RULE_REGISTRY: list[RuleFunc] = [
     structure.check,
     structure.check_paragraph_length_symmetry,
     rhetorical.check,
+    banned_patterns.check_engagement_bait,
+    banned_patterns.check_fake_rhetorical_hook,
+    banned_patterns.check_hashtag_spam,
+    banned_patterns.check_emoji_bullets,
+    banned_patterns.check_motivational_slop,
 ]
 
 

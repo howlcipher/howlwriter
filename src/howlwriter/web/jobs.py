@@ -10,7 +10,17 @@ from typing import Any, Callable, Optional
 import uuid
 
 from howlwriter.diagnostic.run_record import classify_failure, generate_run_id
-from howlwriter.web.models import AcademicResultDto, JobResponse, StageDto
+from howlwriter.web.models import (
+    AcademicResultDto,
+    JobResponse,
+    StageDto,
+    VoiceBuildResultDto,
+)
+
+#: Result payloads a job can carry. Academic papers were the first; voice
+#: builds are the second, and both flow through the same progress machinery
+#: rather than each growing its own.
+JobResult = AcademicResultDto | VoiceBuildResultDto
 
 
 STANDARD_ACADEMIC_STAGES = [
@@ -49,7 +59,12 @@ class StageState:
 
 
 class Job:
-    def __init__(self, job_type: str, run_id: Optional[str] = None):
+    def __init__(
+        self,
+        job_type: str,
+        run_id: Optional[str] = None,
+        stages: Optional[list[tuple[str, str]]] = None,
+    ):
         self.job_id = f"job-{uuid.uuid4().hex[:8]}"
         self.run_id = run_id or generate_run_id()
         self.job_type = job_type
@@ -59,11 +74,11 @@ class Job:
         self.current_stage_id: Optional[str] = None
         self.stages: list[StageState] = [
             StageState(id=sid, label=slabel)
-            for sid, slabel in STANDARD_ACADEMIC_STAGES
+            for sid, slabel in (stages or STANDARD_ACADEMIC_STAGES)
         ]
         self.error_message: Optional[str] = None
         self.failure_category: Optional[str] = None
-        self.result: Optional[AcademicResultDto] = None
+        self.result: Optional[JobResult] = None
         self._listeners: list[asyncio.Queue] = []
         self._lock = threading.Lock()
 
@@ -109,7 +124,7 @@ class Job:
             }
             self._broadcast_event(event)
 
-    def complete(self, result: AcademicResultDto) -> None:
+    def complete(self, result: JobResult) -> None:
         with self._lock:
             self.status = "COMPLETED"
             self.updated_at = time.time()
@@ -199,9 +214,14 @@ class JobManager:
         self._max_retained = max_retained_jobs
         self._lock = threading.Lock()
 
-    def create_job(self, job_type: str, run_id: Optional[str] = None) -> Job:
+    def create_job(
+        self,
+        job_type: str,
+        run_id: Optional[str] = None,
+        stages: Optional[list[tuple[str, str]]] = None,
+    ) -> Job:
         with self._lock:
-            job = Job(job_type=job_type, run_id=run_id)
+            job = Job(job_type=job_type, run_id=run_id, stages=stages)
             self._jobs[job.job_id] = job
             # Trim old jobs
             if len(self._jobs) > self._max_retained:

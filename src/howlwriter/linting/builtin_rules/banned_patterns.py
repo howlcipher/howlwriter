@@ -16,10 +16,15 @@ from howlwriter.linting.rules import (
     AI_STYLE_CANNED_CONCLUSION,
     AI_STYLE_CANNED_OPENING,
     AI_STYLE_CORPORATE_FILLER,
+    AI_STYLE_EMOJI_BULLETS,
     AI_STYLE_EMPTY_TRANSITION,
+    AI_STYLE_ENGAGEMENT_BAIT,
+    AI_STYLE_FAKE_RHETORICAL_HOOK,
     AI_STYLE_FORMULAIC_CONTRAST,
     AI_STYLE_GENERIC_INTENSIFIER,
     AI_STYLE_GENERIC_TRANSITION,
+    AI_STYLE_HASHTAG_SPAM,
+    AI_STYLE_MOTIVATIONAL_SLOP,
     AI_STYLE_NOT_X_BUT_Y,
     AI_STYLE_REPETITIVE_MINI_CONCLUSION,
     AI_STYLE_REPETITIVE_TRICOLON,
@@ -125,6 +130,53 @@ _MINI_CONCLUSION_PHRASES = (
     "at the end of the day",
 )
 _MINI_CONCLUSION_THRESHOLD = 3
+
+ENGAGEMENT_BAIT_PHRASES = (
+    "agree?",
+    "thoughts?",
+    "what do you think?",
+    "drop a comment",
+    "comment below",
+    "repost if you agree",
+    "share your thoughts",
+    "let me know in the comments",
+    "do you agree?",
+    "what are your thoughts?",
+    "drop your thoughts",
+    "hit like if",
+    "share this with someone",
+)
+
+FAKE_RHETORICAL_HOOK_PHRASES = (
+    "let that sink in",
+    "here's the thing",
+    "here is the thing",
+    "this changes everything",
+    "we need to talk about",
+    "unpopular opinion:",
+    "read that again",
+    "stop scrolling",
+    "most people don't realize this",
+    "most people don't get this",
+    "pay attention to this",
+)
+
+MOTIVATIONAL_SLOP_PHRASES = (
+    "the future belongs to",
+    "game-changer for everyone",
+    "unlock your true potential",
+    "in today's fast-paced world",
+    "in this rapidly evolving landscape",
+    "embrace the future",
+    "skyrocket your",
+    "supercharge your",
+)
+
+_HASHTAG_PATTERN = re.compile(r"(?:^|\s)#([A-Za-z0-9_]+)")
+_MAX_ALLOWED_HASHTAGS = 4
+
+_EMOJI_BULLET_PATTERN = re.compile(r"^\s*(?:[\U00010000-\U0010ffff]|[\u2600-\u27bf])\s+", re.MULTILINE)
+_EMOJI_ANY_PATTERN = re.compile(r"[\U00010000-\U0010ffff]|[\u2600-\u27bf]")
 
 
 def _phrase_matches(sentence_text: str, phrases: tuple[str, ...]) -> list[str]:
@@ -338,3 +390,97 @@ def check_repetitive_mini_conclusion(document: Document, config: HowlWriterConfi
             sentence_index=first_s,
         )
     ]
+
+
+def check_engagement_bait(document: Document, config: HowlWriterConfig) -> list[RuleMatch]:
+    """Flag engagement bait phrases ('Agree?', 'Thoughts?', 'Drop a comment')."""
+    if "engagement_bait" not in config.banned_patterns:
+        return []
+    matches: list[RuleMatch] = []
+    for p_index, s_index, sentence in document.all_sentences():
+        for phrase in _phrase_matches(sentence.text, ENGAGEMENT_BAIT_PHRASES):
+            matches.append(
+                RuleMatch(
+                    rule_code=AI_STYLE_ENGAGEMENT_BAIT,
+                    matched_text=phrase,
+                    message=f'Engagement-bait phrase: "{phrase}" -- avoid algorithmic engagement hacks.',
+                    paragraph_index=p_index,
+                    sentence_index=s_index,
+                )
+            )
+    return matches
+
+
+def check_fake_rhetorical_hook(document: Document, config: HowlWriterConfig) -> list[RuleMatch]:
+    """Flag formulaic viral hooks ('Let that sink in', 'Here's the thing')."""
+    if "fake_rhetorical_hook" not in config.banned_patterns:
+        return []
+    matches: list[RuleMatch] = []
+    for p_index, s_index, sentence in document.all_sentences():
+        for phrase in _phrase_matches(sentence.text, FAKE_RHETORICAL_HOOK_PHRASES):
+            matches.append(
+                RuleMatch(
+                    rule_code=AI_STYLE_FAKE_RHETORICAL_HOOK,
+                    matched_text=phrase,
+                    message=f'Formulaic viral hook: "{phrase}" -- open directly with substance instead.',
+                    paragraph_index=p_index,
+                    sentence_index=s_index,
+                )
+            )
+    return matches
+
+
+def check_hashtag_spam(document: Document, config: HowlWriterConfig) -> list[RuleMatch]:
+    """Flag excessive hashtag use (>4 hashtags) or hashtag walls."""
+    if "hashtag_spam" not in config.banned_patterns:
+        return []
+    tags = _HASHTAG_PATTERN.findall(document.text)
+    if len(tags) <= _MAX_ALLOWED_HASHTAGS:
+        return []
+    return [
+        RuleMatch(
+            rule_code=AI_STYLE_HASHTAG_SPAM,
+            matched_text=f"{len(tags)} hashtags",
+            message=(
+                f"Found {len(tags)} hashtags (max {_MAX_ALLOWED_HASHTAGS}) "
+                "-- avoid hashtag spamming."
+            ),
+        )
+    ]
+
+
+def check_emoji_bullets(document: Document, config: HowlWriterConfig) -> list[RuleMatch]:
+    """Flag emoji bullets and excessive emoji spam."""
+    if "emoji_bullets" not in config.banned_patterns:
+        return []
+    matches: list[RuleMatch] = []
+    for p_index, paragraph in enumerate(document.paragraphs):
+        if _EMOJI_BULLET_PATTERN.search(paragraph.raw_text):
+            matches.append(
+                RuleMatch(
+                    rule_code=AI_STYLE_EMOJI_BULLETS,
+                    matched_text="emoji_bullet",
+                    message="Emoji used as a bullet point -- prefer standard markdown lists or clean prose.",
+                    paragraph_index=p_index,
+                )
+            )
+    return matches
+
+
+def check_motivational_slop(document: Document, config: HowlWriterConfig) -> list[RuleMatch]:
+    """Flag generic motivational / cheerleading filler."""
+    if "motivational_slop" not in config.banned_patterns:
+        return []
+    matches: list[RuleMatch] = []
+    for p_index, s_index, sentence in document.all_sentences():
+        for phrase in _phrase_matches(sentence.text, MOTIVATIONAL_SLOP_PHRASES):
+            matches.append(
+                RuleMatch(
+                    rule_code=AI_STYLE_MOTIVATIONAL_SLOP,
+                    matched_text=phrase,
+                    message=f'Motivational/inspirational slop phrase: "{phrase}"',
+                    paragraph_index=p_index,
+                    sentence_index=s_index,
+                )
+            )
+    return matches

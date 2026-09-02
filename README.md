@@ -73,7 +73,9 @@ src/howlwriter/
 ├── facts/        Heuristic claim extraction + verification
 ├── research/     Crossref / arXiv scholarly retrieval
 ├── citations/    APA 7 formatter (MLA/Chicago/IEEE/Harvard reserved)
-├── voice/        Deterministic corpus-stats voice learner
+├── voice/        Voice corpus profiling: build a private personal voice
+│                 from a corpus of your own writing (voice/corpus/), plus
+│                 the original deterministic corpus-stats learner
 ├── review/       Meaning-preservation review
 ├── integration/  The shared model-backed-role seam
 ├── pipeline/     The `howl` end-to-end pipeline
@@ -93,13 +95,20 @@ See [docs/architecture.md](docs/architecture.md) for the full walkthrough.
 - The style-lint engine, built-in rule families for AI-style patterns
 - Humanization detection (reuses the lint engine) and the model-backed
   Humanizer with minimal-edit / zero-change contract
-- Voice profile loading and prompt injection
+- Voice profile loading and prompt injection, for both hand-authored
+  profiles and corpus-derived personal voices
 - Writing-mode support (LinkedIn, academic, technical, casual, ...)
 - Whitespace/heading normalization (`PassthroughEditor`)
 - Red Pen (deterministic critique, never auto-rewrites)
 - Heuristic claim extraction (every claim starts `UNVERIFIABLE`, honestly)
 - The APA 7 citation formatter, including missing-metadata warnings
 - The voice corpus-stats learner
+- Voice Corpus Profiling: corpus discovery, safe DOCX/ODT/RTF/HTML/TXT/MD
+  extraction (PDF via the optional `corpus` extra), academic-apparatus
+  cleanup, corpus-quality and context classification, deduplication and
+  revision grouping, ~35 deterministic style features, a stable
+  train/holdout split, holdout validation, and the private local voice
+  registry under `~/.howlwriter/voices/`
 - Meaning-preservation review (number/attribution/hedge diffing)
 - The full `howl` pipeline and every CLI subcommand
 - Local web application (FastAPI + React) with source/claim/verification UI
@@ -108,13 +117,13 @@ See [docs/architecture.md](docs/architecture.md) for the full walkthrough.
 
 - Model-backed rewriting (`HumanizerRewriter`), prose-level editing
   (`Editor`'s model mode), claim verification (`ClaimVerifier`), research
-  (`Researcher`), qualitative voice analysis (`VoiceAnalyzer`), and
-  semantic meaning comparison (`ModelMeaningReviewer`)
+  (`Researcher`), qualitative voice analysis (`VoiceAnalyzer`), abstract
+  corpus style analysis (`voice_analyst`), and semantic meaning
+  comparison (`ModelMeaningReviewer`)
 - Drafting from nothing (`WRITER`) has no deterministic path at all
 
 **Deferred entirely, named rather than half-built:** MLA/Chicago/IEEE/
-Harvard citation styles, PDF/DOCX/HTML ingestion, a real "voice match %"
-metric, citation *validation*, multi-file/directory-wide operations. See
+Harvard citation styles, a real "voice match %" metric, citation *validation*, multi-file/directory-wide operations. See
 [ROADMAP.md](ROADMAP.md).
 
 ## Installation
@@ -137,6 +146,7 @@ howlwriter lint draft.md
 howlwriter humanize draft.md
 howlwriter humanize post.md --mode linkedin
 howlwriter humanize post.md --mode linkedin --voice-profile ~/.howlwriter/voice.json
+howlwriter humanize post.md --mode linkedin --voice jane
 
 # Run the full editorial pipeline
 howlwriter howl draft.md --mode linkedin
@@ -154,8 +164,15 @@ howlwriter references apa7 sources.json
 # Was this source actually retrieved?
 howlwriter sources sources.json
 
-# Learn a voice profile from an author's own writing
+# Learn a voice profile from an author's own writing (plain text, no model)
 howlwriter voice learn post1.txt post2.txt --author "Jane Doe"
+
+# Build a private personal voice from a real corpus of your own documents.
+# Stored in ~/.howlwriter/voices/, never committed, no passages retained.
+howlwriter voice build --name jane --source ~/Documents/writing --recursive
+howlwriter voice inspect jane
+howlwriter voice rebuild jane
+howlwriter voice list
 
 # Compare meaning between two files (e.g. before/after a rewrite)
 howlwriter finalize original.md revised.md

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import tempfile
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from howlwriter.config.loader import ConfigLoader
 from howlwriter.domain.modes import parse_mode
@@ -15,6 +15,7 @@ from howlwriter.web.models import (
     RedPenFindingDto,
     RuleMatchDto,
 )
+from howlwriter.voice.corpus.resolve import resolve_voice_option
 
 router = APIRouter(prefix="/api/howl", tags=["howl"])
 
@@ -24,8 +25,14 @@ def execute_howl_pipeline(req: HowlPipelineRequest) -> HowlPipelineResponse:
     config = ConfigLoader().load(
         project_config_path=req.config_path, mode=parse_mode(req.mode)
     )
-    if req.voice_profile:
-        config.voice_profile = req.voice_profile
+    try:
+        resolved = resolve_voice_option(
+            voice=req.voice, voice_profile=req.voice_profile
+        )
+    except (ValueError, FileNotFoundError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if resolved:
+        config.voice_profile = resolved
 
     # Write to a temporary file to leverage run_howl_pipeline's atomic file behavior
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as tf:

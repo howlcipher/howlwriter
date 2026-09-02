@@ -28,6 +28,7 @@ from howlwriter.review.meaning import (
     MeaningPreservationReviewer,
     RealModelMeaningReviewer,
 )
+from howlwriter.voice.corpus.resolve import resolve_voice_option
 
 
 def add_subparser(
@@ -46,6 +47,11 @@ def add_subparser(
         "--mode",
         default=None,
         help="Writing mode (linkedin, academic, technical, casual, ...).",
+    )
+    parser.add_argument(
+        "--voice",
+        default=None,
+        help="Name of a personal voice built with `howlwriter voice build`.",
     )
     parser.add_argument(
         "--voice-profile",
@@ -82,8 +88,10 @@ def run(args: argparse.Namespace) -> int:
     config = ConfigLoader().load(
         mode=mode, project_config_path=args.project_config_path
     )
-    if args.voice_profile:
-        config.voice_profile = args.voice_profile
+    config.voice_profile = resolve_voice_option(
+        voice=getattr(args, "voice", None),
+        voice_profile=args.voice_profile,
+    ) or config.voice_profile
 
     text = Path(args.path).read_text(encoding="utf-8")
     document = Document.parse(text, title=Path(args.path).stem, mode=mode)

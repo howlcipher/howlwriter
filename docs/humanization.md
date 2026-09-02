@@ -48,9 +48,12 @@ The Humanizer's priorities are:
 
 Mode-specific instructions guide the model-backed Humanizer. Current modes:
 
-- `linkedin` / short-form: direct opening, conversational professional tone,
-  varied sentence length, no unnecessary conclusions, no fake
-  thought-leadership tone, preserve humor/sarcasm, keep technical terms.
+- `linkedin` / short-form: direct opening, conversational human tone,
+  preservation of natural pronouns ('I', 'you', 'your business'), compact
+  paragraphs, varied sentence length, no corporate whitepaper jargon, no
+  unnecessary conclusions, no algorithmic engagement bait ('Agree?'), no fake
+  viral hooks ('Let that sink in'), no hashtag spam (2-4 relevant tags permitted),
+  and no emoji bullets.
 - `academic`: keep formal clarity, citations, technical terminology,
   qualifications, scholarly tone; remove generic LLM filler but do not
   casualize.
@@ -88,6 +91,11 @@ for why the two are not a separate pattern list):
 | `AI_STYLE_REPETITIVE_PARAGRAPH_STRUCTURE` | Three or more paragraphs opening with the same word |
 | `AI_STYLE_PARAGRAPH_LENGTH_SYMMETRY` | Paragraphs with suspiciously uniform sentence counts |
 | `AI_STYLE_EXCESSIVE_RHETORICAL_QUESTIONS` | Question sentences making up a quarter or more of the document |
+| `AI_STYLE_ENGAGEMENT_BAIT` | Formulaic calls for engagement ('Agree?', 'Thoughts?', 'Drop a comment') |
+| `AI_STYLE_FAKE_RHETORICAL_HOOK` | Viral hooks ('Let that sink in', 'Here's the thing', 'This changes everything') |
+| `AI_STYLE_HASHTAG_SPAM` | Hashtag walls exceeding 4 tags |
+| `AI_STYLE_EMOJI_BULLETS` | Emoji used as list bullet points |
+| `AI_STYLE_MOTIVATIONAL_SLOP` | Generic corporate cheerleading ('The future belongs to', 'unlock your true potential') |
 
 Excessive headings and excessive bold are detected too
 (`AI_STYLE_EXCESSIVE_HEADINGS`, `AI_STYLE_EXCESSIVE_BOLD`), but

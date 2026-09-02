@@ -1,0 +1,64 @@
+# A synthetic SHARED STYLE, written by hand for documentation and tests.
+#
+# The distinction from a personal voice is the point of this file.
+#
+# A personal voice is derived from one individual's writing. It is private
+# user data, it lives outside the repository, and it is never committed or
+# distributed. A shared style is generic editorial guidance: it describes a
+# way of writing, not a person, and it is safe to check in and hand around.
+#
+# A personal voice must never become a shared style. Sanitizing someone's
+# profile -- stripping the counts, renaming it, keeping the traits -- does not
+# make it generic; it makes it a distributed description of how a specific
+# person writes. Shared styles are authored, like this one, not derived.
+#
+# Because no individual is being described, there is no corpus, no holdout,
+# no confidence, and no evidence block. There is nothing to be confident
+# about: these are editorial choices, not observations.
+
+version: 1
+type: shared_style
+
+identity:
+  profile_name: direct-professional
+  description: >
+    Clear workplace prose. Says the thing, then stops. Suited to internal
+    documents, handoffs, and updates that people have to act on rather than
+    admire.
+
+global:
+  formality: medium
+  directness: high
+  hedging: rare
+  explanatory_style: balanced
+  conversational_quality: measured
+  natural_roughness: light
+  concreteness: concrete
+  use_of_examples: common
+  opening_behavior: direct_entry
+  conclusion_behavior: concise
+  transition_behavior: light
+  technical_density: medium
+
+# A shared style may still adjust by context. Same rule as a personal voice:
+# the context modifies the global guidance rather than replacing it.
+contexts:
+  academic:
+    formality: high
+    technical_density: high
+    hedging: moderate
+    contractions: rare
+
+  professional:
+    directness: high
+    concision: medium_high
+    contractions: occasional
+
+# Guidance about what this style avoids. These are editorial rules, not
+# observed habits, and there is deliberately no phrase list here: a style is
+# a way of making decisions, not a bank of sentences to paste.
+avoid:
+  - corporate filler and throat-clearing openings
+  - conclusions that restate the document
+  - inflated importance language
+  - symmetrical three-part lists used as a default structure

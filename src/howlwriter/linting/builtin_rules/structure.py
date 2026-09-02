@@ -70,11 +70,12 @@ def check_paragraph_length_symmetry(document: Document, config: HowlWriterConfig
             )
         ]
     stdev = statistics.pstdev(counts) if len(counts) > 1 else 0
-    if stdev <= _LENGTH_SYMMETRY_STDEV_THRESHOLD:
+    mean_count = statistics.mean(counts)
+    if mean_count > 2.0 and stdev <= _LENGTH_SYMMETRY_STDEV_THRESHOLD:
         return [
             RuleMatch(
                 rule_code=AI_STYLE_PARAGRAPH_LENGTH_SYMMETRY,
-                matched_text=str(int(statistics.mean(counts))),
+                matched_text=str(int(mean_count)),
                 message=(
                     f"Paragraph sentence counts vary only by {stdev:.1f} "
                     "sentences -- may be mechanically uniform."

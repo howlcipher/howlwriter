@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import time
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from howlwriter.config.loader import ConfigLoader
 from howlwriter.diagnostic.run_record import (
@@ -28,6 +28,7 @@ from howlwriter.web.models import (
     HumanizeResponse,
     RuleMatchDto,
 )
+from howlwriter.voice.corpus.resolve import resolve_voice_option
 
 router = APIRouter(prefix="/api/humanize", tags=["humanize"])
 
@@ -43,8 +44,14 @@ def run_humanize(req: HumanizeRequest) -> HumanizeResponse:
     if req.apply_safe_rewrites:
         config.apply_safe_rewrites = True
 
-    if req.voice_profile:
-        config.voice_profile = req.voice_profile
+    try:
+        resolved = resolve_voice_option(
+            voice=req.voice, voice_profile=req.voice_profile
+        )
+    except (ValueError, FileNotFoundError) as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if resolved:
+        config.voice_profile = resolved
 
     mode = parse_mode(req.mode)
     document = Document.parse(req.text, title=req.title or "Untitled", mode=mode)

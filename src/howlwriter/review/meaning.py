@@ -329,9 +329,11 @@ EVALUATION CRITERIA (substantive changes only):
 BENIGN STYLE EDITS (do NOT return FAIL for these):
 - Removing filler words such as "Furthermore", "Moreover", "In conclusion"
 - Changing transition words ("However" -> "Yet")
+- Adapting to conversational/social medium cadence (e.g. natural first/second
+  person, compact paragraphs, standard hashtags) while preserving causal logic
 - Splitting or combining sentences while the propositions remain the same
 - Simplifying phrasing, removing redundancy, or varying rhythm
-- Removing canned conclusions or summary phrases
+- Removing canned conclusions, viral hooks, or engagement bait
 
 If a rewrite is only a benign style edit, return PASS (or PASS_WITH_WARNINGS
 if you are uncertain but the risk looks remote). Use FAIL only when a

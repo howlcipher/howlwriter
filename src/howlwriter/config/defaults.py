@@ -33,6 +33,11 @@ BUILTIN_BANNED_PATTERNS: list[str] = [
     "excessive_rhetorical_questions",
     "repetitive_mini_conclusion",
     "paragraph_length_symmetry",
+    "engagement_bait",
+    "fake_rhetorical_hook",
+    "hashtag_spam",
+    "emoji_bullets",
+    "motivational_slop",
 ]
 
 

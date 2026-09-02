@@ -21,7 +21,7 @@ from howlwriter.domain.document import Document
 from howlwriter.domain.modes import WritingMode
 from howlwriter.domain.report import ChangeRecord
 from howlwriter.domain.serialization import DataClassSerializationMixin
-from howlwriter.domain.voice import VoiceExample, VoiceProfile
+from howlwriter.domain.voice import VoiceProfile
 from howlwriter.humanize.detector import detect
 from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import NotConfiguredRole, WritingRole
@@ -110,6 +110,10 @@ def _load_voice_profile(value: str | None) -> VoiceProfile | None:
     Otherwise treat it as an author label and return None. This keeps the
     config field a simple string while still allowing callers to point at a
     real profile on disk.
+
+    `--voice <name>` also arrives here: the CLI resolves a named personal
+    voice to its profile.json path before setting this field, so both flags
+    converge on one loader rather than growing a second consumer.
     """
     if not value:
         return None
@@ -118,9 +122,24 @@ def _load_voice_profile(value: str | None) -> VoiceProfile | None:
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return VoiceProfile.from_dict(data)
+        profile = VoiceProfile.from_dict(data)
     except Exception:
         return None
+
+    # Overrides are stored beside the profile so a rebuild cannot overwrite
+    # them, which means they have to be re-attached when loading from a voice
+    # directory. A standalone profile file simply has none.
+    overrides_path = path.parent / "overrides.yaml"
+    if profile.is_corpus_built and overrides_path.is_file():
+        try:
+            from howlwriter.voice.corpus.store import VoiceStore
+
+            profile.overrides = VoiceStore(
+                path.parent.name, root=path.parent.parent
+            ).load_overrides()
+        except Exception:
+            pass
+    return profile
 
 
 def _mode_specific_instructions(mode: Any) -> str:
@@ -132,13 +151,26 @@ def _mode_specific_instructions(mode: Any) -> str:
         return "\n".join([
             "LINKEDIN / SHORT-FORM MODE:",
             "- Prefer a direct opening. Cut throat-clearing setup.",
-            "- Preserve first-person voice and conversational tone if the source uses them.",
-            "- Keep sentence length varied; keep short punchy sentences.",
-            "- Avoid headings, corporate filler, generic motivational endings, "
-            "and fake thought-leadership tone.",
-            "- Preserve humor, sarcasm, and mild roughness where present.",
-            "- Do not add a conclusion that merely restates the post.",
-            "- Do not casualize professional substance; keep technical terms intact.",
+            "- Deliver a direct, conversational argument with natural flow and human cadence.",
+            "- Preserve conversational pronouns ('I', 'you', 'your business', 'we') when natural. "
+            "NEVER sanitize them into formal third-person ('enterprises', 'organizations', 'one').",
+            "- Avoid corporate whitepaper jargon and thesaurus upgrades "
+            "('constructs', 'ceases to function', 'renders vulnerable'). Use crisp, direct language.",
+            "- Do NOT strip out essential thesis distinctions or qualifying nuance "
+            "('The point is not that X... the real issue is Y'). A substantive contrast that "
+            "clarifies the boundary of an argument is NOT generic AI filler.",
+            "- Keep paragraphs compact (1-3 sentences) with natural human rhythm. "
+            "Do NOT force all paragraphs into identical length or artificial bullet stencils.",
+            "- Strictly forbid algorithmic engagement bait "
+            "('Agree?', 'Thoughts?', 'Drop a comment', 'What do you think?').",
+            "- Strictly forbid fake viral rhetorical hooks "
+            "('Let that sink in', 'Here's the thing', 'This changes everything').",
+            "- A small set of 2-4 natural, relevant hashtags at the very end is acceptable if appropriate "
+            "(e.g., #SoftwareEngineering #AI #SaaS), but strictly avoid hashtag spam.",
+            "- Strictly avoid emoji bullets or decorative emoji spam.",
+            "- End on a thoughtful, concrete observation or dilemma rather than a "
+            "forced motivational ending.",
+            "- Do not casualize technical terms into vague hand-waving.",
         ])
     if m == WritingMode.ACADEMIC:
         return "\n".join([
@@ -172,41 +204,17 @@ def _mode_specific_instructions(mode: Any) -> str:
     ])
 
 
-def _render_voice_profile(profile: VoiceProfile | None) -> str:
-    if profile is None:
-        return "None"
-    parts: list[str] = []
-    if profile.author_name:
-        parts.append(f"author_name: {profile.author_name}")
-    if profile.formality is not None:
-        parts.append(f"formality: {profile.formality}")
-    if profile.sentence_length_mean is not None:
-        parts.append(f"sentence_length_mean: {profile.sentence_length_mean:.1f}")
-    if profile.sentence_length_stdev is not None:
-        parts.append(f"sentence_length_stdev: {profile.sentence_length_stdev:.1f}")
-    if profile.paragraph_length_mean is not None:
-        parts.append(f"paragraph_length_mean: {profile.paragraph_length_mean:.1f}")
-    if profile.contraction_rate is not None:
-        parts.append(f"contraction_rate: {profile.contraction_rate:.2f}")
-    if profile.fragment_rate is not None:
-        parts.append(f"fragment_rate: {profile.fragment_rate:.2f}")
-    if profile.rhetorical_question_rate is not None:
-        parts.append(f"rhetorical_question_rate: {profile.rhetorical_question_rate:.2f}")
-    if profile.preferred_phrases:
-        parts.append(f"preferred_phrases: {', '.join(profile.preferred_phrases)}")
-    if profile.disliked_phrases:
-        parts.append(f"disliked_phrases: {', '.join(profile.disliked_phrases)}")
-    if profile.structural_notes:
-        parts.append(f"structural_notes: {profile.structural_notes}")
-    examples = [
-        ex.text if isinstance(ex, VoiceExample) else str(ex.get("text", ""))
-        for ex in profile.representative_examples[:3]
-    ]
-    if examples:
-        parts.append("representative_examples:")
-        for example in examples:
-            parts.append(f"  - {example}")
-    return "\n".join(parts) if parts else "Empty VoiceProfile"
+def _render_voice_profile(profile: VoiceProfile | None, mode: Any = None) -> str:
+    """Render a VoiceProfile for the prompt.
+
+    Delegates to voice/application.py, which handles both schema
+    generations: a hand-written profile renders exactly as it always has,
+    while a corpus-built one renders contextual tendencies and is framed as a
+    distribution rather than a target.
+    """
+    from howlwriter.voice.application import render_profile
+
+    return render_profile(profile, mode)
 
 
 class ModelHumanizerRewriter:
@@ -251,7 +259,7 @@ class ModelHumanizerRewriter:
         )
 
         voice_profile = _load_voice_profile(config.voice_profile)
-        voice_text = _render_voice_profile(voice_profile)
+        voice_text = _render_voice_profile(voice_profile, document.mode)
 
         mode_label = (
             document.mode.value
@@ -313,6 +321,9 @@ class ModelHumanizerRewriter:
             "- REPETITIVE_STRUCTURE",
             "- CORPORATE_FILLER",
             "- RHYTHM_NORMALIZATION",
+            "- ENGAGEMENT_BAIT_REMOVED",
+            "- VIRAL_HOOK_REMOVED",
+            "- SOCIAL_SLOP_REMOVED",
             "- FACT_PRESERVATION_NOTE (use only when you reworded something generic "
             "but kept every fact)",
             "",

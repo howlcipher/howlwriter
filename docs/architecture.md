@@ -14,7 +14,11 @@ src/howlwriter/
 ├── facts/        HeuristicClaimExtractor + the ClaimVerifier Protocol
 ├── research/     the Researcher Protocol (no real implementation)
 ├── citations/    CitationStyle registry + the APA7Formatter
-├── voice/        CorpusStatsLearner + the VoiceAnalyzer Protocol
+├── voice/        Voice corpus profiling (voice/corpus/: discovery,
+│                 extraction, cleanup, quality, dedup, features, traits,
+│                 split, aggregation, validation, the private store) plus
+│                 CorpusStatsLearner and the VoiceAnalyzer Protocol.
+│                 See docs/voice-corpus.md
 ├── review/       MeaningPreservationReviewer + the WritingRole registry
 ├── integration/  ModelBackedRole / ModelRoleNotConfiguredError -- the one
 │                 seam every model-backed capability above shares

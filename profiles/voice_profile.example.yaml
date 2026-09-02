@@ -1,0 +1,165 @@
+# A synthetic personal-voice profile, written by hand for documentation and
+# tests. It is not derived from anyone's corpus, sanitized from a real
+# profile, or generalized from one. Every value below was invented to
+# illustrate the schema.
+#
+# A real personal voice is produced by `howlwriter voice build`, lives in
+# ~/.howlwriter/voices/<name>/, and is never committed. This file exists so
+# the shape of a profile can be read without opening someone's private one.
+
+version: 1
+type: personal_voice
+
+identity:
+  profile_name: example
+  # No real name, email, or identifying field is required. A voice is
+  # addressed by the local name you gave it and nothing else.
+
+# Global tendencies. Each is a labelled distribution with the evidence behind
+# it -- not a target to hit. "sentence_length: medium" means this writer's
+# sentences cluster around the middle of their own range, and that range is
+# what should be reproduced, not the midpoint.
+global:
+  formality:
+    value: medium
+    confidence: 0.82
+    supporting_documents: 18
+    supporting_words: 31400
+    agreement: 0.78
+    source: model
+  directness:
+    value: high
+    confidence: 0.88
+    supporting_documents: 18
+    supporting_words: 31400
+    agreement: 0.89
+    source: model
+  sentence_variation:
+    value: high
+    confidence: 0.91
+    supporting_documents: 18
+    supporting_words: 31400
+    agreement: 0.94
+    source: deterministic
+  paragraph_variation:
+    value: medium_high
+    confidence: 0.74
+    supporting_documents: 18
+    supporting_words: 31400
+    agreement: 0.71
+    source: deterministic
+  contractions:
+    value: occasional
+    confidence: 0.69
+    supporting_documents: 18
+    supporting_words: 31400
+    agreement: 0.66
+    source: deterministic
+  natural_roughness:
+    value: moderate
+    confidence: 0.63
+    supporting_documents: 15
+    supporting_words: 27100
+    agreement: 0.60
+    source: model
+  opening_behavior:
+    value: direct_entry
+    confidence: 0.71
+    supporting_documents: 15
+    supporting_words: 27100
+    agreement: 0.73
+    source: model
+  conclusion_behavior:
+    value: stops
+    confidence: 0.58
+    supporting_documents: 15
+    supporting_words: 27100
+    agreement: 0.55
+    source: model
+
+# Contexts MODIFY the global tendencies for a kind of writing. They never
+# replace the profile, and a context built on thin evidence is marked so it
+# cannot outweigh a global pattern that far more documents support.
+contexts:
+  academic:
+    document_count: 11
+    word_count: 21800
+    confidence: 0.79
+    sufficiency: adequate
+    traits:
+      formality:
+        value: high
+        confidence: 0.85
+        source: model
+      technical_density:
+        value: high
+        confidence: 0.80
+        source: model
+      contractions:
+        value: rare
+        confidence: 0.83
+        source: deterministic
+
+  professional:
+    document_count: 5
+    word_count: 6900
+    confidence: 0.52
+    sufficiency: limited
+    traits:
+      directness:
+        value: high
+        confidence: 0.61
+        source: model
+      concision:
+        value: medium_high
+        confidence: 0.48
+        source: model
+
+# Deterministic aggregates. The spread fields matter as much as the means:
+# they are what stop profile application from flattening a writer onto their
+# own average.
+distributions:
+  sentence_length_mean: 19.4
+  sentence_length_median: 18.0
+  sentence_length_stdev: 8.7
+  sentence_length_p10: 9.0
+  sentence_length_p90: 32.0
+  paragraph_words_mean: 61.2
+  lexical_diversity: 0.52
+  contraction_rate: 0.44
+  first_person_rate: 1.10
+  transition_rate: 0.14
+  readability_grade: 12.8
+
+# User corrections. Generated traits are observations and can be wrong; these
+# are stated intent, they outrank everything above, and a rebuild leaves them
+# untouched. In a real voice these live in overrides.yaml so no rebuild can
+# ever overwrite them.
+overrides:
+  preserve: []
+  avoid: []
+  traits: {}
+  notes: ""
+
+# Counts only. No filenames, no paths, no excerpts.
+corpus_summary:
+  included_documents: 18
+  holdout_documents: 4
+  excluded_documents: 26
+  training_words: 31400
+  holdout_words: 7200
+  revision_groups: 3
+  sufficiency: adequate
+
+# Alignment bands from documents held back before the profile was built.
+# Deliberately not a probability, and never an authorship claim.
+validation:
+  alignment:
+    sentence_cadence: STRONG
+    paragraph_structure: STRONG
+    lexical_complexity: MODERATE
+    punctuation: STRONG
+    contractions: MODERATE
+    formality: STRONG
+  overall_confidence: MEDIUM
+  diversity_preservation: PASS

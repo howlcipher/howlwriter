@@ -13,6 +13,7 @@ from howlwriter.academic.research import load_sources_file, save_sources_file
 from howlwriter.academic.spec import load_assignment_spec
 from howlwriter.config.loader import ConfigLoader
 from howlwriter.domain.io import atomic_write_text
+from howlwriter.voice.corpus.resolve import resolve_voice_option
 
 
 def add_subparser(
@@ -43,6 +44,18 @@ def add_subparser(
         help="Path to pre-collected sources.json file to use for research context.",
     )
     parser.add_argument(
+        "--voice",
+        default=None,
+        help="Name of a personal voice built with `howlwriter voice build`. The "
+             "academic context is applied inside the assignment's own constraints.",
+    )
+    parser.add_argument(
+        "--voice-profile",
+        dest="voice_profile",
+        default=None,
+        help="Path to a VoiceProfile JSON, or an author label.",
+    )
+    parser.add_argument(
         "--deterministic",
         action="store_true",
         help="Run in deterministic-only mode without invoking model providers.",
@@ -64,6 +77,14 @@ def run(args: argparse.Namespace) -> int:
         return 1
 
     config = ConfigLoader().load(project_config_path=args.project_config_path)
+
+    # The assignment spec may name a profile; an explicit flag wins over it,
+    # and both are subordinate to the spec's own requirements and limits.
+    resolved_voice = resolve_voice_option(
+        voice=getattr(args, "voice", None),
+        voice_profile=getattr(args, "voice_profile", None),
+    )
+    config.voice_profile = resolved_voice or spec.voice_profile or config.voice_profile
 
     existing_sources = None
     if args.sources:

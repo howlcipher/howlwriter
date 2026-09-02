@@ -14,6 +14,8 @@ import {
   RedPenResponse,
   RunRecord,
   ValidateSpecResponse,
+  VoiceDetail,
+  VoiceSummary,
 } from '../types';
 
 const API_BASE = '/api';
@@ -197,4 +199,29 @@ export const api = {
     const res = await fetch(`${API_BASE}/providers`);
     return handleResponse<ProvidersResponse>(res);
   },
+
+  // --- Personal voices ---
+
+  async listVoices(): Promise<VoiceSummary[]> {
+    const res = await fetch(`${API_BASE}/voices`);
+    return handleResponse<VoiceSummary[]>(res);
+  },
+
+  async getVoice(name: string): Promise<VoiceDetail> {
+    const res = await fetch(`${API_BASE}/voices/${encodeURIComponent(name)}`);
+    return handleResponse<VoiceDetail>(res);
+  },
+
+  async rebuildVoice(
+    name: string,
+    params: { deterministic?: boolean; reuse_cache?: boolean } = {},
+  ): Promise<JobResponse> {
+    const res = await fetch(`${API_BASE}/voices/${encodeURIComponent(name)}/rebuild`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deterministic: false, reuse_cache: true, ...params }),
+    });
+    return handleResponse<JobResponse>(res);
+  },
+
 };
