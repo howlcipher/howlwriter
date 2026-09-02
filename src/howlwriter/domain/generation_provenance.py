@@ -275,6 +275,8 @@ class GenerationProvenance(DataClassSerializationMixin):
     research: dict[str, Any] = field(default_factory=dict)
     review: dict[str, Any] = field(default_factory=dict)
     added_claims: list[dict[str, Any]] = field(default_factory=list)
+    structural_realization: dict[str, Any] | None = None
+    reviewer_independence_by_stage: dict[str, str] = field(default_factory=dict)
     gaps: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     #: True only when every stage that ran was captured. A run that failed part

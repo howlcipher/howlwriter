@@ -64,6 +64,7 @@ class ModelAcademicWriter:
         cwd: Path | str | None = None,
         custom_backend: Any | None = None,
         run_id: str | None = None,
+        realization: Any | None = None,
     ) -> WriterDraftResult:
         """Invokes the WRITER role to draft an academic paper strictly grounded in retrieved sources."""
         bridge = get_howlplane_bridge()
@@ -93,12 +94,24 @@ class ModelAcademicWriter:
         outline_str = _format_outline(spec.outline)
         reqs_str = _format_requirements(spec.requirements)
 
+        realization_block = ""
+        if realization is not None:
+            from howlwriter.voice.realization import render_structural_realization_prompt
+
+            realization_lines = render_structural_realization_prompt(realization)
+            realization_block = (
+                "\n"
+                + "\n".join(realization_lines)
+                + "\n(Note: Academic integrity rules, outline requirements, and retrieved "
+                "source evidence strictly outrank voice realization.)\n"
+            )
+
         prompt = f"""You are executing the WRITER role under the HowlWriter academic contract.
 Your mission is to draft a rigorous, high-quality academic research paper on the specified topic,
 strictly structured according to the required outline and strictly grounded in the retrieved sources.
 
 {ACADEMIC_PRIORITY_ORDERING_GUIDANCE}
-
+{realization_block}
 ASSIGNMENT TITLE: {spec.title}
 TOPIC: {spec.topic}
 TARGET WORD COUNT (BODY): aim for approximately {aim_words} words
@@ -191,7 +204,11 @@ warnings: []
         claims_made = (
             structured.get("claims_made")
             if isinstance(structured.get("claims_made"), list)
-            else []
+            else (
+                structured.get("added_claims")
+                if isinstance(structured.get("added_claims"), list)
+                else []
+            )
         )
         warnings = [
             str(w) for w in structured.get("warnings", []) if isinstance(w, str)

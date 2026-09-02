@@ -138,6 +138,7 @@ def _run_academic_pipeline(
     max_length_retries: int = 2,
     stage_callback: Callable[[str, str, dict[str, Any]], None] | None = None,
     outline: Any | None = None,
+    seed: int | None = None,
 ) -> AcademicPipelineResult:
     """Executes the full researched academic paper pipeline.
 
@@ -202,6 +203,25 @@ def _run_academic_pipeline(
         provenance.research["requested"] = research_questions(outline)
     recorder_token = recorder.activate()
 
+    realization = None
+    if cfg.voice_profile:
+        from howlwriter.humanize.rewriter import _load_voice_profile
+        from howlwriter.voice.realization import derive_structural_realization
+
+        profile = _load_voice_profile(cfg.voice_profile)
+        if profile is not None:
+            realization = derive_structural_realization(
+                profile=profile,
+                mode=WritingMode.ACADEMIC,
+                outline=outline,
+                target_words=spec.target_words,
+                input_text=spec.topic,
+                seed=seed,
+                freedom=provenance.generation_freedom,
+            )
+            if realization:
+                provenance.structural_realization = realization.to_dict()
+
     _notify("validate", "DONE", "Assignment Validated", {
         "title": spec.title,
         "topic": spec.topic,
@@ -258,10 +278,28 @@ def _run_academic_pipeline(
             cwd=cwd,
             custom_backend=custom_backend,
             run_id=active_run_id,
+            realization=realization,
         )
         draft_doc = draft_res.document
         writer_provider = draft_res.provider
         writer_stated_claims = draft_res.claims_stated
+        normalized_claims: list[dict[str, Any]] = []
+        for c in writer_stated_claims:
+            if isinstance(c, dict):
+                c_text = str(c.get("claim") or c.get("claim_text") or "").strip()
+                s_id = str(c.get("source_id") or "").strip()
+                snip = str(c.get("evidence_snippet") or "").strip()
+                default_basis = f"source {s_id}: {snip}" if s_id else "model_addition"
+                basis = str(c.get("basis") or default_basis).strip()
+                normalized_claims.append({
+                    "claim": c_text,
+                    "source_id": s_id,
+                    "evidence_snippet": snip,
+                    "basis": basis,
+                })
+            elif isinstance(c, str) and c.strip():
+                normalized_claims.append({"claim": c.strip(), "basis": "model_addition"})
+        provenance.added_claims = normalized_claims
     else:
         # Deterministic drafting fallback: structured sections with evidence placeholders
         body_sections: list[str] = [f"# {spec.title}\n"]
@@ -435,9 +473,13 @@ def _run_academic_pipeline(
         )
         meaning_reviewer_provider = semantic_res.provider
         reviewer_independence = semantic_res.independence_status
+        provenance.reviewer_independence_by_stage["meaning_review"] = (
+            reviewer_independence or "UNKNOWN"
+        )
         meaning_review_duration = semantic_res.duration_seconds
     elif humanizer_provider is not None:
-        reviewer_independence = "NOT_REVIEWED"
+        reviewer_independence = "NO_REVIEWER"
+        provenance.reviewer_independence_by_stage["meaning_review"] = "NO_REVIEWER"
 
     # 8b. CONSISTENCY REVIEW (sequence/dependency + heading/label + citation fit)
     consistency_res: ConsistencyReviewResult | None = None
@@ -450,6 +492,14 @@ def _run_academic_pipeline(
             custom_backend=custom_backend,
             run_id=active_run_id,
         )
+        consistency_indep = (
+            "INDEPENDENT_PROVIDER"
+            if (writer_provider and consistency_res.provider and writer_provider != consistency_res.provider)
+            else ("SAME_PROVIDER" if (writer_provider and consistency_res.provider) else "UNKNOWN")
+        )
+        provenance.reviewer_independence_by_stage["consistency_review"] = consistency_indep
+    else:
+        provenance.reviewer_independence_by_stage["consistency_review"] = "NO_REVIEWER"
     _notify("meaning_review", "DONE", "Meaning Preservation Review", {
         "deterministic_status": meaning_det.status,
         "semantic_status": semantic_res.verdict if semantic_res else None,
@@ -481,6 +531,7 @@ def _run_academic_pipeline(
     #   only TOO_SHORT/HARD_LIMIT_FAILURE block readiness. See
     #   academic/length.py's evaluate_word_count_bounds.)
     # - Outline conformance (outline_res.status == "PASS")
+    # - Preserved passages and required outline points honored (coverage passes)
     # - Sources count meets minimum requirement
     # - No unsupported or contradicted factual claims
     # - No ungrounded direct quotations
@@ -503,10 +554,21 @@ def _run_academic_pipeline(
     )
     has_length_deficiency = wc_status in ("TOO_SHORT", "HARD_LIMIT_FAILURE")
 
+    authorship_coverage = None
+    has_authorship_deficiency = False
+    if outline is not None:
+        authorship_coverage = check_coverage(outline, final_document.text)
+        provenance.coverage = authorship_coverage.to_dict()
+        has_authorship_deficiency = (
+            getattr(authorship_coverage, "status", None) == "FAIL"
+            or getattr(authorship_coverage, "verdict", None) == "FAIL"
+        )
+
     if (
         has_length_deficiency
         or outline_res.status != "PASS"
         or coverage_res.status != "PASS"
+        or has_authorship_deficiency
         or has_source_deficiency
         or has_claim_deficiency
         or has_redundancy_deficiency
@@ -694,16 +756,18 @@ def _run_academic_pipeline(
     )
     provenance.review["model_additions"] = claim_review.to_dict()
 
-    authorship_coverage = None
-    if outline is not None:
+    if outline is not None and authorship_coverage is None:
         authorship_coverage = check_coverage(outline, final_document.text)
         provenance.coverage = authorship_coverage.to_dict()
-        provenance.contribution = build_contribution(
-            outline,
-            coverage=provenance.coverage,
-            artifact_text=final_document.text,
-            unsupported=len(provenance_graph.unsupported_claims()),
-        )
+
+    provenance.contribution = build_contribution(
+        outline,
+        coverage=provenance.coverage,
+        artifact_text=final_document.text,
+        added_claims=provenance.added_claims,
+        gaps=provenance.gaps,
+        unsupported=len(provenance_graph.unsupported_claims()),
+    )
     provenance.complete = True
     save_provenance(provenance)
     ai_statement = build_ai_use_statement(provenance)
