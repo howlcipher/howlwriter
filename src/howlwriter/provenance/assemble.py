@@ -27,6 +27,7 @@ from howlwriter.domain.generation_provenance import (
     LEVEL_SUMMARY,
     ContributionSummary,
     GenerationProvenance,
+    redact,
     sha256_text,
 )
 from howlwriter.domain.io import atomic_write_text
@@ -120,6 +121,25 @@ def build_contribution(
     return summary
 
 
+def _redact_tree(value: Any, mask_paths: bool) -> Any:
+    """Redact every string anywhere in a nested structure.
+
+    Redacting only the prompt fields was not enough. A coverage finding echoes
+    the user's preserved text back into the record verbatim, so a credential
+    that appeared in a preserved passage survived at `coverage.findings[].text`
+    while the prompt that carried the same string was cleaned. Anything that
+    can hold free text has to be covered, including fields added later, so this
+    walks the whole tree rather than naming carriers one at a time.
+    """
+    if isinstance(value, str):
+        return redact(value, mask_paths=mask_paths)
+    if isinstance(value, dict):
+        return {k: _redact_tree(v, mask_paths) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_tree(v, mask_paths) for v in value]
+    return value
+
+
 def finalize(
     provenance: GenerationProvenance,
     *,
@@ -137,7 +157,16 @@ def finalize(
         call.redacted(level=level, mask_paths=mask_paths) for call in provenance.calls
     ]
     reduced.completed_at = provenance.completed_at or datetime.now(timezone.utc).isoformat()
-    return reduced
+
+    # Everything outside the calls -- coverage findings, gaps, warnings, added
+    # claims, origin excerpts -- goes through the same scrub. The calls are
+    # excluded because `redacted` has already handled them at the right level,
+    # and re-running it would undo the summary-level suppression.
+    payload = reduced.to_dict()
+    calls = payload.pop("calls")
+    cleaned = _redact_tree(payload, mask_paths)
+    cleaned["calls"] = calls
+    return GenerationProvenance.from_dict(cleaned)
 
 
 def write_artifacts(
@@ -150,8 +179,6 @@ def write_artifacts(
     mask_paths: bool = False,
 ) -> ProvenanceArtifacts:
     """Write the sidecars beside the artifact. Local, private, never published."""
-    import yaml
-
     target = Path(artifact_path)
     stem = target.with_suffix("")
     written = ProvenanceArtifacts()
@@ -167,7 +194,9 @@ def write_artifacts(
         written.outline_yaml = Path(f"{stem}.outline.yaml")
         atomic_write_text(
             written.outline_yaml,
-            yaml.safe_dump(outline.to_dict(), sort_keys=False, allow_unicode=True),
+            "# Copy of the outline this artifact was written from.\n"
+            "# Credentials are redacted; the original file on disk is unchanged.\n"
+            + _redact_tree_yaml(outline.to_dict(), mask_paths),
         )
 
     if sources:
@@ -227,6 +256,14 @@ def load_provenance(run_id: str) -> GenerationProvenance | None:
         )
     except Exception:
         return None
+
+
+def _redact_tree_yaml(data: dict[str, Any], mask_paths: bool) -> str:
+    import yaml as _yaml
+
+    return _yaml.safe_dump(
+        _redact_tree(data, mask_paths), sort_keys=False, allow_unicode=True
+    )
 
 
 def hash_or_empty(text: str | None) -> str:

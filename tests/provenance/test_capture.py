@@ -309,3 +309,67 @@ def test_a_provenance_record_round_trips():
     assert isinstance(restored.calls[0], ModelCallRecord)
     assert restored.calls[0].role == "writer"
     assert restored.run_id == "hw-1"
+
+
+# --- redaction covers the whole record, not only the prompts ---------------
+
+def test_a_credential_in_preserved_text_is_scrubbed_from_every_sidecar(tmp_path):
+    """Redacting only the prompt fields was not enough.
+
+    A coverage finding echoes the user's preserved text back into the record
+    verbatim, so a credential inside a preserved passage survived at
+    `coverage.findings[].text` while the prompt carrying the same string was
+    cleaned. The outline sidecar reproduced it a third time.
+    """
+    from howlwriter.config.defaults import default_config
+    from howlwriter.domain.outline import load_outline
+    from howlwriter.pipeline.howl import run_howl_pipeline
+    from howlwriter.provenance.assemble import write_artifacts
+
+    secret = "sk-abcdefghijklmnopqrstuvwxyz012345"
+    body = f"Deploy uses api_key: {secret} for the pipeline."
+    _bridge_with(body)
+
+    outline = load_outline({"topic": "deploys", "nodes": [{"kind": "preserve", "text": body}]})
+    result = run_howl_pipeline(
+        None, default_config(), outline=outline,
+        custom_backend=_BACKEND, provenance_level="full",
+    )
+    artifact = tmp_path / "post.md"
+    artifact.write_text(result.final_document.text, encoding="utf-8")
+    written = write_artifacts(result.provenance, artifact, level="full", outline=outline)
+
+    for path in written.written():
+        assert secret not in path.read_text(encoding="utf-8"), f"{path.name} leaked the credential"
+
+
+def test_redaction_reaches_a_field_added_later(tmp_path):
+    """The scrub walks the record rather than naming carriers one at a time."""
+    from howlwriter.domain.generation_provenance import GenerationProvenance
+    from howlwriter.provenance.assemble import finalize
+
+    secret = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+    provenance = GenerationProvenance(
+        run_id="r",
+        gaps=[f"needs the token {secret}"],
+        warnings=[f"saw {secret} in the draft"],
+        coverage={"findings": [{"text": f"literal {secret} here", "status": "PRESENT"}]},
+        added_claims=[{"claim": f"uses {secret}", "basis": "x"}],
+    )
+    cleaned = finalize(provenance, level="full").to_json()
+
+    assert secret not in cleaned
+    assert "REDACTED" in cleaned
+
+
+_BACKEND = None
+
+
+def _bridge_with(body: str):
+    global _BACKEND
+    stdout = (
+        "```yaml\nbody_markdown: |\n  " + body + "\nadded_claims: []\ngaps: []\nwarnings: []\n```"
+    )
+    _, backend = _bridge(agent_id="fake", stdout=stdout)
+    _BACKEND = backend
+    return backend
