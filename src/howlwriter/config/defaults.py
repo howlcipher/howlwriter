@@ -19,13 +19,20 @@ BUILTIN_BANNED_WORDS: list[BannedWord] = [
 BUILTIN_BANNED_PATTERNS: list[str] = [
     "not_x_but_y",
     "empty_transition",
+    "canned_opening",
     "canned_conclusion",
+    "generic_transition",
+    "formulaic_contrast",
+    "generic_intensifier",
+    "corporate_filler",
     "repetitive_tricolon",
     "excessive_em_dash",
     "excessive_headings",
     "excessive_bold",
     "repetitive_paragraph_structure",
     "excessive_rhetorical_questions",
+    "repetitive_mini_conclusion",
+    "paragraph_length_symmetry",
 ]
 
 

@@ -23,6 +23,7 @@ MeaningPreservationStatus = Literal["PASS", "FLAGGED", "NOT_EVALUATED"]
 @dataclass
 class ChangeRecord(DataClassSerializationMixin):
     description: str
+    reason: str = ""
 
 
 @dataclass
@@ -88,6 +89,7 @@ class WritingReport(DataClassSerializationMixin):
     meaning_reviewer_duration_seconds: float | None = None
     total_duration_seconds: float | None = None
     changes: list[ChangeRecord] = field(default_factory=list)
+    change_count: int | None = None
     sources: list[Source] = field(default_factory=list)
 
     def render_text(self) -> str:
@@ -319,7 +321,11 @@ class WritingReport(DataClassSerializationMixin):
         if self.changes:
             lines.append("")
             lines.append("Changes:")
-            lines.extend(f"- {change.description}" for change in self.changes)
+            for change in self.changes:
+                if change.reason:
+                    lines.append(f"- [{change.reason}] {change.description}")
+                else:
+                    lines.append(f"- {change.description}")
 
         if self.sources and self.sources_retrieved is None:
             lines.append("")

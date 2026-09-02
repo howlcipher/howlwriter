@@ -66,11 +66,15 @@ def run_howl_pipeline(
     target_words: int | None = None,
     word_tolerance_percent: float = 15.0,
     max_words: int | None = None,
+    writing_mode: Any | None = None,
 ) -> PipelineResult:
+    from howlwriter.domain.modes import parse_mode
+
     start_time = time.time()
     active_run_id = run_id or generate_run_id()
     text = Path(path).read_text(encoding="utf-8")
-    original_document = Document.parse(text, title=Path(path).stem)
+    mode = parse_mode(writing_mode)
+    original_document = Document.parse(text, title=Path(path).stem, mode=mode)
     input_sha256 = compute_sha256(text)
     input_chars = len(text)
 
@@ -199,7 +203,7 @@ def run_howl_pipeline(
         report = WritingReport(
             status=status,
             run_id=active_run_id,
-            mode=str(original_document.mode) if original_document.mode else None,
+            mode=str(original_document.mode.value) if original_document.mode else None,
             humanizer_provider=humanizer_provider,
             meaning_reviewer_provider=meaning_reviewer_provider,
             reviewer_independence=reviewer_independence,
@@ -225,6 +229,7 @@ def run_howl_pipeline(
             ),
             total_duration_seconds=total_duration,
             changes=changes,
+            change_count=len(changes),
             target_words=target_words,
             min_words=min_words,
             max_words=resolved_max_words,
@@ -235,7 +240,7 @@ def run_howl_pipeline(
         record = RunRecord(
             run_id=active_run_id,
             command="howl",
-            writing_mode=str(original_document.mode) if original_document.mode else None,
+            writing_mode=str(original_document.mode.value) if original_document.mode else None,
             success=True,
             status=status,
             humanizer_provider=humanizer_provider,
@@ -298,7 +303,7 @@ def run_howl_pipeline(
             failure_record = RunRecord(
                 run_id=active_run_id,
                 command="howl",
-                writing_mode=str(original_document.mode) if original_document.mode else None,
+                writing_mode=str(original_document.mode.value) if original_document.mode else None,
                 success=False,
                 status="BLOCKED",
                 humanizer_provider=humanizer_provider,

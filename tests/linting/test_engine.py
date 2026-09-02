@@ -124,3 +124,72 @@ def test_excessive_rhetorical_questions_silent_when_pattern_not_configured():
     text = "Is this good? Why does it matter? Should we care? This is the answer."
     codes = _codes(text, config)
     assert rules.AI_STYLE_EXCESSIVE_RHETORICAL_QUESTIONS not in codes
+
+
+def test_canned_opening_detected_when_configured():
+    config = HowlWriterConfig(banned_patterns=["canned_opening"])
+    text = "In today's rapidly evolving technological landscape, organizations are leveraging AI."
+    codes = _codes(text, config)
+    assert rules.AI_STYLE_CANNED_OPENING in codes
+
+
+def test_canned_opening_silent_when_pattern_not_configured():
+    config = HowlWriterConfig(banned_patterns=[])
+    text = "In today's rapidly evolving technological landscape, organizations are leveraging AI."
+    codes = _codes(text, config)
+    assert rules.AI_STYLE_CANNED_OPENING not in codes
+
+
+def test_formulaic_contrast_detected_when_configured():
+    config = HowlWriterConfig(banned_patterns=["formulaic_contrast"])
+    codes = _codes("This is not about speed; it is about accuracy.", config)
+    assert rules.AI_STYLE_FORMULAIC_CONTRAST in codes
+
+
+def test_generic_transition_detected_when_repeated():
+    config = HowlWriterConfig(banned_patterns=["generic_transition"])
+    text = (
+        "Furthermore, we did A. Moreover, we did B. Additionally, we did C. "
+        "Consequently, we shipped."
+    )
+    codes = _codes(text, config)
+    assert rules.AI_STYLE_GENERIC_TRANSITION in codes
+
+
+def test_generic_transition_silent_when_rare():
+    config = HowlWriterConfig(banned_patterns=["generic_transition"])
+    text = "Furthermore, we did A. Then we went home."
+    codes = _codes(text, config)
+    assert rules.AI_STYLE_GENERIC_TRANSITION not in codes
+
+
+def test_corporate_filler_detected_when_configured():
+    config = HowlWriterConfig(banned_patterns=["corporate_filler"])
+    text = "We must leverage synergy to unlock value and empower users."
+    codes = _codes(text, config)
+    assert rules.AI_STYLE_CORPORATE_FILLER in codes
+
+
+def test_generic_intensifier_detected_when_configured():
+    config = HowlWriterConfig(banned_patterns=["generic_intensifier"])
+    text = "This is a pivotal, transformative, and crucial decision."
+    codes = _codes(text, config)
+    assert rules.AI_STYLE_GENERIC_INTENSIFIER in codes
+
+
+def test_repetitive_mini_conclusion_detected_when_configured():
+    config = HowlWriterConfig(banned_patterns=["repetitive_mini_conclusion"])
+    text = (
+        "A happened. In summary, good.\n\n"
+        "B happened. In summary, fine.\n\n"
+        "C happened. In summary, ok."
+    )
+    codes = _codes(text, config)
+    assert rules.AI_STYLE_REPETITIVE_MINI_CONCLUSION in codes
+
+
+def test_paragraph_length_symmetry_detected_when_configured():
+    config = HowlWriterConfig(banned_patterns=["paragraph_length_symmetry"])
+    text = "A b c. D e f.\n\nG h i. J k l.\n\nM n o. P q r.\n\nS t u. V w x."
+    codes = _codes(text, config)
+    assert rules.AI_STYLE_PARAGRAPH_LENGTH_SYMMETRY in codes

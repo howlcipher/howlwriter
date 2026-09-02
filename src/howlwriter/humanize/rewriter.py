@@ -10,6 +10,7 @@ with a deliberate role contract and structured output.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 import re
@@ -17,8 +18,10 @@ from typing import Any, Protocol
 
 from howlwriter.config.schema import HowlWriterConfig
 from howlwriter.domain.document import Document
+from howlwriter.domain.modes import WritingMode
 from howlwriter.domain.report import ChangeRecord
 from howlwriter.domain.serialization import DataClassSerializationMixin
+from howlwriter.domain.voice import VoiceExample, VoiceProfile
 from howlwriter.humanize.detector import detect
 from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import NotConfiguredRole, WritingRole
@@ -100,6 +103,112 @@ class ModelHumanizeResult(DataClassSerializationMixin):
 MAX_SINGLE_PASS_CHARS = 100_000
 
 
+def _load_voice_profile(value: str | None) -> VoiceProfile | None:
+    """Resolve a config.voice_profile value to a VoiceProfile when it names a file.
+
+    If `value` is a path to an existing JSON file, parse it as a VoiceProfile.
+    Otherwise treat it as an author label and return None. This keeps the
+    config field a simple string while still allowing callers to point at a
+    real profile on disk.
+    """
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return VoiceProfile.from_dict(data)
+    except Exception:
+        return None
+
+
+def _mode_specific_instructions(mode: Any) -> str:
+    """Return mode-specific guardrails for the Humanizer prompt."""
+    from howlwriter.domain.modes import WritingMode
+
+    m = mode if isinstance(mode, WritingMode) else WritingMode.CUSTOM
+    if m == WritingMode.LINKEDIN:
+        return "\n".join([
+            "LINKEDIN / SHORT-FORM MODE:",
+            "- Prefer a direct opening. Cut throat-clearing setup.",
+            "- Preserve first-person voice and conversational tone if the source uses them.",
+            "- Keep sentence length varied; keep short punchy sentences.",
+            "- Avoid headings, corporate filler, generic motivational endings, "
+            "and fake thought-leadership tone.",
+            "- Preserve humor, sarcasm, and mild roughness where present.",
+            "- Do not add a conclusion that merely restates the post.",
+            "- Do not casualize professional substance; keep technical terms intact.",
+        ])
+    if m == WritingMode.ACADEMIC:
+        return "\n".join([
+            "ACADEMIC MODE:",
+            "- Keep formal clarity, citation structure, technical terminology, "
+            "qualifications, and scholarly tone.",
+            "- Remove generic LLM filler, canned transitions, repetitive summaries, "
+            "inflated importance language, and mechanical paragraph structures.",
+            "- Do not inject casual contractions, jokes, fragments, or "
+            "LinkedIn-style language into the prose.",
+            "- Preserve hedging, uncertainty, and scope exactly as in the source.",
+        ])
+    if m == WritingMode.TECHNICAL:
+        return "\n".join([
+            "TECHNICAL MODE:",
+            "- Preserve precise technical terminology, numbers, and configuration details.",
+            "- Remove generic marketing language, but keep the prose clear and direct.",
+            "- Do not simplify correct technical terms into casual approximations.",
+        ])
+    if m == WritingMode.CASUAL:
+        return "\n".join([
+            "CASUAL MODE:",
+            "- Keep a relaxed, natural voice. Preserve contractions, fragments, "
+            "and personal phrasing.",
+            "- Avoid over-polishing into corporate prose.",
+        ])
+    return "\n".join([
+        "STANDARD MODE:",
+        "- Remove generic AI patterns while preserving the author's natural voice.",
+        "- Do not force a particular register; follow the source.",
+    ])
+
+
+def _render_voice_profile(profile: VoiceProfile | None) -> str:
+    if profile is None:
+        return "None"
+    parts: list[str] = []
+    if profile.author_name:
+        parts.append(f"author_name: {profile.author_name}")
+    if profile.formality is not None:
+        parts.append(f"formality: {profile.formality}")
+    if profile.sentence_length_mean is not None:
+        parts.append(f"sentence_length_mean: {profile.sentence_length_mean:.1f}")
+    if profile.sentence_length_stdev is not None:
+        parts.append(f"sentence_length_stdev: {profile.sentence_length_stdev:.1f}")
+    if profile.paragraph_length_mean is not None:
+        parts.append(f"paragraph_length_mean: {profile.paragraph_length_mean:.1f}")
+    if profile.contraction_rate is not None:
+        parts.append(f"contraction_rate: {profile.contraction_rate:.2f}")
+    if profile.fragment_rate is not None:
+        parts.append(f"fragment_rate: {profile.fragment_rate:.2f}")
+    if profile.rhetorical_question_rate is not None:
+        parts.append(f"rhetorical_question_rate: {profile.rhetorical_question_rate:.2f}")
+    if profile.preferred_phrases:
+        parts.append(f"preferred_phrases: {', '.join(profile.preferred_phrases)}")
+    if profile.disliked_phrases:
+        parts.append(f"disliked_phrases: {', '.join(profile.disliked_phrases)}")
+    if profile.structural_notes:
+        parts.append(f"structural_notes: {profile.structural_notes}")
+    examples = [
+        ex.text if isinstance(ex, VoiceExample) else str(ex.get("text", ""))
+        for ex in profile.representative_examples[:3]
+    ]
+    if examples:
+        parts.append("representative_examples:")
+        for example in examples:
+            parts.append(f"  - {example}")
+    return "\n".join(parts) if parts else "Empty VoiceProfile"
+
+
 class ModelHumanizerRewriter:
     """Real model-backed Humanizer executor wired through HowlPlane."""
 
@@ -141,46 +250,100 @@ class ModelHumanizerRewriter:
             f"Banned Patterns: {banned_patterns_str}"
         )
 
-        prompt = f"""You are executing the HUMANIZER writing role under the HowlWriter contract.
-Your objective is to rewrite the input text to eliminate mechanical AI-generated prose rhythms,
-clichés, and artificial polish, while strictly preserving all factual meaning, numbers, claims, and intent.
+        voice_profile = _load_voice_profile(config.voice_profile)
+        voice_text = _render_voice_profile(voice_profile)
 
-HUMANIZER PRIORITIES:
-1. Preserve factual meaning - do not change any facts, numbers, dates, or claims.
-2. Preserve author intent - keep the core message and thesis intact.
-3. Preserve useful personal quirks and natural voice.
-4. Remove generic LLM phrasing and clichés (e.g. "delve", "tapestry", "in conclusion", "furthermore").
-5. Vary overly mechanical sentence length and repetitive syntax.
-6. Remove unnecessary polish and corporate stiffness.
-7. Remove filler words and rhetorical padding.
-8. Make minimal edits - if a sentence is already clean and natural, leave it untouched.
-9. If the input is already clean human writing with no clichés, return it untouched with changes_made: [].
-10. Do not fabricate facts, statistics, or sources.
+        mode_label = (
+            document.mode.value
+            if isinstance(document.mode, WritingMode)
+            else (str(document.mode) if document.mode else "standard")
+        )
+        mode_instructions = _mode_specific_instructions(document.mode)
 
-CONTEXT:
-- Writing Mode: {document.mode or 'standard'}
-- Transformation Strength: {config.humanization_strength}
-- Voice Profile: {config.voice_profile or 'None'}
-- {banned_summary}
-- Detected Style Issues:
-{issues_text}
-
-ORIGINAL TEXT:
-```markdown
-{document.text}
-```
-
-OUTPUT FORMAT:
-Return a ```yaml code block containing:
-```yaml
-resulting_text: |
-  <exact rewritten markdown text>
-changes_made:
-  - "<brief description of change 1>"
-  - "<brief description of change 2>"
-rationale: "<brief rationale of why changes were made>"
-warnings: []
-```"""
+        prompt = "\n".join([
+            "You are executing the HUMANIZER writing role under the HowlWriter contract.",
+            "Your objective is to make the input text read like the actual author wrote it, "
+            "not like a generic AI draft.",
+            "You do NOT optimize for AI-detector scores, detector evasion, "
+            'or "human probability" metrics.',
+            "You must NOT intentionally misspell words, inject grammar errors, "
+            "randomly alter punctuation, invent fake personal anecdotes, or corrupt prose.",
+            "The quality target is authentic writing, not classifier manipulation.",
+            "",
+            "HUMANIZER PRIORITIES (in order):",
+            "1. PRESERVE FACTS: never change numbers, dates, percentages, names, "
+            "attribution, technical terms, source citations, uncertainty/hedging, "
+            "or causal meaning.",
+            "2. PRESERVE INTENT: keep the author's argument, question, criticism, "
+            "emphasis, and stance unchanged.",
+            "3. PRESERVE AUTHOR VOICE: do not normalize the author into generic "
+            "polished corporate prose. Keep uneven sentence length, direct wording, "
+            "contractions, personal phrasing, concrete details, occasional roughness, "
+            "humor, and opinion where present.",
+            "4. REMOVE GENERIC LLM HABITS: cut or rework canned openings, canned "
+            "conclusions, mechanical transitions, formulaic contrasts, repetitive "
+            "three-part lists, generic intensifiers, abstract corporate filler, and "
+            "artificially symmetrical structure.",
+            "5. MAKE THE MINIMUM NECESSARY EDIT: if a sentence is already natural and "
+            "clear, leave it untouched. ZERO CHANGES is an excellent result when the "
+            "input is already clean.",
+            "6. AVOID OVER-POLISHING: do not upgrade vocabulary, replace simple verbs "
+            "with formal ones, remove contractions, add unnecessary transitions, "
+            "convert opinions into neutral consultant prose, or smooth away natural quirks.",
+            "7. PREFER CONCRETE LANGUAGE: keep specific numbers, examples, and details "
+            "that are already present. Never invent personal experience, statistics, "
+            "or anecdotes.",
+            "",
+            mode_instructions,
+            "",
+            "ZERO-CHANGE RULE:",
+            "If the text is already natural, direct, and free of the patterns above, "
+            "return the original text EXACTLY (character-for-character) and set "
+            "changes_made to an empty list.",
+            "",
+            "CHANGE REASON TAXONOMY (use these reasons when describing edits):",
+            "- GENERIC_LLM_PHRASE",
+            "- REDUNDANT_SETUP",
+            "- CANNED_TRANSITION",
+            "- CANNED_OPENING",
+            "- CANNED_CONCLUSION",
+            "- UNNECESSARY_SUMMARY",
+            "- VOICE_MISMATCH",
+            "- OVERPOLISHED",
+            "- REPETITIVE_STRUCTURE",
+            "- CORPORATE_FILLER",
+            "- RHYTHM_NORMALIZATION",
+            "- FACT_PRESERVATION_NOTE (use only when you reworded something generic "
+            "but kept every fact)",
+            "",
+            f"CONTEXT:\n- Writing Mode: {mode_label}",
+            f"- Transformation Strength: {config.humanization_strength}",
+            "- Voice Profile:",
+            voice_text,
+            f"- {banned_summary}",
+            "- Detected Style Issues:",
+            issues_text,
+            "",
+            "ORIGINAL TEXT:",
+            "```markdown",
+            document.text,
+            "```",
+            "",
+            "OUTPUT FORMAT:",
+            "Return a ```yaml code block containing:",
+            "```yaml",
+            "resulting_text: |",
+            "  <exact rewritten markdown text; if no changes are needed, "
+            "copy the original exactly>",
+            "changes_made:",
+            '  - description: "<brief description of the edit>"',
+            '    reason: "<one of the change-reason taxonomy values>"',
+            '  - description: "<another edit>"',
+            '    reason: "<taxonomy value>"',
+            'rationale: "<brief rationale of why changes were made, or why no changes were needed>"',
+            "warnings: []",
+            "```",
+        ])
 
         result = bridge.execute_writing_role(
             role=self.role,
@@ -216,7 +379,17 @@ warnings: []
         changes: list[ChangeRecord] = []
         if "changes_made" in structured and isinstance(structured["changes_made"], list):
             for item in structured["changes_made"]:
-                if isinstance(item, str) and item.strip():
+                if isinstance(item, dict):
+                    desc = str(item.get("description") or "").strip()
+                    reason = str(item.get("reason") or "").strip()
+                    if desc:
+                        changes.append(
+                            ChangeRecord(
+                                description=desc,
+                                reason=reason or "GENERIC_LLM_PHRASE",
+                            )
+                        )
+                elif isinstance(item, str) and item.strip():
                     changes.append(ChangeRecord(description=item.strip()))
         elif new_text.strip() != document.text.strip():
             changes.append(
