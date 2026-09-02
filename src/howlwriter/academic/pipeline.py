@@ -39,6 +39,7 @@ from howlwriter.domain.generation_provenance import (
     sha256_text as prov_sha256,
 )
 from howlwriter.integration.provenance_capture import ProvenanceRecorder
+from howlwriter.outline.claims import review_additions
 from howlwriter.outline.coverage import check_coverage
 from howlwriter.provenance.assemble import (
     build_contribution,
@@ -667,6 +668,20 @@ def _run_academic_pipeline(
             "unsupported_claims": len(provenance_graph.unsupported_claims()),
         }
     )
+    claim_review = review_additions(
+        provenance.added_claims,
+        outline,
+        # Research-backed: a new factual assertion with no evidence behind it
+        # must be supported, generalised, or removed, so it blocks readiness
+        # rather than merely being reported.
+        research_backed=True,
+        supported_claims={
+            claim.text for claim in provenance_graph.claims.values()
+            if claim.id not in {c.id for c in provenance_graph.unsupported_claims()}
+        },
+    )
+    provenance.review["model_additions"] = claim_review.to_dict()
+
     authorship_coverage = None
     if outline is not None:
         authorship_coverage = check_coverage(outline, final_document.text)

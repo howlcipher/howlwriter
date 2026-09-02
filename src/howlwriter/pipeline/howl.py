@@ -63,6 +63,7 @@ from howlwriter.provenance.assemble import (
     save_provenance,
     summarize_outline,
 )
+from howlwriter.outline.claims import review_additions
 from howlwriter.outline.coverage import CoverageReport, check_coverage
 from howlwriter.outline.writer import OutlineWriter
 from howlwriter.linting.rules import AI_STYLE_BANNED_WORD, RuleMatch
@@ -480,12 +481,24 @@ def _run(
             coverage_report = check_coverage(outline, final_document.text)
             provenance.coverage = coverage_report.to_dict()
             provenance.outline_summary = summarize_outline(outline)
+            claim_review = review_additions(
+                provenance.added_claims,
+                outline,
+                # The general pipeline has no retrieval behind it, so an
+                # addition here cannot be checked against evidence. It is
+                # surfaced rather than allowed to block, and the academic
+                # pipeline -- which does have evidence -- decides differently.
+                research_backed=False,
+            )
+            provenance.review["model_additions"] = claim_review.to_dict()
+            provenance.warnings.extend(claim_review.notes)
             provenance.contribution = build_contribution(
                 outline,
                 coverage=provenance.coverage,
                 artifact_text=final_document.text,
                 added_claims=provenance.added_claims,
                 gaps=provenance.gaps,
+                unsupported=len(claim_review.new_factual),
             )
             stage(
                 "outline_coverage",
