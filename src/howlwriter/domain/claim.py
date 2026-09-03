@@ -34,6 +34,14 @@ class VerificationStatus(enum.Enum):
     INFERENCE = "inference"
 
 
+class ClaimTemporalContext(str, enum.Enum):
+    CURRENT_STATE = "CURRENT_STATE"
+    HISTORICAL = "HISTORICAL"
+    VERSION_SPECIFIC = "VERSION_SPECIFIC"
+    TIME_INSENSITIVE = "TIME_INSENSITIVE"
+    UNKNOWN = "UNKNOWN"
+
+
 @dataclass
 class DocumentSpan(DataClassSerializationMixin):
     paragraph_index: int
@@ -51,3 +59,24 @@ class Claim(DataClassSerializationMixin):
     contradicting_sources: list[str] = field(default_factory=list)
     notes: str = ""
     document_span: DocumentSpan | None = None
+    temporal_context: ClaimTemporalContext = ClaimTemporalContext.UNKNOWN
+    target_version: str | None = None
+    target_family: str | None = None
+    intentional_historical_use: bool = False
+    historical_use_reason: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Claim:
+        data = dict(data)
+        if "claim_type" in data and isinstance(data["claim_type"], str):
+            data["claim_type"] = ClaimType(data["claim_type"])
+        if "verification_status" in data and isinstance(data["verification_status"], str):
+            data["verification_status"] = VerificationStatus(data["verification_status"])
+        if "temporal_context" in data and isinstance(data["temporal_context"], str):
+            try:
+                data["temporal_context"] = ClaimTemporalContext(data["temporal_context"])
+            except ValueError:
+                data["temporal_context"] = ClaimTemporalContext.UNKNOWN
+        if "document_span" in data and isinstance(data["document_span"], dict):
+            data["document_span"] = DocumentSpan.from_dict(data["document_span"])
+        return super().from_dict(data)

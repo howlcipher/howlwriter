@@ -18,6 +18,8 @@ class SourceRequirements(DataClassSerializationMixin):
     prefer_primary_sources: bool = True
     scholarly_or_authoritative: bool = True
     allowed_types: list[str] = field(default_factory=list)
+    allow_historical_sources: bool = False
+    historical_sources_allowed: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -1,6 +1,12 @@
 """Academic paper and assignment writing subsystem."""
 
 from howlwriter.academic.citations import AcademicCitationManager, CitationAnalysis
+from howlwriter.academic.freshness import (
+    FreshnessFinding,
+    FreshnessSeverity,
+    classify_claim_temporal_context,
+    evaluate_source_freshness_for_claim,
+)
 from howlwriter.academic.length import (
     calculate_word_tolerance,
     count_body_words,
@@ -32,6 +38,8 @@ __all__ = [
     "AcademicVerifier",
     "AssignmentSpec",
     "CitationAnalysis",
+    "FreshnessFinding",
+    "FreshnessSeverity",
     "ModelAcademicWriter",
     "OutlineResult",
     "SourceRequirements",
@@ -39,8 +47,10 @@ __all__ = [
     "WriterDraftResult",
     "calculate_word_tolerance",
     "check_outline_conformance",
+    "classify_claim_temporal_context",
     "count_body_words",
     "derive_research_plan",
+    "evaluate_source_freshness_for_claim",
     "evaluate_word_count",
     "fetch_arxiv_sources",
     "fetch_crossref_sources",

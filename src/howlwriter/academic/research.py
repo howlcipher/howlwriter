@@ -14,11 +14,13 @@ from howlwriter.academic.spec import AssignmentSpec
 from howlwriter.domain.source import (
     DEPTH_ABSTRACT,
     DEPTH_METADATA_ONLY,
+    FreshnessStatus,
     RELEVANCE_DIRECT,
     RELEVANCE_IRRELEVANT,
     RELEVANCE_SUPPORTING,
     RELEVANCE_TANGENTIAL,
     Source,
+    SourceFreshness,
     SourceType,
     source_from_dict,
 )
@@ -177,6 +179,11 @@ def fetch_arxiv_sources(query: str, max_results: int = 3) -> list[Source]:
                 retrieved_text=summary,
                 reliability_notes="Retrieved from arXiv API; peer-review / preprint.",
                 evidence_depth=DEPTH_ABSTRACT if summary.strip() else DEPTH_METADATA_ONLY,
+                freshness=SourceFreshness(
+                    retrieved_at=date.today().isoformat(),
+                    published_at=pub_date.isoformat() if pub_date else None,
+                    freshness_status=FreshnessStatus.VERSION_UNKNOWN,
+                ),
             )
             sources.append(src)
     except Exception:
@@ -278,6 +285,11 @@ def fetch_crossref_sources(query: str, max_results: int = 3) -> list[Source]:
             retrieved_text=retrieved_text,
             reliability_notes=f"Retrieved from Crossref API (type: {src_type_str}).",
             evidence_depth=evidence_depth,
+            freshness=SourceFreshness(
+                retrieved_at=date.today().isoformat(),
+                published_at=pub_date.isoformat() if pub_date else None,
+                freshness_status=FreshnessStatus.VERSION_UNKNOWN,
+            ),
         )
         sources.append(src)
 

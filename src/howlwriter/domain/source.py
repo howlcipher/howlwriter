@@ -57,6 +57,19 @@ class SourceFreshness(DataClassSerializationMixin):
     superseded_by: str | None = None
     freshness_status: FreshnessStatus = FreshnessStatus.VERSION_UNKNOWN
     intentional_historical_notes: str | None = None
+    authority_family: str | None = None
+    document_identifier: str | None = None
+    intentional_historical_use: bool = False
+
+    @classmethod
+    def from_dict(cls, data: dict) -> SourceFreshness:
+        data = dict(data)
+        if "freshness_status" in data and isinstance(data["freshness_status"], str):
+            try:
+                data["freshness_status"] = FreshnessStatus(data["freshness_status"])
+            except ValueError:
+                data["freshness_status"] = FreshnessStatus.VERSION_UNKNOWN
+        return super().from_dict(data)
 
 
 @dataclass
@@ -128,7 +141,5 @@ def source_from_dict(entry: dict) -> Source:
         entry["source_type"] = SourceType(entry["source_type"])
     if entry.get("freshness") and isinstance(entry["freshness"], dict):
         f_data = dict(entry["freshness"])
-        if f_data.get("freshness_status"):
-            f_data["freshness_status"] = FreshnessStatus(f_data["freshness_status"])
-        entry["freshness"] = SourceFreshness(**f_data)
+        entry["freshness"] = SourceFreshness.from_dict(f_data)
     return Source.from_dict(entry)
