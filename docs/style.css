@@ -168,6 +168,36 @@ body {
   .layout-container {
     padding: 0.75rem 0.6rem 2rem 0.6rem;
   }
+
+  .header-top {
+    padding-inline: 0.75rem;
+  }
+
+  .header-brand,
+  .header-actions {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .brand-sig,
+  .subsystem-tag {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .code-header {
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .grid-2col > * {
+    min-width: 0;
+  }
+
+  .grid-2col code:not(pre code) {
+    overflow-wrap: anywhere;
+  }
 }
 
 /* Site Header */
