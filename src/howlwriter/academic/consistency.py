@@ -32,6 +32,7 @@ from typing import Any
 
 from howlwriter.academic.prompts import ACADEMIC_PRIORITY_ORDERING_GUIDANCE
 from howlwriter.domain.document import Document
+from howlwriter.domain.generation_provenance import ReviewerFallbackRecord
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.domain.source import Source
 from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
@@ -64,6 +65,7 @@ class ConsistencyReviewResult(DataClassSerializationMixin):
     duration_seconds: float = 0.0
     sequence_check_performed: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    fallback_record: ReviewerFallbackRecord | None = None
 
 
 def has_staged_content(document: Document) -> bool:
@@ -94,6 +96,8 @@ class RealModelConsistencyReviewer:
         staged_content_detected: bool,
         cwd: Path | str | None = None,
         custom_backend: Any | None = None,
+        fallback_backend: Any | None = None,
+        writer_provider: str | None = None,
         run_id: str | None = None,
     ) -> ConsistencyReviewResult:
         if len(document.text) > MAX_SINGLE_PASS_CHARS:
@@ -131,27 +135,19 @@ CHECK FOR:
    credentials, which is a credential-exposure scenario, not a supply-chain compromise). Kind:
    LABEL_MISMATCH.{sequence_instructions}
 3. CITATION-TO-CLAIM TOPICAL FIT: For any in-text citation, does the specific source actually
-   establish the specific claim it is attached to, or is it merely topically adjacent to the
-   paragraph's general subject? Flag any citation attached to a claim/concept the cited source
-   does not actually establish. Kind: CITATION_TOPICAL_MISFIT.
+   relate to the factual topic of the paragraph citing it? (e.g. citing an Active Directory
+   security paper to support a claim about AWS IAM role abuse is a topical misfit, even if both
+   involve "credentials"). Kind: CITATION_TOPICAL_MISFIT.
 
-Use severity "blocker" for a clear contradiction/mismatch, "warning" for a likely but uncertain
-one, and "info" for a minor or stylistic note. Return verdict "FAIL" only when at least one
-"blocker"-severity finding exists; "PASS_WITH_WARNINGS" when only warning/info findings exist;
-"PASS" when the document is internally consistent.
-
-AVAILABLE SOURCES (for citation-fit context):
+SOURCES RETRIEVED FOR THIS RUN:
 {source_titles}
 
-DOCUMENT:
-```markdown
+DOCUMENT TO REVIEW:
 {document.text}
-```
 
-OUTPUT FORMAT:
-Return a ```yaml code block containing:
+Respond in structured YAML format:
 ```yaml
-verdict: "PASS" # One of: "PASS", "PASS_WITH_WARNINGS", "FAIL"
+verdict: PASS # PASS | PASS_WITH_WARNINGS | FAIL
 findings:
   - kind: "LABEL_MISMATCH" # LABEL_MISMATCH | SEQUENCE_CONTRADICTION | CITATION_TOPICAL_MISFIT
     description: "<what is inconsistent and why>"
@@ -174,6 +170,40 @@ rationale: "<summary explanation of verdict>"
             custom_backend=custom_backend,
         )
 
+        fallback_rec: ReviewerFallbackRecord | None = None
+        if not result.success and fallback_backend:
+            primary_err = result.error_message or "Reviewer execution failed"
+            primary_backend_name = str(custom_backend or self.role.value)
+            fb_res = bridge.execute_writing_role(
+                role=self.role,
+                prompt=prompt,
+                system_instruction=ACADEMIC_PRIORITY_ORDERING_GUIDANCE,
+                context={
+                    "document_title": document.title,
+                    "staged_content_detected": staged_content_detected,
+                    "run_id": run_id,
+                },
+                timeout_seconds=300,
+                cwd=cwd,
+                custom_backend=fallback_backend,
+            )
+            if fb_res.success:
+                result = fb_res
+                indep = (
+                    "INDEPENDENT"
+                    if (writer_provider and fb_res.provider != writer_provider)
+                    else "SAME_PROVIDER"
+                )
+                fallback_rec = ReviewerFallbackRecord(
+                    stage="consistency_review",
+                    requested_reviewer=primary_backend_name,
+                    failure_reason=primary_err,
+                    fallback_reviewer=str(fallback_backend),
+                    provider=fb_res.provider,
+                    model=fb_res.model,
+                    independence_status=indep,
+                )
+
         if not result.success:
             err = result.error_message or "Reviewer execution failed"
             return ConsistencyReviewResult(
@@ -191,6 +221,7 @@ rationale: "<summary explanation of verdict>"
                 duration_seconds=result.duration_seconds,
                 sequence_check_performed=staged_content_detected,
                 metadata=result.metadata,
+                fallback_record=fallback_rec,
             )
 
         structured = result.structured_output or {}
@@ -226,4 +257,5 @@ rationale: "<summary explanation of verdict>"
             duration_seconds=result.duration_seconds,
             sequence_check_performed=staged_content_detected,
             metadata=result.metadata,
+            fallback_record=fallback_rec,
         )

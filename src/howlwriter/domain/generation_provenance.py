@@ -94,7 +94,8 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"AKIA[0-9A-Z]{16}"), "[REDACTED_AWS_KEY]"),
     (re.compile(r"AIza[0-9A-Za-z_\-]{30,}"), "[REDACTED_API_KEY]"),
     (re.compile(r"xox[baprs]-[A-Za-z0-9\-]{10,}"), "[REDACTED_TOKEN]"),
-    (re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),
+    (re.compile(r"Bearer\s+[A-Za-z0-9_\-\.]{15,}", re.IGNORECASE), "Bearer [REDACTED_TOKEN]"),
+    (re.compile(r"eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{2,}\.[A-Za-z0-9_\-]{4,}"),
      "[REDACTED_JWT]"),
     (re.compile(r"-----BEGIN[^-]{0,40}PRIVATE KEY-----.*?-----END[^-]{0,40}PRIVATE KEY-----",
                 re.DOTALL), "[REDACTED_PRIVATE_KEY]"),
@@ -104,15 +105,26 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
      r"\1=[REDACTED]"),
 )
 
-_HOME_PATTERN = re.compile(r"/(?:home|Users)/[^/\s\"']+")
+_VOICE_PROFILE_PATH_RE = re.compile(
+    r"""(?:[A-Za-z]:[\\/]|/(?:var[\\/])?)?(?:home|Users)[\\/][^\\/\s"']+[\\/]\.howlwriter[\\/]voices[\\/](?P<alias>[^\\/\s"']+)[\\/](?:profile\.json)?""",
+    re.IGNORECASE,
+)
+
+_UNIX_HOME_PATH_RE = re.compile(
+    r"""/(?:var/home|home|Users)/[A-Za-z0-9_\-]+(?:/[^\s"':;,]+)*"""
+)
+
+_WIN_USER_PATH_RE = re.compile(
+    r"""[A-Za-z]:\\Users\\[A-Za-z0-9_\-]+(?:\\[^\s"':;,]+)*""",
+    re.IGNORECASE,
+)
 
 
-def redact(text: str, *, mask_paths: bool = False) -> str:
-    """Remove credentials from captured text.
+def redact(text: str, *, mask_paths: bool = False, username: str | None = None) -> str:
+    """Remove credentials, tokens, and filesystem paths from captured text.
 
-    Path masking is optional because the two audiences differ. A record the
-    author reads themselves is more useful with real paths in it; one they
-    attach to a bug report or hand to a reviewer is not.
+    Path masking is applied to exported provenance so author environment
+    details (home paths, usernames, profile paths) are never exposed.
     """
     if not text:
         return text
@@ -120,8 +132,35 @@ def redact(text: str, *, mask_paths: bool = False) -> str:
     for pattern, replacement in _SECRET_PATTERNS:
         cleaned = pattern.sub(replacement, cleaned)
     if mask_paths:
-        cleaned = _HOME_PATTERN.sub("/[HOME]", cleaned)
+        cleaned = _VOICE_PROFILE_PATH_RE.sub(r"[VOICE_PROFILE:\g<alias>]", cleaned)
+        cleaned = _UNIX_HOME_PATH_RE.sub("/[REDACTED_PATH]", cleaned)
+        cleaned = _WIN_USER_PATH_RE.sub("[REDACTED_WINDOWS_PATH]", cleaned)
+        if username:
+            cleaned = re.sub(rf"\b{re.escape(username)}\b", "[REDACTED_USER]", cleaned)
+        else:
+            import getpass
+            try:
+                u = getpass.getuser()
+                if u and len(u) >= 3 and u not in ("root", "bin", "daemon", "usr"):
+                    cleaned = re.sub(rf"\b{re.escape(u)}\b", "[REDACTED_USER]", cleaned)
+            except Exception:
+                pass
     return cleaned
+
+
+def sanitize_voice_profile_ref(value: Any) -> Any:
+    """Sanitizes voice profile path so local filesystem paths are not exposed in exported provenance."""
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    val_str = str(value)
+    if "/" not in val_str and "\\" not in val_str:
+        return {"alias": val_str, "profile_hash": sha256_text(val_str)[:12]}
+    alias_match = re.search(r"voices[/\\]([^/\\]+)", val_str)
+    alias = alias_match.group(1) if alias_match else re.sub(r"\.[^.]+$", "", val_str.split("/")[-1])
+    p_hash = sha256_text(val_str)[:12]
+    return {"alias": alias, "profile_hash": p_hash}
 
 
 # --- records ------------------------------------------------------------
@@ -238,6 +277,29 @@ class ContributionSummary(DataClassSerializationMixin):
     unsupported_additions: int = 0
     gaps_reported: int = 0
 
+    # Extended provenance origin metrics
+    human_authored_words: int = 0
+    human_claims: int = 0
+    assignment_derived_requirements: int = 0
+    model_derived_outline_nodes: int = 0
+    model_created_claims: int = 0
+    model_generated_prose_words: int = 0
+    preserved_human_passages: int = 0
+    research_grounded_additions_count: int = 0
+
+
+@dataclass
+class ReviewerFallbackRecord(DataClassSerializationMixin):
+    """Details of a reviewer fallback when a primary provider failed."""
+
+    stage: str = ""
+    requested_reviewer: str = ""
+    failure_reason: str = ""
+    fallback_reviewer: str = ""
+    provider: str = ""
+    model: str | None = None
+    independence_status: str = "UNKNOWN"
+
 
 @dataclass
 class GenerationProvenance(DataClassSerializationMixin):
@@ -258,7 +320,7 @@ class GenerationProvenance(DataClassSerializationMixin):
     outline_present: bool = False
     outline_sha256: str = ""
     outline_summary: dict[str, Any] = field(default_factory=dict)
-    voice_profile: str | None = None
+    voice_profile: Any = None
     voice_block_sha256: str = ""
 
     input_sha256: str = ""
@@ -277,6 +339,7 @@ class GenerationProvenance(DataClassSerializationMixin):
     added_claims: list[dict[str, Any]] = field(default_factory=list)
     structural_realization: dict[str, Any] | None = None
     reviewer_independence_by_stage: dict[str, str] = field(default_factory=dict)
+    reviewer_fallbacks: list[ReviewerFallbackRecord] = field(default_factory=list)
     gaps: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     #: True only when every stage that ran was captured. A run that failed part
@@ -314,6 +377,10 @@ class GenerationProvenance(DataClassSerializationMixin):
         rebuilt.origins = [
             OriginRecord.from_dict(o) if isinstance(o, dict) else o
             for o in (rebuilt.origins or [])
+        ]
+        rebuilt.reviewer_fallbacks = [
+            ReviewerFallbackRecord.from_dict(r) if isinstance(r, dict) else r
+            for r in (getattr(rebuilt, "reviewer_fallbacks", None) or [])
         ]
         if isinstance(rebuilt.contribution, dict):
             rebuilt.contribution = ContributionSummary.from_dict(rebuilt.contribution)
