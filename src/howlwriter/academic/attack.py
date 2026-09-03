@@ -247,7 +247,7 @@ _OFFICIAL_ATTACK_RECORDS: dict[str, AttackTechniqueRecord] = {
             "mega.nz",
             "rclone",
             "dropbox",
-            "google drive",
+            "gdrive",
             "onedrive",
             "s3 exfil",
         ],
