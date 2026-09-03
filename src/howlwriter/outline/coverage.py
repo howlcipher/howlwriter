@@ -23,6 +23,7 @@ guarantee.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 import re
 
 from howlwriter.domain.outline import (
@@ -213,6 +214,50 @@ def _check_preserved(node: OutlineNode, artifact: str, normalized: str) -> Point
         MISSING,
         score,
         "no comparable passage found in the artifact",
+    )
+
+
+def preserved_violations(
+    outline: Outline | None, artifact_text: str
+) -> list[PointFinding]:
+    """Return preserved passages that are absent or altered in an artifact.
+
+    This is the stage-boundary form of the final coverage check. Pipelines use
+    it before accepting a model rewrite so a later checker does not merely
+    diagnose that an irreversible transformation destroyed verbatim text.
+    """
+    if outline is None:
+        return []
+    normalized = _normalize_for_exact(artifact_text)
+    return [
+        finding
+        for node in outline.preserved()
+        if (finding := _check_preserved(node, artifact_text, normalized)).status
+        != PRESENT
+    ]
+
+
+def paragraph_structure_changed(before: str, after: str) -> bool:
+    """Detect a paragraph-count, order, or wholesale-content restructure.
+
+    Used only for near-complete drafts where the authority assessment permits
+    sentence-level editing but no sampled structural rewrite. Pairwise
+    similarity allows ordinary wording edits while catching reordered,
+    replaced, split, or merged blocks.
+    """
+    before_paragraphs = [
+        _normalize_for_exact(p) for p in re.split(r"\n\s*\n", before.strip())
+        if p.strip()
+    ]
+    after_paragraphs = [
+        _normalize_for_exact(p) for p in re.split(r"\n\s*\n", after.strip())
+        if p.strip()
+    ]
+    if len(before_paragraphs) != len(after_paragraphs):
+        return True
+    return any(
+        SequenceMatcher(None, old, new).ratio() < 0.35
+        for old, new in zip(before_paragraphs, after_paragraphs)
     )
 
 

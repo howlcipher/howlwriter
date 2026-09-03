@@ -42,7 +42,11 @@ def _format_requirements(requirements: list[str]) -> str:
 class WriterDraftResult(DataClassSerializationMixin):
     document: Document
     raw_output: str = ""
+    #: Every factual claim in the generated paper, used by the verifier.
     claims_stated: list[dict[str, Any]] = field(default_factory=list)
+    #: Only factual commitments introduced beyond the author's supplied
+    #: assignment/outline, used by contribution and disclosure provenance.
+    added_claims: list[dict[str, Any]] = field(default_factory=list)
     word_count: int = 0
     provider: str = ""
     model: str | None = None
@@ -167,6 +171,11 @@ claims_made:
   - claim: "<factual statement made>"
     source_id: "<e.g. S001>"
     evidence_snippet: "<relevant excerpt from source>"
+added_claims:
+  - claim: "<factual commitment introduced beyond the author's supplied topic, outline, and requirements>"
+    source_id: "<supporting source id, or empty if unsupported>"
+    evidence_snippet: "<supporting excerpt, or empty if unsupported>"
+    basis: "<research evidence or model inference>"
 word_count_estimate: <integer>
 warnings: []
 ```"""
@@ -204,11 +213,12 @@ warnings: []
         claims_made = (
             structured.get("claims_made")
             if isinstance(structured.get("claims_made"), list)
-            else (
-                structured.get("added_claims")
-                if isinstance(structured.get("added_claims"), list)
-                else []
-            )
+            else []
+        )
+        added_claims = (
+            structured.get("added_claims")
+            if isinstance(structured.get("added_claims"), list)
+            else []
         )
         warnings = [
             str(w) for w in structured.get("warnings", []) if isinstance(w, str)
@@ -221,6 +231,7 @@ warnings: []
             document=doc,
             raw_output=result.raw_output,
             claims_stated=claims_made,
+            added_claims=added_claims,
             word_count=words,
             provider=result.provider,
             model=result.model,

@@ -85,6 +85,8 @@ _DIMENSIONS = (
 
 _WORD = re.compile(r"[A-Za-z][A-Za-z'’-]*")
 _SENTENCE = re.compile(r"(?<=[.!?])\s+")
+_MARKDOWN_HEADING = re.compile(r"^#{1,6}\s+")
+_HASHTAG_LINE = re.compile(r"^(?:#[\w-]+\s*)+$")
 
 
 @dataclass
@@ -146,45 +148,125 @@ def _repeats(keys: list[str]) -> dict[str, int]:
     return {key: count for key, count in counts.items() if count > 1}
 
 
-_FIRST_PERSON_START = re.compile(r"^(I|In my|When I|We|In our|My)\b", re.I)
+_FIRST_PERSON_START = re.compile(r"^(I|In my|We|In our|My)\b", re.I)
 _TIME_ANECDOTAL_START = re.compile(
     r"^(Last year|A few months ago|Recently|Years ago|In \d{4}|Back when)\b", re.I
 )
-_CONTEXTUAL_START = re.compile(r"^(In\b|Across\b|When\b|Under\b|For\b|While\b|As\b|Within\b)", re.I)
+_PERSONAL_ANECDOTAL_START = re.compile(r"^(When I|The first time I|I remember)\b", re.I)
+_CONDITIONAL_START = re.compile(r"^(If|Unless|Whenever|When)\b", re.I)
+_CONTEXTUAL_START = re.compile(
+    r"^(In\b|Across\b|Under\b|For\b|While\b|As\b|Within\b)", re.I
+)
+_PROBLEM_START = re.compile(
+    r"^(The (?:problem|failure|mistake|risk|trap|myth)|"
+    r"(?:Most|Many) .{0,40}\b(?:fail|break|miss|get wrong)\b)",
+    re.I,
+)
+_IMPERATIVE_START = re.compile(
+    r"^(?:Start|Stop|Use|Treat|Choose|Build|Keep|Prefer|Avoid|Make|Ask|Cap|"
+    r"Set|Limit|Remove|Do|"
+    r"Do not|Don't|Never)\b",
+    re.I,
+)
+_LABELLED_CLAIM_START = re.compile(r"^([^:\n]{2,50}):\s+\S")
+_FINITE_VERB_IN_LABEL = re.compile(
+    r"\b(?:is|are|was|were|be|been|has|have|had|does|do|did|"
+    r"improves?|fails?|breaks?|creates?|means?|turns?|makes?)\b",
+    re.I,
+)
+
+
+def _body_paragraphs(text: str) -> list[str]:
+    """Markdown prose blocks, excluding headings and hashtag-only trailers."""
+    body: list[str] = []
+    for block in re.split(r"\n\s*\n", text.strip()):
+        lines = [
+            line.strip()
+            for line in block.splitlines()
+            if line.strip()
+            and not _MARKDOWN_HEADING.match(line.strip())
+            and not _HASHTAG_LINE.match(line.strip())
+        ]
+        if lines:
+            body.append(" ".join(lines))
+    return body
+
+
+def _first_sentence(text: str) -> str:
+    sentences = [s.strip() for s in _SENTENCE.split(text.strip()) if s.strip()]
+    return sentences[0] if sentences else text.strip()
+
+
+def _is_labelled_claim(text: str) -> bool:
+    match = _LABELLED_CLAIM_START.match(text)
+    if not match:
+        return False
+    prefix = match.group(1)
+    return (
+        len(_WORD.findall(prefix)) <= 6
+        and _FINITE_VERB_IN_LABEL.search(prefix) is None
+    )
 
 
 def classify_opening(text: str) -> str:
-    """Deterministically categorize the rhetorical opening move of a piece."""
-    stripped = text.strip()
-    if not stripped:
+    """Categorize the first rhetorical move, using only the first sentence."""
+    paragraphs = _body_paragraphs(text)
+    if not paragraphs:
         return "direct_thesis"
-    paragraphs = [p.strip() for p in stripped.split("\n\n") if p.strip() and not p.strip().startswith("#")]
-    first_line = paragraphs[0] if paragraphs else stripped
-    if first_line.endswith("?") or "?" in first_line[:60]:
+    first_line = _first_sentence(paragraphs[0])
+    if first_line.endswith("?"):
         return "question"
+    if (
+        _TIME_ANECDOTAL_START.search(first_line)
+        or _PERSONAL_ANECDOTAL_START.search(first_line)
+    ):
+        return "anecdotal_entry"
     if _FIRST_PERSON_START.search(first_line):
         return "personal_observation"
-    if _TIME_ANECDOTAL_START.search(first_line):
-        return "anecdotal_entry"
-    if ":" in first_line[:40]:
-        return "technical_assertion"
+    if _CONDITIONAL_START.search(first_line):
+        return "conditional_setup"
+    if _PROBLEM_START.search(first_line):
+        return "problem_statement"
+    if _IMPERATIVE_START.search(first_line):
+        return "recommendation"
+    if _is_labelled_claim(first_line):
+        return "labelled_claim"
     if _CONTEXTUAL_START.search(first_line):
         return "contextual_statement"
     return "direct_thesis"
 
 
-_RECOMMEND_END = re.compile(r"\b(should|must|ought to|recommend|prefer|start by|best approach)\b", re.I)
+_RECOMMEND_END = re.compile(
+    r"(?:^(?:Start|Stop|Use|Treat|Choose|Build|Keep|Prefer|Avoid|Make|Ask|Cap|"
+    r"Set|Limit|Remove|"
+    r"Do not|Don't)\b|\b(?:should|must|ought to|need to|recommend|"
+    r"best approach)\b)",
+    re.I,
+)
 _IMPLICATION_END = re.compile(
-    r"\b(which means|the result is|the consequence|real cost|leaves behind|trade-off)\b",
+    r"\b(which means|the result is|the consequence is|that leaves|"
+    r"this leaves|therefore|as a result)\b",
     re.I,
 )
 _PERSONAL_END = re.compile(r"\b(I think|in my view|for me|my take|I suspect)\b", re.I)
-_SUMMARY_END = re.compile(r"\b(in short|ultimately|in summary|comes down to|boils down)\b", re.I)
+_SUMMARY_END = re.compile(
+    r"^(?:In short|Ultimately|In summary|To summarize)\b|"
+    r"\b(?:comes down to|boils down to)\b",
+    re.I,
+)
+_QUALIFIED_END = re.compile(
+    r"^(?:If|Unless)\b|\b(?:may|might|could|likely|probably)\b", re.I
+)
 
 
 def classify_closing(text: str) -> str:
     """Deterministically categorize the rhetorical ending move of a piece."""
-    sentences = [s for s in _SENTENCE.split(text.strip()) if s.strip()]
+    paragraphs = _body_paragraphs(text)
+    sentences = [
+        s.strip()
+        for s in _SENTENCE.split(paragraphs[-1] if paragraphs else "")
+        if s.strip()
+    ]
     if not sentences:
         return "declarative_stop"
     last_sentence = sentences[-1].strip()
@@ -198,27 +280,100 @@ def classify_closing(text: str) -> str:
         return "implication"
     if _PERSONAL_END.search(last_sentence):
         return "personal_reflection"
+    if _QUALIFIED_END.search(last_sentence):
+        return "qualified_conclusion"
     return "declarative_stop"
 
 
-def classify_reasoning_shape(text: str) -> str:
-    """Describe argumentative progression across paragraphs."""
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip() and not p.strip().startswith("#")]
-    causal = re.compile(r"\b(because|since|which means|so that|therefore|this means|drives|leads to)\b", re.I)
-    rule = re.compile(r"\b(always|never|every|the rule|what matters is|comes down to)\b", re.I)
-    hedge = re.compile(r"\b(probably|might|may|could|likely|seems)\b", re.I)
+_CAUSAL_MOVE = re.compile(
+    r"\b(?:because|since|which means|so that|therefore|this means|"
+    r"drives?|leads? to|causes?|happens when|works by|fails when)\b",
+    re.I,
+)
+_RULE_MOVE = re.compile(
+    r"\b(?:always|never|the rule|what matters is|comes down to|"
+    r"should|must|need to|the better approach)\b",
+    re.I,
+)
+_EXAMPLE_MOVE = re.compile(
+    r"^(?:For example|For instance|Consider|Take )\b|"
+    r"\b(?:a concrete example|in practice)\b",
+    re.I,
+)
+_CONTRAST_MOVE = re.compile(
+    r"^(?:But|Yet|However|Instead|By contrast|The alternative)\b|"
+    r"\b(?:rather than|not .{0,50} but)\b",
+    re.I,
+)
+_PROBLEM_MOVE = re.compile(
+    r"\b(?:the problem|the failure|breaks? down|goes wrong|risk is|"
+    r"failure mode|cost is)\b",
+    re.I,
+)
 
-    shape: list[str] = []
-    for paragraph in paragraphs:
-        moves: list[str] = []
-        if causal.search(paragraph):
-            moves.append("mechanism")
-        if rule.search(paragraph):
-            moves.append("rule")
-        if hedge.search(paragraph):
-            moves.append("hedge")
-        shape.append("+".join(moves) if moves else "assert")
-    return ">".join(shape) if shape else "assert"
+
+def classify_reasoning_moves(text: str) -> list[str]:
+    """Return semantic paragraph roles before repetition is collapsed."""
+    paragraphs = _body_paragraphs(text)
+    moves: list[str] = []
+    for index, paragraph in enumerate(paragraphs):
+        is_first = index == 0
+        is_last = index == len(paragraphs) - 1
+        if is_first:
+            opening = classify_opening(paragraph)
+            if opening == "question":
+                move = "question"
+            elif opening in ("personal_observation", "anecdotal_entry"):
+                move = "experience"
+            elif opening in ("conditional_setup", "contextual_statement"):
+                move = "setup"
+            elif opening == "problem_statement" or _PROBLEM_MOVE.search(paragraph):
+                move = "problem"
+            elif opening == "recommendation":
+                move = "recommendation"
+            else:
+                move = "thesis"
+        elif is_last:
+            closing = classify_closing(paragraph)
+            if closing == "question":
+                move = "question"
+            elif closing == "recommendation" or _RULE_MOVE.search(paragraph):
+                move = "recommendation"
+            elif closing == "personal_reflection":
+                move = "reflection"
+            elif closing in ("implication", "qualified_conclusion"):
+                move = "implication"
+            else:
+                move = "takeaway"
+        elif _EXAMPLE_MOVE.search(paragraph):
+            move = "example"
+        elif _RULE_MOVE.search(paragraph):
+            move = "recommendation"
+        elif _CAUSAL_MOVE.search(paragraph):
+            move = "mechanism"
+        elif _CONTRAST_MOVE.search(paragraph):
+            move = "contrast"
+        elif _PROBLEM_MOVE.search(paragraph):
+            move = "problem"
+        else:
+            move = "explanation"
+        moves.append(move)
+    return moves or ["thesis"]
+
+
+def classify_reasoning_shape(text: str) -> str:
+    """Describe rhetorical progression independent of paragraph count.
+
+    Consecutive paragraphs doing the same job collapse to one move. That keeps
+    a claim followed by two explanation blocks in the same class as a claim
+    followed by three; otherwise paragraph-count variance would masquerade as
+    reasoning diversity.
+    """
+    collapsed: list[str] = []
+    for move in classify_reasoning_moves(text):
+        if not collapsed or collapsed[-1] != move:
+            collapsed.append(move)
+    return ">".join(collapsed)
 
 
 def compare(

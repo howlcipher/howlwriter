@@ -52,6 +52,10 @@ body_markdown: |
 claims_made:
   - claim: "Dynamic delegated authorization reduces stale token privileges by 42%"
     source_id: "S001"
+added_claims:
+  - claim: "Dynamic delegated authorization reduces stale token privileges by 42%"
+    source_id: "S001"
+    basis: "retrieved evidence selected during expansion"
 word_count_estimate: 45
 warnings: []
 ```""",
@@ -66,6 +70,8 @@ warnings: []
     assert "(Oladimeji, 2025)" in res.document.text
     assert res.word_count > 0
     assert len(res.claims_stated) == 1
+    assert len(res.added_claims) == 1
+    assert res.added_claims[0]["basis"] == "retrieved evidence selected during expansion"
 
 
 def test_length_correction_pass():

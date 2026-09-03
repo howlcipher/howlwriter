@@ -48,6 +48,106 @@ def main() -> int:
     checks: list[tuple[str, bool]] = []
     skipped: list[str] = []
 
+    ablation = _load("per_piece_ablation")
+    if ablation is None:
+        checks.append((
+            "primary medium/shared-band/per-piece ablation is present",
+            False,
+        ))
+    else:
+        from report import _recompute_ablation
+
+        arms = ("medium_only", "shared_band", "per_piece")
+        recomputed = {
+            arm: _recompute_ablation(ablation, arm)
+            for arm in arms
+        }
+        expected_records = ablation["total_prompts"] * ablation["repeats"]
+        checks.append((
+            "all three ablation arms contain the complete un-cherry-picked prompt set",
+            all(
+                len(ablation["generations"][arm]) == expected_records
+                and {
+                    record["id"] for record in ablation["generations"][arm]
+                } == {f"prompt_{index:02d}" for index in range(1, 21)}
+                for arm in arms
+            ),
+        ))
+        checks.append((
+            "every ablation generation succeeded",
+            all(
+                record.get("status") == "OK" and bool(record.get("output"))
+                for arm in arms
+                for record in ablation["generations"][arm]
+            ),
+        ))
+        checks.append((
+            "every raw Markdown artifact matches its JSON output",
+            all(
+                (
+                    RESULTS / str(record.get("raw_artifact", ""))
+                ).is_file()
+                and (
+                    RESULTS / str(record.get("raw_artifact", ""))
+                ).read_text(encoding="utf-8").rstrip()
+                == record.get("output", "").rstrip()
+                for arm in arms
+                for record in ablation["generations"][arm]
+            ),
+        ))
+
+        converged = {
+            arm: len(
+                recomputed[arm]["diversity"]["converged_dimensions"]
+            )
+            for arm in arms
+        }
+        central_pass = (
+            converged["per_piece"] < converged["medium_only"]
+            and converged["per_piece"] < converged["shared_band"]
+        )
+        recorded_central = ablation.get("central_success_test", {})
+        checks.append((
+            "the central success result is explicitly recorded and recomputes exactly",
+            recorded_central.get("converged_dimensions") == converged
+            and recorded_central.get("passed") is central_pass,
+        ))
+        checks.append((
+            "stored ablation analysis matches metrics recomputed from raw output",
+            all(
+                ablation["analysis"][arm].get("stats")
+                == recomputed[arm].get("stats")
+                and ablation["analysis"][arm].get("paragraphs")
+                == recomputed[arm].get("paragraphs")
+                and ablation["analysis"][arm].get("diversity")
+                == recomputed[arm].get("diversity")
+                and ablation["analysis"][arm].get("reasoning")
+                == recomputed[arm].get("reasoning")
+                for arm in arms
+            ),
+        ))
+        checks.append((
+            "per-piece provenance distinguishes seeded selection from model nondeterminism",
+            all(
+                record.get("seed") is not None
+                and (record.get("structural_realization") or {}).get("reproducible")
+                is True
+                and (record.get("structural_realization") or {}).get(
+                    "model_generation_deterministic"
+                )
+                is False
+                for record in ablation["generations"]["per_piece"]
+            ),
+        ))
+        checks.append((
+            "the ablation artifact stores neither corpus paths nor source identities",
+            "/home/" not in json.dumps(ablation)
+            and "/var/home/" not in json.dumps(ablation)
+            and "/run/media/" not in json.dumps(ablation)
+            and "source_filename" not in json.dumps(ablation)
+            and ablation.get("voice") == "local_profile",
+        ))
+
     structural = _load("structural_variance_v2")
     if structural is None:
         skipped.append("structural_variance_v2")

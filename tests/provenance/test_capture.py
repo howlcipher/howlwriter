@@ -217,6 +217,27 @@ def test_reviewer_independence_is_read_from_the_reviewer_call():
     assert provenance.reviewer_independence() == "SAME_PROVIDER"
 
 
+def test_one_independent_stage_cannot_hide_a_same_provider_stage():
+    provenance = GenerationProvenance(
+        reviewer_independence_by_stage={
+            "meaning_review": "INDEPENDENT_PROVIDER",
+            "consistency_review": "SAME_PROVIDER",
+        }
+    )
+    assert provenance.reviewer_independence() == "SAME_PROVIDER"
+
+
+def test_every_provider_status_normalizes_to_the_four_value_contract():
+    from howlwriter.domain.generation_provenance import (
+        normalize_reviewer_independence,
+    )
+
+    assert normalize_reviewer_independence("INDEPENDENT") == "INDEPENDENT_PROVIDER"
+    assert normalize_reviewer_independence("SAME_PROVIDER") == "SAME_PROVIDER"
+    assert normalize_reviewer_independence("NOT_REVIEWED") == "NO_REVIEWER"
+    assert normalize_reviewer_independence("UNAVAILABLE") == "UNKNOWN"
+
+
 def test_the_avoided_provider_is_recorded_when_independence_was_requested():
     bridge, backend = _bridge()
     with ProvenanceRecorder() as recorder:

@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -48,6 +49,123 @@ def _recompute(payload: dict, arm: str) -> dict:
     records = payload["generations"][arm]
     texts = [r["output"] for r in records if r.get("status") == "OK" and r.get("output")]
     return analyze_batch(texts)
+
+
+def _recompute_ablation(payload: dict, arm: str) -> dict:
+    """Recompute an ablation arm, including the live corpus comparison."""
+    from metrics import analyze_batch, grouped_variation
+    from per_piece_ablation_runner import _eligible_corpus
+    from howlwriter.voice.corpus.store import VoiceStore
+
+    records = payload["generations"][arm]
+    texts = [
+        record["output"]
+        for record in records
+        if record.get("status") == "OK" and record.get("output")
+    ]
+    store = VoiceStore(os.environ.get("HOWLWRITER_REVIEW_VOICE", "william"))
+    corpus, professional = _eligible_corpus(store)
+    analysis = analyze_batch(
+        texts,
+        corpus_features=corpus,
+        context_features=professional,
+    )
+    analysis["variation"] = grouped_variation(records)
+    analysis["failed"] = sum(
+        1 for record in records if record.get("status") == "ERROR"
+    )
+    return analysis
+
+
+def report_per_piece_ablation() -> bool:
+    payload = _load("per_piece_ablation")
+    if payload is None:
+        print("## Per-piece structural ablation")
+        print("MISSING: the required medium/shared-band/per-piece benchmark has not run.\n")
+        return False
+
+    arms = ("medium_only", "shared_band", "per_piece")
+    recomputed = {arm: _recompute_ablation(payload, arm) for arm in arms}
+    converged = {
+        arm: len(recomputed[arm]["diversity"]["converged_dimensions"])
+        for arm in arms
+    }
+    central_pass = (
+        converged["per_piece"] < converged["medium_only"]
+        and converged["per_piece"] < converged["shared_band"]
+    )
+
+    print("## Primary A/B/C structural ablation")
+    print(
+        f"{payload['total_prompts']} prompts x {payload['repeats']} repeat(s); "
+        f"target {payload['target_words']} words; "
+        f"provider {payload['provider_configuration']['provider']}.\n"
+    )
+    print("| arm | n | failed | converged dimensions | diversity | paragraph counts |"
+          " paragraph CV | five-paragraph share | opening classes | closing classes |"
+          " reasoning shapes | top reasoning share |")
+    print("|---|---:|---:|---:|---|---|---:|---:|---|---|---:|---:|")
+    for arm in arms:
+        analysis = recomputed[arm]
+        paragraphs = analysis["paragraphs"]
+        opening_closing = analysis["openings_closings"]
+        reasoning = analysis["reasoning"]
+        distribution = paragraphs["count_distribution"]
+        five = distribution.get("5", 0)
+        print(
+            f"| {arm} | {analysis['samples']} | {analysis['failed']} "
+            f"| {converged[arm]}/18 "
+            f"| {analysis['diversity']['verdict']} "
+            f"| {distribution} | {paragraphs['count_stats']['cv']:.3f} "
+            f"| {five}/{analysis['samples']} "
+            f"({five / analysis['samples']:.0%}) "
+            f"| {opening_closing['opening_classes']} "
+            f"| {opening_closing['closing_classes']} "
+            f"| {reasoning['distinct_signatures']} "
+            f"| {reasoning['top_signature_share']:.0%} |"
+        )
+    print()
+    print(
+        "CENTRAL SUCCESS TEST: "
+        + (
+            "PASS -- per-piece has fewer converged dimensions than both controls."
+            if central_pass
+            else "FAIL -- per-piece does not have fewer converged dimensions than both controls."
+        )
+    )
+    print(
+        "Converged dimension counts: "
+        + ", ".join(f"{arm}={converged[arm]}" for arm in arms)
+        + "."
+    )
+    print()
+
+    print("Between-prompt versus within-prompt paragraph-count variation:")
+    for arm in arms:
+        variation = recomputed[arm]["variation"]
+        between = variation["between_prompt"]["paragraphs"]
+        within = variation["within_prompt"]["paragraphs"]
+        print(
+            f"  {arm}: between-prompt CV={between['cv']:.4f}; "
+            f"within-prompt mean CV="
+            f"{within['cv_across_repeat_groups']['mean']:.4f} "
+            f"over {within['groups_with_repeats']} repeated prompt(s)"
+        )
+    print()
+
+    old = _load("structural_variance_v2")
+    if old is not None:
+        old_full = _recompute(old, "full_howlwriter")["paragraphs"]
+        old_five = old_full["count_distribution"].get("5", 0)
+        new_paragraphs = recomputed["per_piece"]["paragraphs"]
+        new_five = new_paragraphs["count_distribution"].get("5", 0)
+        print(
+            "Five-paragraph attractor: previous shared-band "
+            f"{old_five}/{old_full['count_stats']['n']} versus new per-piece "
+            f"{new_five}/{new_paragraphs['count_stats']['n']}."
+        )
+        print()
+    return True
 
 
 def report_structural() -> None:
@@ -194,10 +312,11 @@ def main() -> int:
     print(f"# Milestone benchmark findings\n\nresults directory: {RESULTS_DIR}\n")
     print("Every figure below is recomputed from the stored generation text by")
     print("this script. None is transcribed.\n")
+    complete = report_per_piece_ablation()
     report_structural()
     report_mixed()
     report_outline()
-    return 0
+    return 0 if complete else 1
 
 
 if __name__ == "__main__":

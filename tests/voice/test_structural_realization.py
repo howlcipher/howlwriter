@@ -31,7 +31,8 @@ def _sample_vectors() -> list[StructuralVector]:
             first_person_rate=0.04,
             parenthetical_rate=0.05,
             question_rate=0.08,
-            opening_class="hook",
+            fragment_rate=0.15,
+            opening_class="direct_entry",
             closing_class="call_to_action",
         ),
         StructuralVector(
@@ -47,12 +48,13 @@ def _sample_vectors() -> list[StructuralVector]:
             long_sentence_rate=0.10,
             single_sentence_paragraph_rate=0.0,
             transition_rate=0.04,
-            sentence_initial_conjunction_rate=0.02,
+            sentence_initial_conjunction_rate=0.0,
             first_person_rate=0.0,
-            parenthetical_rate=0.02,
+            parenthetical_rate=0.0,
             question_rate=0.0,
-            opening_class="declaration",
-            closing_class="punchline",
+            fragment_rate=0.0,
+            opening_class="contextual_setup",
+            closing_class="stops",
         ),
         StructuralVector(
             context="academic",
@@ -71,8 +73,30 @@ def _sample_vectors() -> list[StructuralVector]:
             first_person_rate=0.0,
             parenthetical_rate=0.03,
             question_rate=0.01,
-            opening_class="background",
-            closing_class="forward_looking",
+            fragment_rate=0.0,
+            opening_class="contextual_setup",
+            closing_class="restatement",
+        ),
+        StructuralVector(
+            context="academic",
+            words=1600,
+            paragraphs=14,
+            paragraph_words_mean=114.3,
+            paragraph_words_stdev=30.0,
+            paragraph_sentences_mean=5.0,
+            sentence_length_mean=22.0,
+            sentence_length_stdev=8.0,
+            short_sentence_rate=0.03,
+            long_sentence_rate=0.32,
+            single_sentence_paragraph_rate=0.0,
+            transition_rate=0.02,
+            sentence_initial_conjunction_rate=0.0,
+            first_person_rate=0.0,
+            parenthetical_rate=0.05,
+            question_rate=0.0,
+            fragment_rate=0.0,
+            opening_class="brief_setup",
+            closing_class="concise",
         ),
     ]
 
@@ -88,8 +112,8 @@ def _sample_profile() -> VoiceProfile:
     )
     academic_ctx = VoiceContext(
         name="academic",
-        document_count=1,
-        word_count=1200,
+        document_count=2,
+        word_count=2800,
         confidence=0.8,
         structural_vectors=[v for v in vectors if v.context == "academic"],
     )
@@ -127,38 +151,64 @@ def test_seed_determinism():
 
 def test_different_seeds_produce_variance():
     profile = _sample_profile()
-    # Seeds 1 and 2 select different anchors or random draws
-    real1 = derive_structural_realization(
-        profile,
-        mode=WritingMode.LINKEDIN,
-        target_words=250,
-        input_text="Discussion about system reliability and outages",
-        seed=1,
-    )
-    real2 = derive_structural_realization(
-        profile,
-        mode=WritingMode.LINKEDIN,
-        target_words=250,
-        input_text="Discussion about system reliability and outages",
-        seed=10,
-    )
-    assert real1 is not None and real2 is not None
-    assert real1.seed != real2.seed
+    realizations = [
+        derive_structural_realization(
+            profile,
+            mode=WritingMode.LINKEDIN,
+            target_words=250,
+            seed=seed,
+        )
+        for seed in range(20)
+    ]
+    assert all(real is not None for real in realizations)
+    # This asserts selected behavior differs, not merely that the seed field
+    # echoes a different input.
+    assert len(
+        {
+            (
+                real.paragraph_words_mean_target,
+                real.sentence_length_mean_target,
+                real.opening_behavior,
+            )
+            for real in realizations
+        }
+    ) == 2
 
 
 def test_covariance_preservation_from_anchor():
     profile = _sample_profile()
-    real = derive_structural_realization(
-        profile,
-        mode=WritingMode.LINKEDIN,
-        target_words=150,
-        seed=42,
-    )
-    assert real is not None
-    assert real.selection_method == "EMPIRICAL_JOINT_ANCHOR_VECTOR"
-    assert real.paragraph_count_region[0] <= real.paragraph_count_region[1]
-    assert real.paragraph_words_mean_target > 0
-    assert real.sentence_length_mean_target > 0
+    observed = set()
+    for seed in range(100):
+        real = derive_structural_realization(
+            profile,
+            mode=WritingMode.LINKEDIN,
+            target_words=250,
+            seed=seed,
+        )
+        assert real is not None
+        assert real.selection_method == "EMPIRICAL_JOINT_ANCHOR_VECTOR"
+        observed.add(
+            (
+                real.paragraph_words_mean_target,
+                real.sentence_length_mean_target,
+                real.short_sentence_tendency,
+                real.first_person_eligible,
+                real.parenthetical_eligible,
+                real.question_eligible,
+                real.fragment_eligible,
+                real.opening_behavior,
+                real.ending_behavior,
+            )
+        )
+
+    # Every cross-feature tuple is one of the two observed document vectors.
+    # Independent marginal sampling would create additional combinations.
+    assert observed == {
+        (37.5, 12.5, "prominent", True, True, True, True,
+         "direct_thesis", "recommendation"),
+        (50.0, 14.0, "moderate", False, False, False, False,
+         "contextual_statement", "declarative_stop"),
+    }
 
 
 def test_length_conditioning():
@@ -172,7 +222,40 @@ def test_length_conditioning():
     )
     assert real is not None
     assert real.target_words == 1200
-    assert real.sentence_length_mean_target == 20.0
+    assert real.selected_anchor_context == "academic"
+    assert real.sample_count == 2
+    assert real.sentence_length_mean_target in (20.0, 22.0)
+
+
+def test_short_professional_piece_cannot_select_long_academic_anchor():
+    profile = _sample_profile()
+    for seed in range(50):
+        real = derive_structural_realization(
+            profile,
+            mode=WritingMode.LINKEDIN,
+            target_words=150,
+            seed=seed,
+        )
+        assert real is not None
+        assert real.selected_anchor_context == "professional"
+        assert real.paragraph_words_mean_target in (37.5, 50.0)
+
+
+def test_one_compatible_document_is_not_misrepresented_as_a_sampling_pool():
+    vector = _sample_vectors()[0]
+    profile = VoiceProfile(
+        author_name="one",
+        profile_name="one",
+        generated_from="corpus_build",
+        structural_vectors=[vector],
+    )
+    real = derive_structural_realization(
+        profile, mode=WritingMode.LINKEDIN, target_words=150, seed=1
+    )
+    assert real is not None
+    assert real.selection_method == "NO_COMPATIBLE_EMPIRICAL_VECTOR"
+    assert real.sample_count == 0
+    assert real.guidance_level == "none"
 
 
 def _impersonal_profile() -> VoiceProfile:
@@ -253,7 +336,7 @@ def test_outline_sections_suppress_sampled_paragraph_shape():
         profile,
         mode=WritingMode.TECHNICAL,
         outline=outline,
-        target_words=150,
+        target_words=250,
         seed=42,
     )
     assert real is not None
@@ -285,6 +368,112 @@ def test_near_complete_draft_protection():
     prompt_text = "\n".join(prompt_lines)
     assert "do not apply sampled structural pressure" in prompt_text
     assert "structural shape:" not in prompt_text
+
+
+def test_current_input_preserves_sparse_devices_even_when_anchor_lacks_them():
+    profile = _sample_profile()
+    # Seed 0 selects the zero-device professional anchor in this fixture.
+    candidates = [
+        derive_structural_realization(
+            profile,
+            mode=WritingMode.LINKEDIN,
+            target_words=250,
+            input_text=(
+                "But I learned this the hard way (during an outage). "
+                "Why repeat it? Not even close."
+            ),
+            seed=seed,
+        )
+        for seed in range(30)
+    ]
+    real = next(
+        item
+        for item in candidates
+        if item is not None
+        and any("CURRENT_INPUT_PARENTHETICAL_PRESERVED" in o for o in item.overrides)
+    )
+    assert real.first_person_eligible is True
+    assert real.parenthetical_eligible is True
+    assert real.question_eligible is True
+    assert real.sentence_initial_conjunction_eligible is True
+    assert real.fragment_eligible is True
+    assert {
+        override.split()[0] for override in real.overrides
+        if override.startswith("CURRENT_INPUT_")
+    } >= {
+        "CURRENT_INPUT_PERSONAL_PRESERVED",
+        "CURRENT_INPUT_PARENTHETICAL_PRESERVED",
+        "CURRENT_INPUT_QUESTION_PRESERVED",
+        "CURRENT_INPUT_CONJUNCTION_START_PRESERVED",
+        "CURRENT_INPUT_FRAGMENT_PRESERVED",
+    }
+
+
+def test_near_complete_draft_reparagraphing_is_rejected_end_to_end(
+    tmp_path, monkeypatch
+):
+    from howlwriter.config.defaults import default_config
+    from howlwriter.domain.document import Document
+    from howlwriter.pipeline.howl import run_howl_pipeline
+    from src.control_plane.agent_execution import FakeAgentBackend
+
+    paragraphs = [
+        (
+            "Production queues absorb short traffic bursts while keeping the "
+            "worker pool bounded. Operators can observe queue depth, reject "
+            "excess load, and preserve latency before one dependency spreads "
+            "overload across the rest of the service graph."
+        ),
+        (
+            "That boundary also makes capacity planning concrete. Arrival "
+            "rates, service time, and the number of workers become measurable "
+            "inputs instead of hidden assumptions, so teams can test behavior "
+            "before a traffic spike turns into an incident."
+        ),
+        (
+            "The implementation is intentionally ordinary. Set a finite "
+            "limit, expose saturation, and choose an explicit rejection path. "
+            "A small amount of visible backpressure is safer than an invisible "
+            "backlog that consumes memory until the process fails."
+        ),
+    ]
+    original = "\n\n".join(paragraphs)
+    assert len(original.split()) > 100
+    merged = " ".join(paragraphs)
+    indented = "\n".join(f"  {line}" for line in merged.splitlines())
+    backend = FakeAgentBackend(
+        agent_id="same_provider",
+        default_stdout=(
+            "\x60\x60\x60yaml\n"
+            f"resulting_text: |\n{indented}\n"
+            "changes_made: []\n"
+            "verdict: PASS\n"
+            "differences: []\n"
+            "rationale: no semantic change\n"
+            "\x60\x60\x60"
+        ),
+    )
+    path = tmp_path / "complete.md"
+    path.write_text(original, encoding="utf-8")
+    config = default_config()
+    config.voice_profile = "synthetic-profile.json"
+    monkeypatch.setattr(
+        "howlwriter.humanize.rewriter._load_voice_profile",
+        lambda _value: _sample_profile(),
+    )
+
+    result = run_howl_pipeline(
+        path,
+        config,
+        custom_backend=backend,
+        writing_mode=WritingMode.LINKEDIN,
+    )
+
+    assert result.final_document.text == Document.parse(original).text
+    assert result.provenance.structural_realization["guidance_level"] == "none"
+    guard = result.provenance.review["authority_guard"][0]
+    assert guard["near_complete_structure_changed"] is True
+    assert any("near-complete draft" in warning for warning in result.provenance.warnings)
 
 
 def test_render_structural_realization_prompt():

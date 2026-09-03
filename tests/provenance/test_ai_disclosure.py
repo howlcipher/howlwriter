@@ -142,7 +142,10 @@ def test_unreported_models_are_noted_rather_than_passed_over():
 
 def test_reviewer_independence_is_disclosed():
     statement = build_ai_use_statement(_writer_run())
-    assert any("Reviewer independence: INDEPENDENT" in n for n in statement.notes)
+    assert any(
+        "Reviewer independence: INDEPENDENT_PROVIDER" in n
+        for n in statement.notes
+    )
 
 
 # --- separation of the three concepts ------------------------------------

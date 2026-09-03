@@ -106,19 +106,22 @@ def test_a_writer_that_drops_a_required_point_is_caught():
     )
 
     assert result.coverage.status == "FAIL"
+    assert result.report.status == "NEEDS_REVIEW"
     assert any(f.node_id == "required_point_1" for f in result.coverage.missing)
 
 
 def test_a_writer_that_paraphrases_verbatim_text_is_caught():
     smoothed = _BODY.replace("isn't really a moat", "is not truly a moat")
     backend = _configure(_writer_yaml(smoothed))
-    result = run_howl_pipeline(
-        None, default_config(), outline=load_outline(_OUTLINE), custom_backend=backend
-    )
+    import pytest
 
-    assert result.coverage.status == "FAIL"
-    assert result.coverage.preserved_retained == 0
-    assert result.coverage.altered_preserved
+    with pytest.raises(RuntimeError, match="verbatim-preserve contract"):
+        run_howl_pipeline(
+            None,
+            default_config(),
+            outline=load_outline(_OUTLINE),
+            custom_backend=backend,
+        )
 
 
 def test_every_model_call_in_the_run_lands_in_the_provenance():

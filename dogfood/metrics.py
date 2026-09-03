@@ -24,6 +24,12 @@ import statistics
 from typing import Any, Iterable
 
 from howlwriter.voice.corpus.features import DocumentFeatures, extract_features
+from howlwriter.voice.corpus.diversity import (
+    classify_closing,
+    classify_opening,
+    classify_reasoning_moves,
+    classify_reasoning_shape,
+)
 
 #: Features summarised for every batch. Chosen to cover the axes a converged
 #: batch actually collapses on: length, rhythm, and the sparse habits that turn
@@ -57,6 +63,8 @@ _PARENTHETICAL = re.compile(r"\(([^)]{1,200})\)")
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _FIRST_PERSON = re.compile(r"\b(I|I'm|I've|I'd|I'll|me|my|mine|we|we're|we've|our|ours|us)\b", re.I)
 _HASHTAG_LINE = re.compile(r"^\s*(?:#[\w-]+\s*)+$")
+_HEADING_LINE = re.compile(r"^\s*#{1,6}\s+")
+_WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’-]*")
 
 
 def _stat_block(values: list[float]) -> dict[str, float]:
@@ -172,6 +180,67 @@ def first_person_report(texts: list[str]) -> dict[str, Any]:
     }
 
 
+def body_paragraphs(text: str) -> list[str]:
+    """Return prose paragraphs, excluding headings and hashtag trailers."""
+    paragraphs: list[str] = []
+    for block in re.split(r"\n\s*\n", text.strip()):
+        lines = [
+            line.strip()
+            for line in block.splitlines()
+            if line.strip()
+            and not _HEADING_LINE.match(line)
+            and not _HASHTAG_LINE.match(line)
+        ]
+        if lines:
+            paragraphs.append(" ".join(lines))
+    return paragraphs
+
+
+def paragraph_structure_report(texts: list[str]) -> dict[str, Any]:
+    """Paragraph count, word distribution, and within-piece weight variance."""
+    counts: list[float] = []
+    all_words: list[float] = []
+    weight_variances: list[float] = []
+    per_document: list[dict[str, Any]] = []
+    distribution: dict[str, int] = {}
+    for text in texts:
+        paragraphs = body_paragraphs(text)
+        word_counts = [len(_WORD.findall(p)) for p in paragraphs]
+        count = len(paragraphs)
+        counts.append(float(count))
+        distribution[str(count)] = distribution.get(str(count), 0) + 1
+        all_words.extend(float(value) for value in word_counts)
+        total = sum(word_counts)
+        weights = [value / total for value in word_counts] if total else []
+        weight_variance = (
+            statistics.pvariance(weights) if len(weights) > 1 else 0.0
+        )
+        weight_variances.append(weight_variance)
+        per_document.append(
+            {
+                "paragraph_count": count,
+                "paragraph_words": word_counts,
+                "paragraph_weight_variance": round(weight_variance, 6),
+            }
+        )
+
+    mode_count = max(distribution.values(), default=0)
+    modes = sorted(
+        int(value) for value, count in distribution.items() if count == mode_count
+    )
+    return {
+        "count_distribution": dict(
+            sorted(distribution.items(), key=lambda item: int(item[0]))
+        ),
+        "count_stats": _stat_block(counts),
+        "paragraph_word_distribution": _stat_block(all_words),
+        "paragraph_weight_variance": _stat_block(weight_variances),
+        "modal_counts": modes,
+        "modal_share": round(mode_count / len(texts), 4) if texts else 0.0,
+        "per_document": per_document,
+    }
+
+
 def opening_closing_convergence(texts: list[str]) -> dict[str, Any]:
     """How often a batch starts and ends the same way.
 
@@ -180,6 +249,8 @@ def opening_closing_convergence(texts: list[str]) -> dict[str, Any]:
     """
     openings: dict[str, int] = {}
     closings: dict[str, int] = {}
+    opening_classes: dict[str, int] = {}
+    closing_classes: dict[str, int] = {}
     for text in texts:
         sentences = [s.strip() for s in _SENTENCE_SPLIT.split(text.strip()) if s.strip()]
         if not sentences:
@@ -188,6 +259,10 @@ def opening_closing_convergence(texts: list[str]) -> dict[str, Any]:
         last = " ".join(sentences[-1].lower().split()[-3:])
         openings[first] = openings.get(first, 0) + 1
         closings[last] = closings.get(last, 0) + 1
+        opening_class = classify_opening(text)
+        closing_class = classify_closing(text)
+        opening_classes[opening_class] = opening_classes.get(opening_class, 0) + 1
+        closing_classes[closing_class] = closing_classes.get(closing_class, 0) + 1
     total = max(1, len(texts))
     return {
         "top_opening": max(openings.items(), key=lambda kv: kv[1]) if openings else None,
@@ -196,6 +271,8 @@ def opening_closing_convergence(texts: list[str]) -> dict[str, Any]:
         "top_closing_share": round(max(closings.values()) / total, 4) if closings else 0.0,
         "distinct_openings": len(openings),
         "distinct_closings": len(closings),
+        "opening_classes": opening_classes,
+        "closing_classes": closing_classes,
     }
 
 
@@ -207,37 +284,22 @@ def reasoning_shape(text: str) -> dict[str, Any]:
     paragraphs cannot see it. This looks for the moves: a claim, causal
     development, a generalising rule, and how the piece lands.
     """
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-    body = [p for p in paragraphs if not _HASHTAG_LINE.match(p)]
-    causal = re.compile(
-        r"\b(because|since|which means|so that|as a result|therefore|"
-        r"that is why|this means|the result|drives|leads to|causes)\b", re.I
-    )
-    rule = re.compile(
-        r"\b(always|never|every|any\b.*\bwill|the rule|in general|generally|"
-        r"what matters is|the point is|comes down to|boils down)\b", re.I
-    )
-    hedge = re.compile(r"\b(probably|might|may|could|likely|seems|appears|I think|in my)\b", re.I)
-
-    shape = []
-    for paragraph in body:
-        moves = []
-        if causal.search(paragraph):
-            moves.append("mechanism")
-        if rule.search(paragraph):
-            moves.append("rule")
-        if hedge.search(paragraph):
-            moves.append("hedge")
-        shape.append("+".join(moves) if moves else "assert")
-
-    closing = body[-1] if body else ""
+    paragraphs = body_paragraphs(text)
+    moves = classify_reasoning_moves(text)
+    closing_class = classify_closing(text)
     return {
-        "paragraphs": len(body),
-        "shape": shape,
-        "signature": ">".join(shape),
-        "closes_declarative": bool(closing) and not hedge.search(closing),
-        "closes_with_rule": bool(closing) and bool(rule.search(closing)),
-        "has_hashtags": any(_HASHTAG_LINE.match(p) for p in paragraphs),
+        "paragraphs": len(paragraphs),
+        "shape": moves,
+        "signature": classify_reasoning_shape(text),
+        "opening_class": classify_opening(text),
+        "closing_class": closing_class,
+        "closes_declarative": bool(paragraphs) and closing_class != "question",
+        "closes_with_rule": closing_class == "recommendation",
+        "has_hashtags": any(
+            _HASHTAG_LINE.match(line.strip())
+            for line in text.splitlines()
+            if line.strip()
+        ),
     }
 
 
@@ -276,7 +338,11 @@ def diversity_verdict(
     """
     from howlwriter.voice.corpus.diversity import compare
 
-    result = compare(corpus_features, generated, context_corpus_features=context_features)
+    result = compare(
+        corpus_features,
+        generated,
+        context_corpus_features=context_features,
+    )
     return {
         "verdict": result.verdict,
         "converged_dimensions": list(result.converged_dimensions),
@@ -298,17 +364,74 @@ def analyze_batch(
     texts: list[str],
     *,
     corpus_features: list[DocumentFeatures] | None = None,
+    context_features: list[DocumentFeatures] | None = None,
 ) -> dict[str, Any]:
     """The complete measured picture of one generation batch."""
     usable = [t for t in texts if t and t.strip()]
     payload: dict[str, Any] = {
         "samples": len(usable),
         "stats": batch_stats(usable),
+        "paragraphs": paragraph_structure_report(usable),
         "parentheticals": parenthetical_report(usable).to_dict(),
         "first_person": first_person_report(usable),
         "openings_closings": opening_closing_convergence(usable),
         "reasoning": reasoning_template_convergence(usable),
     }
     if corpus_features:
-        payload["diversity"] = diversity_verdict(corpus_features, usable)
+        payload["diversity"] = diversity_verdict(
+            corpus_features,
+            usable,
+            context_features=context_features,
+        )
     return payload
+
+
+def grouped_variation(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Separate variation across prompts from repeat variation within prompts."""
+    groups: dict[str, list[DocumentFeatures]] = {}
+    for record in records:
+        output = str(record.get("output") or "")
+        if record.get("status") != "OK" or not output.strip():
+            continue
+        groups.setdefault(str(record.get("id") or ""), []).append(
+            extract_features(output)
+        )
+
+    between: dict[str, dict[str, float]] = {}
+    within: dict[str, Any] = {}
+    for feature in BATCH_FEATURES:
+        group_means = [
+            statistics.mean(float(getattr(item, feature, 0.0) or 0.0) for item in items)
+            for items in groups.values()
+            if items
+        ]
+        between[feature] = _stat_block(group_means)
+
+        per_prompt: dict[str, dict[str, float]] = {}
+        stdevs: list[float] = []
+        cvs: list[float] = []
+        for prompt_id, items in groups.items():
+            if len(items) < 2:
+                continue
+            values = [float(getattr(item, feature, 0.0) or 0.0) for item in items]
+            mean = statistics.mean(values)
+            stdev = statistics.pstdev(values)
+            cv = stdev / abs(mean) if mean else 0.0
+            stdevs.append(stdev)
+            cvs.append(cv)
+            per_prompt[prompt_id] = {
+                "mean": round(mean, 4),
+                "stdev": round(stdev, 4),
+                "cv": round(cv, 4),
+            }
+        within[feature] = {
+            "groups_with_repeats": len(per_prompt),
+            "stdev_across_repeat_groups": _stat_block(stdevs),
+            "cv_across_repeat_groups": _stat_block(cvs),
+            "per_prompt": per_prompt,
+        }
+    return {
+        "prompts": len(groups),
+        "between_prompt": between,
+        "within_prompt": within,
+    }

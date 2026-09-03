@@ -28,8 +28,8 @@ _CONJUNCTION_START_PATTERN = re.compile(
     re.I,
 )
 
-# A single context example can be used as a last resort, but it is not a
-# distribution. Prefer a length-compatible pool with at least two anchors.
+# One document is evidence of one document, not a distribution from which
+# different legitimate shapes can be selected.
 MIN_CONTEXT_POOL = 2
 
 # Writing modes and voice contexts are different concepts. Keep this mapping
@@ -151,7 +151,7 @@ def _section_count(outline: Outline | None) -> int:
     return len(
         [
             node
-            for node in outline.nodes
+            for node in outline.all_nodes()
             if node.kind in (NodeKind.HEADING, NodeKind.REQUIRED_POINT)
         ]
     )
@@ -164,15 +164,10 @@ def _select_pool(
 ) -> tuple[list[StructuralVector], int, str, str, str]:
     """Return pool, candidate count, source, length rule, and fallback."""
     all_vectors = [vector for vector in profile.structural_vectors if vector.words > 0]
-    context = profile.contexts.get(desired_context)
     context_vectors = [
         vector
-        for vector in (
-            context.structural_vectors
-            if context is not None and context.structural_vectors
-            else [v for v in all_vectors if v.context == desired_context]
-        )
-        if vector.words > 0
+        for vector in all_vectors
+        if vector.context == desired_context
     ]
     compatible_names = _COMPATIBLE_CONTEXTS.get(
         desired_context, {desired_context, "unknown", "mixed", ""}
@@ -184,8 +179,8 @@ def _select_pool(
 
     # Exact register plus close length is strongest. A larger compatible
     # global pool is preferable to pretending one exact-context document is a
-    # distribution, but the lone exact anchor remains safer than crossing a
-    # fourfold length boundary.
+    # distribution. No branch samples from fewer than MIN_CONTEXT_POOL
+    # documents.
     choices = (
         (
             context_close if len(context_close) >= MIN_CONTEXT_POOL else [],
@@ -202,20 +197,6 @@ def _select_pool(
             "GLOBAL_LENGTH_COMPATIBLE_FALLBACK",
         ),
         (
-            context_close,
-            len(context_vectors),
-            desired_context,
-            "CONTEXT_CLOSE_0.5X_TO_2X",
-            "LOW_SAMPLE_CONTEXT_POOL",
-        ),
-        (
-            global_close,
-            len(global_vectors),
-            "global",
-            "GLOBAL_CLOSE_0.5X_TO_2X",
-            "LOW_SAMPLE_GLOBAL_POOL",
-        ),
-        (
             context_wide if len(context_wide) >= MIN_CONTEXT_POOL else [],
             len(context_vectors),
             desired_context,
@@ -228,20 +209,6 @@ def _select_pool(
             "global",
             "GLOBAL_WIDE_0.25X_TO_4X",
             "GLOBAL_WIDE_LENGTH_FALLBACK",
-        ),
-        (
-            context_wide,
-            len(context_vectors),
-            desired_context,
-            "CONTEXT_WIDE_0.25X_TO_4X",
-            "LOW_SAMPLE_WIDE_CONTEXT_POOL",
-        ),
-        (
-            global_wide,
-            len(global_vectors),
-            "global",
-            "GLOBAL_WIDE_0.25X_TO_4X",
-            "LOW_SAMPLE_WIDE_GLOBAL_POOL",
         ),
     )
     for pool, candidate_count, source, conditioning, fallback in choices:
@@ -423,12 +390,18 @@ def derive_structural_realization(
     authority_text = input_text
     if outline is not None:
         authority_text = "\n".join(
-            [input_text, *[node.text for node in outline.nodes if node.text]]
+            [input_text, *[node.text for node in outline.all_nodes() if node.text]]
         )
     has_personal = bool(_FIRST_PERSON_PATTERN.search(authority_text))
     has_parenthetical = bool(_PARENTHETICAL_PATTERN.search(authority_text))
     has_question = "?" in authority_text
     has_conjunction_start = bool(_CONJUNCTION_START_PATTERN.search(authority_text))
+    if authority_text.strip():
+        from howlwriter.voice.corpus.features import extract_features
+
+        has_fragment = extract_features(authority_text).fragment_rate > 0
+    else:
+        has_fragment = False
 
     if has_personal:
         if not first_person:
@@ -458,6 +431,9 @@ def derive_structural_realization(
     if has_conjunction_start and not conjunction_start:
         conjunction_start = True
         overrides.append("CURRENT_INPUT_CONJUNCTION_START_PRESERVED")
+    if has_fragment and not fragment:
+        fragment = True
+        overrides.append("CURRENT_INPUT_FRAGMENT_PRESERVED")
 
     # In formal/technical work, absent sparse devices are not an invitation to
     # add them. In sparse social prompts they remain optional evidence, never
@@ -477,7 +453,8 @@ def derive_structural_realization(
             question = False
         if not has_conjunction_start:
             conjunction_start = False
-        fragment = False
+        if not has_fragment:
+            fragment = False
 
     return StructuralRealization(
         source_context=source_context,

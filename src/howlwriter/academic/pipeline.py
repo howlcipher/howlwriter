@@ -40,8 +40,17 @@ from howlwriter.domain.generation_provenance import (
     sha256_text as prov_sha256,
 )
 from howlwriter.integration.provenance_capture import ProvenanceRecorder
-from howlwriter.outline.claims import review_additions
-from howlwriter.outline.coverage import check_coverage
+from howlwriter.outline.claims import (
+    CONNECTIVE_PROSE,
+    LOGICAL_EXPANSION,
+    classify_addition,
+    review_additions,
+)
+from howlwriter.outline.coverage import (
+    check_coverage,
+    paragraph_structure_changed,
+    preserved_violations,
+)
 from howlwriter.provenance.assemble import (
     build_contribution,
     save_provenance,
@@ -82,6 +91,78 @@ from howlwriter.review.meaning import (
 # is noise, not a rubric-evidence-restatement problem.
 _REDUNDANCY_TABLE_RESTATEMENT_GATE = 1
 _REDUNDANCY_NEAR_DUPLICATE_GATE = 2
+
+
+def _normalize_claim_entries(entries: list[Any] | None) -> list[dict[str, Any]]:
+    """Normalize a provider claim list without changing its semantics."""
+    normalized: list[dict[str, Any]] = []
+    for entry in entries or []:
+        if isinstance(entry, dict):
+            claim = str(entry.get("claim") or entry.get("claim_text") or "").strip()
+            if not claim:
+                continue
+            source_id = str(entry.get("source_id") or "").strip()
+            snippet = str(entry.get("evidence_snippet") or "").strip()
+            default_basis = (
+                f"retrieved source {source_id}" if source_id else "model inference"
+            )
+            normalized.append(
+                {
+                    "claim": claim,
+                    "source_id": source_id,
+                    "evidence_snippet": snippet,
+                    "basis": str(entry.get("basis") or default_basis).strip(),
+                }
+            )
+        elif isinstance(entry, str) and entry.strip():
+            normalized.append({"claim": entry.strip(), "basis": "model inference"})
+    return normalized
+
+
+def _model_added_claims(
+    claims_made: list[dict[str, Any]],
+    claimed_additions: list[dict[str, Any]],
+    outline: Any | None,
+) -> list[dict[str, Any]]:
+    """Conservatively separate all claims from model-introduced claims.
+
+    The provider's explicit added-claims list is useful evidence but not
+    trusted as the sole authority: omitted additions are recovered from
+    claims-made, while claims traceable to an authorship outline are not
+    relabelled as model contributions.
+    """
+    combined: dict[str, dict[str, Any]] = {}
+    for entry in [*claims_made, *claimed_additions]:
+        combined.setdefault(entry["claim"], entry)
+
+    if outline is None:
+        return list(combined.values())
+
+    additions: list[dict[str, Any]] = []
+    for entry in combined.values():
+        classification = classify_addition(entry["claim"], outline).classification
+        if classification not in (LOGICAL_EXPANSION, CONNECTIVE_PROSE):
+            additions.append(entry)
+    return additions
+
+
+def _record_preserve_rejection(
+    provenance: GenerationProvenance,
+    *,
+    stage: str,
+    violations: list[Any],
+) -> None:
+    ids = [finding.node_id for finding in violations]
+    event = {
+        "stage": stage,
+        "action": "REJECTED_CANDIDATE_AND_RETAINED_PRIOR_ARTIFACT",
+        "preserved_ids": ids,
+    }
+    provenance.review.setdefault("preserve_guard", []).append(event)
+    provenance.warnings.append(
+        f"{stage} output was rejected because it altered or removed preserved "
+        f"passage(s): {', '.join(ids)}. The prior artifact was retained."
+    )
 
 
 @dataclass
@@ -269,6 +350,7 @@ def _run_academic_pipeline(
     t_writer_start = time.time()
     writer_provider: str | None = None
     writer_stated_claims: list[dict] = []
+    writer_added_claims: list[dict] = []
 
     if can_use_models:
         writer = ModelAcademicWriter()
@@ -283,31 +365,30 @@ def _run_academic_pipeline(
         )
         draft_doc = draft_res.document
         writer_provider = draft_res.provider
-        writer_stated_claims = draft_res.claims_stated
-        normalized_claims: list[dict[str, Any]] = []
-        for c in writer_stated_claims:
-            if isinstance(c, dict):
-                c_text = str(c.get("claim") or c.get("claim_text") or "").strip()
-                s_id = str(c.get("source_id") or "").strip()
-                snip = str(c.get("evidence_snippet") or "").strip()
-                default_basis = f"source {s_id}: {snip}" if s_id else "model_addition"
-                basis = str(c.get("basis") or default_basis).strip()
-                normalized_claims.append({
-                    "claim": c_text,
-                    "source_id": s_id,
-                    "evidence_snippet": snip,
-                    "basis": basis,
-                })
-            elif isinstance(c, str) and c.strip():
-                normalized_claims.append({"claim": c.strip(), "basis": "model_addition"})
-        provenance.added_claims = normalized_claims
+        writer_stated_claims = _normalize_claim_entries(draft_res.claims_stated)
+        writer_added_claims = _normalize_claim_entries(draft_res.added_claims)
+        provenance.added_claims = _model_added_claims(
+            writer_stated_claims, writer_added_claims, outline
+        )
     else:
         # Deterministic drafting fallback: structured sections with evidence placeholders
         body_sections: list[str] = [f"# {spec.title}\n"]
         for topic in spec.outline:
             body_sections.append(f"## {topic}\n\nAnalysis and discussion of {topic.lower()}.")
+        if outline is not None:
+            body_sections[1:1] = [
+                node.text for node in outline.preserved() if node.text.strip()
+            ]
         body_text = "\n\n".join(body_sections)
         draft_doc = Document.parse(body_text, title=spec.title, mode=WritingMode.ACADEMIC)
+
+    initial_preserve_violations = preserved_violations(outline, draft_doc.text)
+    if initial_preserve_violations:
+        ids = ", ".join(f.node_id for f in initial_preserve_violations)
+        raise RuntimeError(
+            "Academic writer violated the verbatim-preserve contract for "
+            f"outline passage(s): {ids}. No altered artifact was accepted."
+        )
 
     writer_duration = round(time.time() - t_writer_start, 2)
     _notify("drafting", "DONE", "Drafting Paper", {
@@ -348,7 +429,14 @@ def _run_academic_pipeline(
                     pre_correction_redundancy if direction == "TIGHTEN" else None
                 ),
             )
-            draft_doc = corr_res.document
+            candidate_doc = corr_res.document
+            violations = preserved_violations(outline, candidate_doc.text)
+            if violations:
+                _record_preserve_rejection(
+                    provenance, stage="length_correction", violations=violations
+                )
+                break
+            draft_doc = candidate_doc
             actual_words = count_body_words(draft_doc.text)
             wc_status, wc_reason = evaluate_word_count_bounds(
                 actual_words,
@@ -412,6 +500,20 @@ def _run_academic_pipeline(
         stated_claims=writer_stated_claims,
         additional_grounding_texts=[spec.topic, *spec.requirements, *spec.known_identifiers],
     )
+    unsupported_ids = {c.id for c in provenance_graph.unsupported_claims()}
+    supported_additions = {
+        claim.text
+        for claim in provenance_graph.claims.values()
+        if claim.id not in unsupported_ids
+    }
+    claim_review = review_additions(
+        provenance.added_claims,
+        outline,
+        research_backed=True,
+        supported_claims=supported_additions,
+    )
+    provenance.review["model_additions"] = claim_review.to_dict()
+    provenance.warnings.extend(claim_review.notes)
     _notify("claim_verification", "DONE", "Claim & Provenance Verification", {
         "supported": verif_summary.supported_claims,
         "partially_supported": verif_summary.partially_supported_claims,
@@ -435,7 +537,34 @@ def _run_academic_pipeline(
             run_id=active_run_id,
             realization=realization,
         )
-        transformed_doc = humanize_res.document
+        candidate_doc = humanize_res.document
+        violations = preserved_violations(outline, candidate_doc.text)
+        structure_changed = bool(
+            realization
+            and realization.guidance_level == "none"
+            and paragraph_structure_changed(draft_doc.text, candidate_doc.text)
+        )
+        if violations:
+            _record_preserve_rejection(
+                provenance, stage="humanizer", violations=violations
+            )
+            transformed_doc = draft_doc
+        elif structure_changed:
+            provenance.review.setdefault("authority_guard", []).append(
+                {
+                    "stage": "humanizer",
+                    "action": "REJECTED_CANDIDATE_AND_RETAINED_PRIOR_ARTIFACT",
+                    "near_complete_structure_changed": True,
+                }
+            )
+            provenance.warnings.append(
+                "Humanizer output was rejected because it restructured a "
+                "near-complete draft whose authority level permits no sampled "
+                "structural rewrite. The prior artifact was retained."
+            )
+            transformed_doc = draft_doc
+        else:
+            transformed_doc = candidate_doc
         humanizer_provider = humanize_res.provider
         humanize_duration = humanize_res.duration_seconds
     else:
@@ -513,6 +642,7 @@ def _run_academic_pipeline(
         provenance.reviewer_independence_by_stage["consistency_review"] = consistency_indep
     else:
         provenance.reviewer_independence_by_stage["consistency_review"] = "NO_REVIEWER"
+    reviewer_independence = provenance.reviewer_independence()
     _notify("meaning_review", "DONE", "Meaning Preservation Review", {
         "deterministic_status": meaning_det.status,
         "semantic_status": semantic_res.verdict if semantic_res else None,
@@ -530,6 +660,13 @@ def _run_academic_pipeline(
     final_document = citation_mgr.attach_references(
         transformed_doc, citation_analysis
     )
+    final_preserve_violations = preserved_violations(outline, final_document.text)
+    if final_preserve_violations:
+        ids = ", ".join(f.node_id for f in final_preserve_violations)
+        raise RuntimeError(
+            "A post-processing stage violated the verbatim-preserve contract "
+            f"for passage(s): {ids}. No altered final artifact was accepted."
+        )
     _notify("citations_references", "DONE", "APA 7 Citations & References", {
         "in_text_citations": citation_analysis.in_text_citation_count,
         "references_count": len(citation_analysis.used_sources) or len(sources),
@@ -581,6 +718,7 @@ def _run_academic_pipeline(
         or has_authorship_deficiency
         or has_source_deficiency
         or has_claim_deficiency
+        or claim_review.blocks_readiness
         or has_redundancy_deficiency
         or (semantic_res is not None and semantic_res.verdict == "FAIL")
         or (consistency_res is not None and consistency_res.verdict == "FAIL")
@@ -739,12 +877,12 @@ def _run_academic_pipeline(
     # , and no deterministic test reached this line because the
     # consistency reviewer needs both a model and staged content. See
     # tests/academic/test_provenance_contract.py.
-    provenance.review = {
+    provenance.review.update({
         "meaning_preservation": meaning_det.status,
         "semantic_meaning": semantic_res.verdict if semantic_res else None,
         "consistency": consistency_res.verdict if consistency_res else None,
         "readiness": final_status,
-    }
+    })
     provenance.research.update(
         {
             "sources_retrieved": len(sources),
@@ -752,20 +890,6 @@ def _run_academic_pipeline(
             "unsupported_claims": len(provenance_graph.unsupported_claims()),
         }
     )
-    claim_review = review_additions(
-        provenance.added_claims,
-        outline,
-        # Research-backed: a new factual assertion with no evidence behind it
-        # must be supported, generalised, or removed, so it blocks readiness
-        # rather than merely being reported.
-        research_backed=True,
-        supported_claims={
-            claim.text for claim in provenance_graph.claims.values()
-            if claim.id not in {c.id for c in provenance_graph.unsupported_claims()}
-        },
-    )
-    provenance.review["model_additions"] = claim_review.to_dict()
-
     if outline is not None and authorship_coverage is None:
         authorship_coverage = check_coverage(outline, final_document.text)
         provenance.coverage = authorship_coverage.to_dict()
@@ -776,7 +900,16 @@ def _run_academic_pipeline(
         artifact_text=final_document.text,
         added_claims=provenance.added_claims,
         gaps=provenance.gaps,
-        unsupported=len(provenance_graph.unsupported_claims()),
+        research_grounded=sum(
+            1
+            for finding in claim_review.new_factual
+            if finding.claim in supported_additions
+        ),
+        unsupported=sum(
+            1
+            for finding in claim_review.new_factual
+            if finding.claim not in supported_additions
+        ),
     )
     provenance.complete = True
     save_provenance(provenance)

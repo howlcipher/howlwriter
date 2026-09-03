@@ -215,8 +215,11 @@ def review_additions(
         if isinstance(entry, dict):
             finding.basis = str(entry.get("basis", ""))
         if finding.classification == NEW_FACTUAL and text in supported:
-            finding.classification = LOGICAL_EXPANSION
-            finding.detail = "matched to retrieved evidence during verification"
+            # Evidence changes whether a new assertion is safe, not where it
+            # came from. Relabelling a source-backed model addition as a
+            # LOGICAL_EXPANSION made genuinely added facts disappear from
+            # provenance counts.
+            finding.detail = "new factual assertion matched to retrieved evidence"
         review.findings.append(finding)
 
     unsupported = [f for f in review.new_factual if f.claim not in supported]

@@ -65,7 +65,12 @@ from howlwriter.provenance.assemble import (
     summarize_outline,
 )
 from howlwriter.outline.claims import review_additions
-from howlwriter.outline.coverage import CoverageReport, check_coverage
+from howlwriter.outline.coverage import (
+    CoverageReport,
+    check_coverage,
+    paragraph_structure_changed,
+    preserved_violations,
+)
 from howlwriter.outline.writer import OutlineDraftResult, OutlineWriter
 from howlwriter.linting.rules import AI_STYLE_BANNED_WORD, RuleMatch
 from howlwriter.redpen.critic import RedPenEngine, RedPenFinding
@@ -257,6 +262,13 @@ def _run(
         )
         text = outline_draft.document.text
         original_document = outline_draft.document
+        initial_preserve_violations = preserved_violations(outline, text)
+        if initial_preserve_violations:
+            ids = ", ".join(f.node_id for f in initial_preserve_violations)
+            raise RuntimeError(
+                "Outline writer violated the verbatim-preserve contract for "
+                f"passage(s): {ids}. No altered artifact was accepted."
+            )
         provenance.generation_freedom = outline_draft.assessment.freedom.value
         provenance.outline_sha256 = sha256_text(outline.to_json())
         provenance.draft_sha256 = sha256_text(text)
@@ -329,13 +341,69 @@ def _run(
                 run_id=active_run_id,
                 realization=realization,
             )
-            final_document = humanize_res.document
-            changes.extend(humanize_res.changes)
+            candidate_document = humanize_res.document
+            violations = preserved_violations(outline, candidate_document.text)
+            structure_changed = bool(
+                realization
+                and realization.guidance_level == "none"
+                and paragraph_structure_changed(
+                    edited_document.text, candidate_document.text
+                )
+            )
+            if violations or structure_changed:
+                ids = [finding.node_id for finding in violations]
+                final_document = edited_document
+                guard_name = (
+                    "preserve_guard" if violations else "authority_guard"
+                )
+                provenance.review.setdefault(guard_name, []).append(
+                    {
+                        "stage": "humanizer",
+                        "action": (
+                            "REJECTED_CANDIDATE_AND_RETAINED_PRIOR_ARTIFACT"
+                        ),
+                        "preserved_ids": ids,
+                        "near_complete_structure_changed": structure_changed,
+                    }
+                )
+                if violations:
+                    provenance.warnings.append(
+                        "Humanizer output was rejected because it altered or "
+                        f"removed preserved passage(s): {', '.join(ids)}."
+                    )
+                else:
+                    provenance.warnings.append(
+                        "Humanizer output was rejected because it restructured "
+                        "a near-complete draft whose authority level permits no "
+                        "sampled structural rewrite."
+                    )
+            else:
+                final_document = candidate_document
+                changes.extend(humanize_res.changes)
             humanizer_provider = humanize_res.provider
         else:
             safe_rewrite = SafeRewriter().rewrite(edited_document, config)
-            final_document = safe_rewrite.document
-            changes.extend(safe_rewrite.changes)
+            violations = preserved_violations(outline, safe_rewrite.document.text)
+            if violations:
+                ids = [finding.node_id for finding in violations]
+                final_document = edited_document
+                provenance.review.setdefault("preserve_guard", []).append(
+                    {
+                        "stage": "safe_rewriter",
+                        "action": "REJECTED_CANDIDATE_AND_RETAINED_PRIOR_ARTIFACT",
+                        "preserved_ids": ids,
+                    }
+                )
+                provenance.warnings.append(
+                    "Safe rewriter output was rejected because it altered or "
+                    f"removed preserved passage(s): {', '.join(ids)}."
+                )
+            else:
+                final_document = safe_rewrite.document
+                changes.extend(safe_rewrite.changes)
+
+        if outline is not None:
+            coverage_report = check_coverage(outline, final_document.text)
 
         # 3. LINT: deterministic style rule check on transformed document
         lint_matches = LintEngine().run(final_document, config)
@@ -427,6 +495,7 @@ def _run(
             )
             or (humanizer_provider is not None and banned_word_count > 0)
             or (wc_status is not None and wc_status != "PASS")
+            or (coverage_report is not None and coverage_report.status == "FAIL")
         ):
             status = "NEEDS_REVIEW"
         else:
@@ -525,19 +594,19 @@ def _run(
         provenance.artifact_sha256 = compute_sha256(final_document.text)
         provenance.humanized_sha256 = provenance.artifact_sha256
         provenance.completed_at = _utc_now()
-        provenance.review = {
+        provenance.review.update({
             "meaning_preservation": meaning_result.status,
             "semantic_meaning": (
                 semantic_meaning_result.verdict if semantic_meaning_result else None
             ),
             "reviewer_independence": reviewer_independence,
             "readiness": status,
-        }
+        })
         if outline is not None:
             # Checked against the FINAL artifact, not the draft: an outline
             # guarantee that survives the writer and dies in the humanizer is
             # not a guarantee.
-            coverage_report = check_coverage(outline, final_document.text)
+            assert coverage_report is not None
             provenance.coverage = coverage_report.to_dict()
             provenance.outline_summary = summarize_outline(outline)
             claim_review = review_additions(

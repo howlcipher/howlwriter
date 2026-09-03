@@ -348,11 +348,13 @@ def test_a_split_corpus_records_the_runner_up_label():
 
 # --- diversity ---------------------------------------------------------
 
-def test_diversity_accepts_output_that_varies_like_the_corpus():
+def test_feature_diversity_does_not_hide_a_shared_rhetorical_template():
     corpus = [extract_features(synthetic_prose(i, paragraphs=6)) for i in range(10)]
     generated = [synthetic_prose(100 + i, paragraphs=6) for i in range(10)]
     result = compare(corpus, generated)
-    assert result.verdict == PASS
+    assert result.converged_dimensions == []
+    assert result.verdict == WARNING
+    assert any("rhetorical progression" in note for note in result.notes)
 
 
 def test_diversity_detects_excessive_convergence():
@@ -442,8 +444,10 @@ def test_an_empty_corpus_vector_cannot_distort_the_baseline():
     clean = compare(corpus, generated)
     polluted = compare(corpus + [DocumentFeatures()], generated)
 
-    assert clean.verdict == PASS
+    assert clean.verdict == WARNING
+    assert clean.converged_dimensions == []
     assert polluted.verdict == clean.verdict
+    assert polluted.converged_dimensions == []
     assert any("no measurable text" in note for note in polluted.notes)
     for a, b in zip(clean.dimensions, polluted.dimensions):
         assert a.corpus_variation == b.corpus_variation

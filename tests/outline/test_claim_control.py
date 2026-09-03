@@ -87,8 +87,8 @@ def test_a_social_run_still_surfaces_the_addition_rather_than_swallowing_it():
     assert any("should not arrive sounding like evidence" in n for n in review.notes)
 
 
-def test_evidence_found_during_verification_reclassifies_an_addition():
-    """A claim the verifier matched to a source is no longer unsupported."""
+def test_evidence_makes_an_addition_safe_without_erasing_its_origin():
+    """Support changes readiness, not whether the model introduced the fact."""
     added = [{"claim": "Most enterprises replaced their data teams in 2024."}]
     review = review_additions(
         added,
@@ -97,7 +97,8 @@ def test_evidence_found_during_verification_reclassifies_an_addition():
         supported_claims={"Most enterprises replaced their data teams in 2024."},
     )
     assert review.blocks_readiness is False
-    assert review.findings[0].classification == LOGICAL_EXPANSION
+    assert review.findings[0].classification == NEW_FACTUAL
+    assert "matched to retrieved evidence" in review.findings[0].detail
     assert "matched to retrieved evidence" in review.findings[0].detail
 
 
