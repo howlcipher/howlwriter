@@ -160,6 +160,7 @@ class RunRecord(DataClassSerializationMixin):
     requirements_coverage_status: str | None = None
     redundancy_flagged: bool = False
     identifier_grounding_flagged: bool = False
+    source_freshness_flagged: bool = False
     consistency_review_status: str | None = None
 
     # Timing metrics

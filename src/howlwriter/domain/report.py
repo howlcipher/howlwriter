@@ -11,7 +11,7 @@ left out, not approximated.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.domain.source import Source
@@ -76,6 +76,8 @@ class WritingReport(DataClassSerializationMixin):
     ai_style_warnings: int | None = None
     quotation_warnings: int | None = None
     identifier_warnings: int | None = None
+    freshness_warnings: int | None = None
+    freshness_findings: list[Any] = field(default_factory=list)
     redundancy_findings_count: int | None = None
     lint_before_count: int | None = None
     lint_after_count: int | None = None
@@ -263,7 +265,37 @@ class WritingReport(DataClassSerializationMixin):
                 lines.append(f"  Quotation Warnings:  {self.quotation_warnings}")
             if self.identifier_warnings is not None:
                 lines.append(f"  Identifier Warnings: {self.identifier_warnings}")
+            if self.freshness_warnings is not None:
+                lines.append(f"  Freshness Warnings:  {self.freshness_warnings}")
             lines.append("")
+
+        if self.freshness_findings:
+            lines.append("Source Freshness Warnings:")
+            for f in self.freshness_findings:
+                if isinstance(f, dict):
+                    src = f.get("source_title") or f.get("source_id", "Unknown Source")
+                    status = f.get("freshness_status", "UNKNOWN")
+                    sup = f.get("superseded_by")
+                    claim_text = f.get("claim_text")
+                    action = f.get("action")
+                else:
+                    src = getattr(f, "source_title", None) or getattr(f, "source_id", "Unknown Source")
+                    status = getattr(f, "freshness_status", "UNKNOWN")
+                    if hasattr(status, "value"):
+                        status = status.value
+                    sup = getattr(f, "superseded_by", None)
+                    claim_text = getattr(f, "claim_text", "")
+                    action = getattr(f, "action", "")
+
+                lines.append(f"  Source:        {src}")
+                lines.append(f"  Status:        {status}")
+                if sup:
+                    lines.append(f"  Superseded by: {sup}")
+                if claim_text:
+                    lines.append(f'  Claim:         "{claim_text}"')
+                if action:
+                    lines.append(f"  Action:        {action}")
+                lines.append("")
 
         has_citation_section = (
             self.citation_style is not None

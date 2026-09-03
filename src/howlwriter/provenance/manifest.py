@@ -118,6 +118,8 @@ def render_manifest(provenance: GenerationProvenance) -> str:
         add("Verification")
         add("-" * 12)
         for key, value in provenance.review.items():
+            if key == "freshness_findings" and isinstance(value, list):
+                continue
             add(f"  {key.replace('_', ' '):27s} {value}")
         add("")
 
