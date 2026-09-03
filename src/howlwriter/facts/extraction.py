@@ -32,9 +32,14 @@ _STAT_MARKERS = (
 
 
 class HeuristicClaimExtractor:
-    def extract(self, document: Document) -> list[Claim]:
+    def extract(self, document: Document, *, include_non_body: bool = False) -> list[Claim]:
         claims: list[Claim] = []
-        for p_index, s_index, sentence in document.all_sentences():
+        sentence_stream = (
+            document.all_sentences()
+            if include_non_body
+            else document.body_sentences()
+        )
+        for p_index, s_index, sentence in sentence_stream:
             has_number = bool(_NUMBER.search(sentence.text))
             marker = next((m for m in _STAT_MARKERS if m in sentence.text.lower()), None)
             if not has_number and marker is None:
