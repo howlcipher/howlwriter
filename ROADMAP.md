@@ -28,6 +28,7 @@ The following capabilities are implemented, tested, and active on `main`:
 | 20 | Outline-Guided Authorship | Done -- versioned `outline/v1` schema, seventeen node kinds, an explicit authority order, generation freedom derived from what the user supplied, a writer stage in front of the existing chain, and a deterministic coverage report checking verbatim retention, required points and ordering against the finished artifact |
 | 21 | Generation Provenance | Done -- every model call captured at the single dispatch boundary with the exact prompt sent, honest `PROVIDER_DID_NOT_REPORT` handling, credential redaction, summary/full levels, local sidecars, a generated manifest, a read-only web inspector, and model-added claims classified and gated by mode |
 | 22 | Generative-AI Disclosure | Done -- an AI Use Statement generated from actual execution, kept separate from the scholarly References page and from workflow provenance, declining to emit an APA reference entry when the provider reported no model rather than substituting its own name |
+| 23 | Source Freshness Gating v1 | Done -- verification of authority currency against claim temporal context, explicit historical justification support, version-mismatch blocking, replacement diagnostics, and independent evaluation from evidence depth |
 
 ## Explicitly Deferred (Named, Not Half-Built)
 

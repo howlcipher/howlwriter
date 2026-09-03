@@ -69,6 +69,31 @@ An optional `known_identifiers: [...]` field lists exact technical identifiers (
 
 ---
 
+## Source Freshness Gating
+
+HowlWriter validates that citations do not treat obsolete or superseded sources as current authorities without explicit justification.
+
+### Freshness Semantics
+* `CURRENT`: The source is currently active, supported, or authoritative.
+* `SUPERSEDED`: The source has been formally replaced, deprecated, or superseded by a newer edition or release (e.g. NIST SP 800-61 Rev. 2 superseded by Rev. 3).
+* `HISTORICAL_REQUIRED`: The source is historical or obsolete by definition, but required specifically for historical lineage or evolution analysis.
+* `VERSION_UNKNOWN`: Freshness or release version metadata is unknown or unverified.
+
+### Independence from Evidence Depth
+Freshness evaluates **authority currency**, which is orthogonal to **evidence depth**:
+* `Evidence Depth` measures how much text is retrieved (`METADATA_ONLY`, `ABSTRACT`, `FULL_TEXT`).
+* `Freshness` measures whether the source is appropriate for the claim's temporal context. A full-text source can still be superseded, and a metadata-only source can be current.
+
+### Verification Rules
+* **Rule A (Current authority)**: `CURRENT` source supporting a current-state claim passes verification.
+* **Rule B (Superseded authority as current)**: `SUPERSEDED` source supporting an unqualified current-state claim flags `NEEDS_REVIEW` and generates actionable replacement diagnostics with `superseded_by`.
+* **Rule C (Intentional historical research)**: `SUPERSEDED` source supporting an explicit historical claim (`intentional_historical_use`, historical phrasing, or assignment-level `allow_historical_sources`) passes without penalty.
+* **Rule D (Historical-required)**: `HISTORICAL_REQUIRED` source with historical claim passes; with a current-state claim it flags `NEEDS_REVIEW`.
+* **Rule E (Version unknown)**: `VERSION_UNKNOWN` source supporting a current-state claim flags `NEEDS_REVIEW`; time-insensitive claims pass cleanly.
+* **Rule F (Explicit version mismatch)**: When a claim explicitly specifies an authority version (e.g. `v19.2`) that conflicts with the cited source (e.g. `v15`), the evidence is rejected with non-supporting notes and status `BLOCKED`.
+
+---
+
 ## The Academic Pipeline
 
 ```
