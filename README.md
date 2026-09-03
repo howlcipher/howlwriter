@@ -1,5 +1,7 @@
 # HowlWriter
 
+[![CI](https://github.com/howlcipher/howlwriter/actions/workflows/ci.yml/badge.svg)](https://github.com/howlcipher/howlwriter/actions/workflows/ci.yml)
+
 A writing, editing, humanization, research, citation, provenance, and
 verification system built to work with [HowlPlane](https://github.com/howlcipher/howlplane).
 
@@ -244,10 +246,20 @@ backend reports them.
 ## Development
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev,web]"
-.venv/bin/playwright install chromium
-.venv/bin/pytest tests/
-.venv/bin/flake8 src/
+python3 -m venv .venv && source .venv/bin/activate
+pip install --upgrade pip
+pip install -e ".[dev]"
+python -m playwright install chromium
+
+# Static correctness lint and compilation check
+python -m compileall src/ tests/
+flake8 src/ --select=F821,F401
+
+# Run tests
+pytest -q
+pytest tests/docs/ -v
+
+# (Optional) Build frontend
 cd frontend && npm install && npm run build
 ```
 

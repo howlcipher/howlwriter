@@ -29,6 +29,7 @@ The following capabilities are implemented, tested, and active on `main`:
 | 21 | Generation Provenance | Done -- every model call captured at the single dispatch boundary with the exact prompt sent, honest `PROVIDER_DID_NOT_REPORT` handling, credential redaction, summary/full levels, local sidecars, a generated manifest, a read-only web inspector, and model-added claims classified and gated by mode |
 | 22 | Generative-AI Disclosure | Done -- an AI Use Statement generated from actual execution, kept separate from the scholarly References page and from workflow provenance, declining to emit an APA reference entry when the provider reported no model rather than substituting its own name |
 | 23 | Source Freshness Gating v1 | Done -- verification of authority currency against claim temporal context, explicit historical justification support, version-mismatch blocking, replacement diagnostics, and independent evaluation from evidence depth |
+| 24 | CI & Repository Portability v1 | Done -- machine-independent environment discovery, elimination of workstation-specific paths, hermetic test doubles, Playwright responsive testing, and automated GitHub Actions CI matrix |
 
 ## Explicitly Deferred (Named, Not Half-Built)
 
