@@ -202,7 +202,7 @@ _OFFICIAL_ATTACK_RECORDS: dict[str, AttackTechniqueRecord] = {
             "cloud storage": "T1567.002",
             "mega.nz": "T1567.002",
             "dropbox": "T1567.002",
-            "google drive": "T1567.002",
+            "gdrive": "T1567.002",
         },
         supported_semantic_facts=[
             "Adversaries exfiltrate data to public or private commercial code repositories like GitHub or GitLab.",
