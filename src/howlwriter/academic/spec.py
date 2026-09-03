@@ -146,11 +146,14 @@ def load_assignment_spec(source: str | Path | dict[str, Any]) -> AssignmentSpec:
     if isinstance(source, dict):
         raw_data = dict(source)
     else:
-        path = Path(source)
-        if path.is_file():
-            text = path.read_text(encoding="utf-8")
-        else:
-            text = str(source)
+        text = str(source)
+        if "\n" not in text:
+            try:
+                p = Path(source)
+                if p.is_file():
+                    text = p.read_text(encoding="utf-8")
+            except (OSError, ValueError):
+                pass
 
         try:
             raw_data = yaml.safe_load(text)

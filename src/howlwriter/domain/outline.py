@@ -514,8 +514,14 @@ def load_outline(source: str | Path | dict[str, Any]) -> Outline:
     if isinstance(source, dict):
         raw: Any = dict(source)
     else:
-        path = Path(source)
-        text = path.read_text(encoding="utf-8") if path.is_file() else str(source)
+        text = str(source)
+        if "\n" not in text:
+            try:
+                p = Path(source)
+                if p.is_file():
+                    text = p.read_text(encoding="utf-8")
+            except (OSError, ValueError):
+                pass
         try:
             raw = yaml.safe_load(text)
         except Exception:

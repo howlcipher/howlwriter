@@ -165,3 +165,39 @@ def test_runtime_source_contains_no_private_machine_roots():
                 violations.append(f"{py_file.relative_to(repo_root)}: contains '{pattern}'")
 
     assert violations == [], f"Private machine-root path detected in runtime source: {violations}"
+
+
+def test_multiline_yaml_content_loading_portability():
+    """Verify that loading multiline YAML/JSON does not fail with OSError (Errno 36 File name too long)."""
+    from howlwriter.academic.spec import load_assignment_spec
+    from howlwriter.domain.outline import load_outline
+
+    spec_yaml = """
+title: Portability Verification Spec
+type: academic
+topic: >
+  Demonstrate that multiline YAML strings longer than PATH_MAX or containing newlines
+  can be parsed cleanly without triggering pathlib stat errors on Linux Python 3.11-3.13.
+target_words: 1500
+citation_style: apa7
+source_requirements:
+  minimum_sources: 2
+requirements:
+  - Verify portability across Python versions
+outline:
+  - Section 1
+  - Section 2
+"""
+    spec = load_assignment_spec(spec_yaml)
+    assert spec.title == "Portability Verification Spec"
+
+    outline_yaml = """
+schema: "outline/v1"
+title: Portability Outline
+nodes:
+  - id: n1
+    kind: heading
+    title: First section
+"""
+    outline = load_outline(outline_yaml)
+    assert outline.title == "Portability Outline"
