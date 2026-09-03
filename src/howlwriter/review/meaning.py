@@ -19,6 +19,7 @@ import re
 from typing import Any, Literal, Protocol
 
 from howlwriter.domain.document import Document
+from howlwriter.domain.generation_provenance import ReviewerFallbackRecord
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import NotConfiguredRole, WritingRole

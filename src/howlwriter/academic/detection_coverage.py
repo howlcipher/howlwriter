@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import enum
-import re
 
 from howlwriter.domain.document import Document
 from howlwriter.domain.serialization import DataClassSerializationMixin

@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import re
-from typing import Any
 
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.domain.source import DEPTH_FULL_TEXT, DEPTH_PARTIAL_TEXT, Source
