@@ -159,6 +159,7 @@ class DocumentFeatures:
             single_sentence_paragraph_rate=self.single_sentence_paragraph_rate,
             transition_rate=self.transition_rate,
             sentence_initial_conjunction_rate=self.sentence_initial_conjunction_rate,
+            fragment_rate=self.fragment_rate,
             first_person_rate=self.first_person_rate,
             parenthetical_rate=self.parenthetical_rate,
             question_rate=self.question_rate,

@@ -262,10 +262,11 @@ def generate_full_howlwriter_output(
 
         profile = _load_voice_profile(cfg.voice_profile)
         if profile is not None:
+            input_words = extract_features(doc.text).words
             realization = derive_structural_realization(
                 profile=profile,
                 mode=WritingMode.LINKEDIN,
-                target_words=doc.stats.words if doc.stats.words > 80 else 200,
+                target_words=input_words if input_words > 80 else 200,
                 input_text=doc.text,
                 seed=seed,
             )

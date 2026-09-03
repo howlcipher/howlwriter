@@ -15,7 +15,7 @@ from howlwriter.voice.realization import (
 def _sample_vectors() -> list[StructuralVector]:
     return [
         StructuralVector(
-            context="linkedin",
+            context="professional",
             words=150,
             paragraphs=4,
             paragraph_words_mean=37.5,
@@ -35,7 +35,7 @@ def _sample_vectors() -> list[StructuralVector]:
             closing_class="call_to_action",
         ),
         StructuralVector(
-            context="linkedin",
+            context="professional",
             words=350,
             paragraphs=7,
             paragraph_words_mean=50.0,
@@ -79,12 +79,12 @@ def _sample_vectors() -> list[StructuralVector]:
 
 def _sample_profile() -> VoiceProfile:
     vectors = _sample_vectors()
-    linkedin_ctx = VoiceContext(
-        name="linkedin",
+    professional_ctx = VoiceContext(
+        name="professional",
         document_count=2,
         word_count=500,
         confidence=0.8,
-        structural_vectors=[v for v in vectors if v.context == "linkedin"],
+        structural_vectors=[v for v in vectors if v.context == "professional"],
     )
     academic_ctx = VoiceContext(
         name="academic",
@@ -98,7 +98,7 @@ def _sample_profile() -> VoiceProfile:
         version=3,
         profile_name="author_test",
         generated_from="corpus_build",
-        contexts={"linkedin": linkedin_ctx, "academic": academic_ctx},
+        contexts={"professional": professional_ctx, "academic": academic_ctx},
         structural_vectors=vectors,
     )
 
@@ -155,7 +155,7 @@ def test_covariance_preservation_from_anchor():
         seed=42,
     )
     assert real is not None
-    assert real.selection_method == "EMPIRICAL_ANCHOR_VECTOR"
+    assert real.selection_method == "EMPIRICAL_JOINT_ANCHOR_VECTOR"
     assert real.paragraph_count_region[0] <= real.paragraph_count_region[1]
     assert real.paragraph_words_mean_target > 0
     assert real.sentence_length_mean_target > 0
@@ -175,36 +175,67 @@ def test_length_conditioning():
     assert real.sentence_length_mean_target == 20.0
 
 
-def test_personal_pronoun_preservation_and_impersonal_veto():
-    profile = _sample_profile()
+def _impersonal_profile() -> VoiceProfile:
+    """A profile whose professional anchors never used first person.
 
-    # Personal anecdote prompt forces first person
-    real_personal = derive_structural_realization(
+    Needed to exercise the current-input override deterministically: the engine
+    only records CURRENT_INPUT_PERSONAL_PRESERVED when the sampled anchor
+    supplied no first person of its own.
+    """
+    profile = _sample_profile()
+    for vector in profile.structural_vectors:
+        vector.first_person_rate = 0.0
+    for context in profile.contexts.values():
+        for vector in context.structural_vectors:
+            vector.first_person_rate = 0.0
+    return profile
+
+
+def test_personal_input_forces_first_person():
+    profile = _sample_profile()
+    real = derive_structural_realization(
         profile,
         mode=WritingMode.LINKEDIN,
         target_words=200,
         input_text="My team and I spent yesterday debugging an outage that I caused.",
         seed=42,
     )
-    assert real_personal is not None
-    assert real_personal.first_person_eligible is True
-    assert any("CURRENT_INPUT_PERSONAL_PRESERVED" in o for o in real_personal.overrides)
+    assert real is not None
+    assert real.first_person_eligible is True
+    assert real.first_person_target_rate > 0
 
-    # Impersonal technical prompt vetoes first person
-    real_impersonal = derive_structural_realization(
+
+def test_personal_input_overrides_sampled_absence():
+    real = derive_structural_realization(
+        _impersonal_profile(),
+        mode=WritingMode.LINKEDIN,
+        target_words=200,
+        input_text="My team and I spent yesterday debugging an outage that I caused.",
+        seed=42,
+    )
+    assert real is not None
+    assert real.first_person_eligible is True
+    assert any("CURRENT_INPUT_PERSONAL_PRESERVED" in o for o in real.overrides)
+
+
+def test_impersonal_input_vetoes_sampled_first_person():
+    profile = _sample_profile()
+    real = derive_structural_realization(
         profile,
         mode=WritingMode.TECHNICAL,
         target_words=200,
         input_text="The system architecture deploys three replicas across availability zones.",
         seed=42,
     )
-    assert real_impersonal is not None
-    assert real_impersonal.first_person_eligible is False
-    # If first_person_eligible was already False, or if veto was recorded:
-    assert real_impersonal.first_person_eligible is False
+    assert real is not None
+    assert real.first_person_eligible is False
+    assert real.first_person_target_rate == 0.0
+    # The sampled anchor did carry first person, so the veto must be recorded
+    # rather than the absence being a coincidence of anchor choice.
+    assert any("IMPERSONAL_INPUT_VETO" in o for o in real.overrides)
 
 
-def test_outline_section_count_expands_paragraph_bounds():
+def test_outline_sections_suppress_sampled_paragraph_shape():
     profile = _sample_profile()
     outline = Outline(
         title="Distributed Systems",
@@ -226,9 +257,17 @@ def test_outline_section_count_expands_paragraph_bounds():
         seed=42,
     )
     assert real is not None
-    # With 6 headings, paragraph region must expand to accommodate them
-    assert real.paragraph_count_region[0] >= 6
-    assert any("OUTLINE_SECTION_COUNT" in o for o in real.overrides)
+    # A supplied section structure outranks the sampled paragraph architecture.
+    # The engine asserts that authority by dropping to cadence-only guidance,
+    # not by widening a paragraph region it then never renders.
+    assert real.guidance_level == "cadence_only"
+    assert any("OUTLINE_STRUCTURE_AUTHORITY" in o for o in real.overrides)
+
+    rendered = "\n".join(render_structural_realization_prompt(real))
+    assert "outline authority:" in rendered
+    assert "sentence rhythm:" in rendered
+    assert "structural shape:" not in rendered
+    assert "paragraph weighting:" not in rendered
 
 
 def test_near_complete_draft_protection():
@@ -244,7 +283,8 @@ def test_near_complete_draft_protection():
     assert any("NEAR_COMPLETE_DRAFT_PRESERVED" in o for o in real.overrides)
     prompt_lines = render_structural_realization_prompt(real)
     prompt_text = "\n".join(prompt_lines)
-    assert "NEAR-COMPLETE DRAFT PRESERVATION" in prompt_text
+    assert "do not apply sampled structural pressure" in prompt_text
+    assert "structural shape:" not in prompt_text
 
 
 def test_render_structural_realization_prompt():

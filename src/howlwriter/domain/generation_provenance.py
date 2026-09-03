@@ -104,7 +104,22 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
      r"\1=[REDACTED]"),
 )
 
-_HOME_PATTERN = re.compile(r"/(?:home|Users)/[^/\s\"']+")
+_HOME_PATTERN = re.compile(r"/(?:var/home|home|Users)/[^/\s\"']+")
+
+_REVIEWER_STATUS_MAP = {
+    "INDEPENDENT": "INDEPENDENT_PROVIDER",
+    "INDEPENDENT_PROVIDER": "INDEPENDENT_PROVIDER",
+    "SAME_PROVIDER": "SAME_PROVIDER",
+    "NOT_REVIEWED": "NO_REVIEWER",
+    "NO_REVIEWER": "NO_REVIEWER",
+    "UNAVAILABLE": "UNKNOWN",
+    "UNKNOWN": "UNKNOWN",
+}
+
+
+def normalize_reviewer_independence(value: str | None) -> str:
+    """Translate provider-specific status words to the provenance contract."""
+    return _REVIEWER_STATUS_MAP.get(str(value or "").upper(), "UNKNOWN")
 
 
 def redact(text: str, *, mask_paths: bool = False) -> str:
@@ -292,10 +307,24 @@ class GenerationProvenance(DataClassSerializationMixin):
         return sorted({c.model for c in self.calls if c.model})
 
     def reviewer_independence(self) -> str | None:
-        for call in self.calls:
-            if call.role in ("final_reviewer", "voice_reviewer") and call.independence_status:
-                return call.independence_status
-        return None
+        """Conservatively summarize every model-backed review stage."""
+        statuses = [
+            normalize_reviewer_independence(value)
+            for stage, value in self.reviewer_independence_by_stage.items()
+            if stage.endswith("review")
+        ]
+        if not statuses:
+            statuses = [
+                normalize_reviewer_independence(call.independence_status)
+                for call in self.calls
+                if call.role in ("final_reviewer", "voice_reviewer")
+            ]
+        if not statuses:
+            return None
+        for status in ("SAME_PROVIDER", "UNKNOWN", "NO_REVIEWER"):
+            if status in statuses:
+                return status
+        return "INDEPENDENT_PROVIDER"
 
     def unknown_model_calls(self) -> list[ModelCallRecord]:
         return [c for c in self.calls if c.model_status == MODEL_NOT_REPORTED]

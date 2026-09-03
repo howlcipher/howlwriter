@@ -6,6 +6,7 @@ from pathlib import Path
 import time
 from fastapi import APIRouter, HTTPException
 
+from howlwriter.academic.length import count_body_words
 from howlwriter.config.loader import ConfigLoader
 from howlwriter.diagnostic.run_record import (
     RunRecord,
@@ -67,6 +68,22 @@ def run_humanize(req: HumanizeRequest) -> HumanizeResponse:
     warnings: list[str] = []
     duration: float = 0.0
 
+    realization = None
+    if can_use_model and config.voice_profile:
+        from howlwriter.humanize.rewriter import _load_voice_profile
+        from howlwriter.voice.realization import derive_structural_realization
+
+        profile = _load_voice_profile(config.voice_profile)
+        if profile is not None:
+            input_words = count_body_words(document.text)
+            realization = derive_structural_realization(
+                profile=profile,
+                mode=mode,
+                target_words=input_words,
+                input_text=document.text,
+                freedom="MINIMAL" if input_words > 100 else "HIGH",
+            )
+
     if can_use_model:
         cwd = Path(req.cwd) if req.cwd else Path.cwd()
         res = ModelHumanizerRewriter().rewrite(
@@ -74,6 +91,7 @@ def run_humanize(req: HumanizeRequest) -> HumanizeResponse:
             config,
             cwd=cwd,
             run_id=active_run_id,
+            realization=realization,
         )
         transformed_doc = res.document
         humanizer_provider = res.provider

@@ -1,14 +1,9 @@
-"""Per-Piece Structural Realization Engine.
+"""Choose one evidence-backed structural shape for one generated piece.
 
-Derives ONE plausible structural realization for a generated piece from:
-  Author Corpus Distributions
-  + Current Input
-  + Outline Authority
-  + Writing Mode
-  + Context
-  -> StructuralRealization
-
-This replaces the static shared-band prompt ranges that caused model convergence.
+The realization layer samples a complete document vector, not independent
+feature marginals. That distinction is the contract: an observed combination
+of paragraph shape, cadence, and sparse habits may be offered as soft guidance;
+a synthetic combination that never occurred in the corpus may not.
 """
 
 from __future__ import annotations
@@ -24,27 +19,73 @@ from howlwriter.domain.structural_realization import StructuralRealization
 from howlwriter.domain.voice import StructuralVector, VoiceProfile
 
 _FIRST_PERSON_PATTERN = re.compile(
-    r"\b(I|I'm|I've|I'd|I'll|me|my|mine|we|we're|we've|our|ours|us)\b", re.I
+    r"\b(I|I'm|I've|I'd|I'll|me|my|mine|we|we're|we've|our|ours|us)\b",
+    re.I,
+)
+_PARENTHETICAL_PATTERN = re.compile(r"\([^()]{1,200}\)")
+_CONJUNCTION_START_PATTERN = re.compile(
+    r"(?:^|(?<=[.!?])\s+)(?:And|But|Or|Yet|So)\b",
+    re.I,
 )
 
-#: Known mappings from WritingMode to VoiceProfile context names.
+# A single context example can be used as a last resort, but it is not a
+# distribution. Prefer a length-compatible pool with at least two anchors.
+MIN_CONTEXT_POOL = 2
+
+# Writing modes and voice contexts are different concepts. Keep this mapping
+# aligned with voice.application.MODE_CONTEXTS.
 MODE_CONTEXT_MAP: dict[str, str] = {
     "linkedin": "professional",
-    "short_form": "professional",
+    "professional": "professional",
+    "email": "professional",
     "academic": "academic",
-    "essay": "general",
-    "article": "general",
+    "documentation": "academic",
     "technical": "professional",
+    "article": "general",
+    "casual": "general",
+    "custom": "general",
 }
 
-#: Typical target word counts per mode when not explicitly supplied.
 DEFAULT_TARGET_WORDS: dict[str, int] = {
     "linkedin": 220,
-    "short_form": 250,
+    "professional": 600,
+    "email": 250,
     "academic": 1200,
-    "essay": 900,
-    "article": 700,
+    "documentation": 800,
     "technical": 600,
+    "article": 700,
+    "casual": 350,
+    "custom": 500,
+}
+
+_COMPATIBLE_CONTEXTS: dict[str, set[str]] = {
+    "professional": {"professional", "general", "unknown", "mixed", ""},
+    "academic": {"academic"},
+    "general": {"general", "professional", "unknown", "mixed", ""},
+}
+
+_OPENING_CLASSES = {
+    "direct_entry": "direct_thesis",
+    "brief_setup": "contextual_statement",
+    "contextual_setup": "contextual_statement",
+    "personal_context": "personal_observation",
+    "direct_thesis": "direct_thesis",
+    "contextual_statement": "contextual_statement",
+    "personal_observation": "personal_observation",
+    "anecdotal_entry": "anecdotal_entry",
+    "question": "question",
+}
+_CLOSING_CLASSES = {
+    "stops": "declarative_stop",
+    "concise": "declarative_stop",
+    "restatement": "summary",
+    "call_to_action": "recommendation",
+    "declarative_stop": "declarative_stop",
+    "summary": "summary",
+    "recommendation": "recommendation",
+    "implication": "implication",
+    "personal_reflection": "personal_reflection",
+    "question": "question",
 }
 
 
@@ -55,24 +96,197 @@ def derive_seed(
     outline_summary: str = "",
     target_words: int | None = None,
 ) -> int:
-    """Deterministically derive a 32-bit positive integer seed from the run parameters.
-
-    Ensures that identical inputs produce identical structural selections,
-    while different inputs naturally explore different valid parts of the
-    author's distribution.
-    """
+    """Derive a stable seed from every selection input, without storing prose."""
     hasher = hashlib.sha256()
-    hasher.update(profile_name.encode("utf-8"))
-    hasher.update(b"::")
-    hasher.update(mode.encode("utf-8"))
-    hasher.update(b"::")
-    hasher.update(input_text[:500].encode("utf-8"))
-    hasher.update(b"::")
-    hasher.update(outline_summary.encode("utf-8"))
-    hasher.update(b"::")
-    hasher.update(str(target_words or 0).encode("utf-8"))
-    digest = hasher.digest()
-    return int.from_bytes(digest[:4], "big") & 0x7FFFFFFF
+    for value in (
+        profile_name,
+        mode,
+        input_text,
+        outline_summary,
+        str(target_words or 0),
+    ):
+        hasher.update(value.encode("utf-8"))
+        hasher.update(b"::")
+    return int.from_bytes(hasher.digest()[:4], "big") & 0x7FFFFFFF
+
+
+def _length_pools(
+    vectors: list[StructuralVector], target_words: int
+) -> tuple[list[StructuralVector], list[StructuralVector]]:
+    close = [
+        vector
+        for vector in vectors
+        if target_words * 0.5 <= vector.words <= target_words * 2.0
+    ]
+    wide = [
+        vector
+        for vector in vectors
+        if target_words * 0.25 <= vector.words <= target_words * 4.0
+    ]
+    return close, wide
+
+
+def _outline_fingerprint(outline: Outline | None) -> str:
+    if outline is None:
+        return ""
+    try:
+        payload = outline.to_json()
+    except AttributeError:
+        payload = repr(outline)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _resolve_freedom(outline: Outline | None, freedom: Any) -> str:
+    value = getattr(freedom, "value", freedom)
+    if value is None and outline is not None:
+        from howlwriter.outline.freedom import assess_freedom
+
+        value = assess_freedom(outline).freedom.value
+    return str(value or "").strip().lower()
+
+
+def _section_count(outline: Outline | None) -> int:
+    if outline is None:
+        return 0
+    return len(
+        [
+            node
+            for node in outline.nodes
+            if node.kind in (NodeKind.HEADING, NodeKind.REQUIRED_POINT)
+        ]
+    )
+
+
+def _select_pool(
+    profile: VoiceProfile,
+    desired_context: str,
+    target_words: int,
+) -> tuple[list[StructuralVector], int, str, str, str]:
+    """Return pool, candidate count, source, length rule, and fallback."""
+    all_vectors = [vector for vector in profile.structural_vectors if vector.words > 0]
+    context = profile.contexts.get(desired_context)
+    context_vectors = [
+        vector
+        for vector in (
+            context.structural_vectors
+            if context is not None and context.structural_vectors
+            else [v for v in all_vectors if v.context == desired_context]
+        )
+        if vector.words > 0
+    ]
+    compatible_names = _COMPATIBLE_CONTEXTS.get(
+        desired_context, {desired_context, "unknown", "mixed", ""}
+    )
+    global_vectors = [v for v in all_vectors if v.context in compatible_names]
+
+    context_close, context_wide = _length_pools(context_vectors, target_words)
+    global_close, global_wide = _length_pools(global_vectors, target_words)
+
+    # Exact register plus close length is strongest. A larger compatible
+    # global pool is preferable to pretending one exact-context document is a
+    # distribution, but the lone exact anchor remains safer than crossing a
+    # fourfold length boundary.
+    choices = (
+        (
+            context_close if len(context_close) >= MIN_CONTEXT_POOL else [],
+            len(context_vectors),
+            desired_context,
+            "CONTEXT_CLOSE_0.5X_TO_2X",
+            "",
+        ),
+        (
+            global_close if len(global_close) >= MIN_CONTEXT_POOL else [],
+            len(global_vectors),
+            "global",
+            "GLOBAL_CLOSE_0.5X_TO_2X",
+            "GLOBAL_LENGTH_COMPATIBLE_FALLBACK",
+        ),
+        (
+            context_close,
+            len(context_vectors),
+            desired_context,
+            "CONTEXT_CLOSE_0.5X_TO_2X",
+            "LOW_SAMPLE_CONTEXT_POOL",
+        ),
+        (
+            global_close,
+            len(global_vectors),
+            "global",
+            "GLOBAL_CLOSE_0.5X_TO_2X",
+            "LOW_SAMPLE_GLOBAL_POOL",
+        ),
+        (
+            context_wide if len(context_wide) >= MIN_CONTEXT_POOL else [],
+            len(context_vectors),
+            desired_context,
+            "CONTEXT_WIDE_0.25X_TO_4X",
+            "NO_CLOSE_LENGTH_MATCH",
+        ),
+        (
+            global_wide if len(global_wide) >= MIN_CONTEXT_POOL else [],
+            len(global_vectors),
+            "global",
+            "GLOBAL_WIDE_0.25X_TO_4X",
+            "GLOBAL_WIDE_LENGTH_FALLBACK",
+        ),
+        (
+            context_wide,
+            len(context_vectors),
+            desired_context,
+            "CONTEXT_WIDE_0.25X_TO_4X",
+            "LOW_SAMPLE_WIDE_CONTEXT_POOL",
+        ),
+        (
+            global_wide,
+            len(global_vectors),
+            "global",
+            "GLOBAL_WIDE_0.25X_TO_4X",
+            "LOW_SAMPLE_WIDE_GLOBAL_POOL",
+        ),
+    )
+    for pool, candidate_count, source, conditioning, fallback in choices:
+        if pool:
+            return pool, candidate_count, source, conditioning, fallback
+
+    return (
+        [],
+        len(context_vectors) or len(global_vectors),
+        desired_context,
+        "NO_LENGTH_COMPATIBLE_VECTOR",
+        "NO_STRUCTURAL_GUIDANCE",
+    )
+
+
+def _no_guidance_realization(
+    *,
+    desired_context: str,
+    candidate_count: int,
+    seed: int,
+    target_words: int,
+    freedom: str,
+    length_conditioning: str,
+    fallback_behavior: str,
+) -> StructuralRealization:
+    return StructuralRealization(
+        source_context=desired_context,
+        candidate_count=candidate_count,
+        sample_count=0,
+        selection_method="NO_COMPATIBLE_EMPIRICAL_VECTOR",
+        length_conditioning=length_conditioning,
+        fallback_behavior=fallback_behavior,
+        seed=seed,
+        reproducible=True,
+        model_generation_deterministic=False,
+        target_words=target_words,
+        opening_behavior="",
+        ending_behavior="",
+        generation_freedom=freedom,
+        guidance_level="none",
+        overrides=[
+            "NO_COMPATIBLE_EMPIRICAL_VECTOR "
+            "(voice supplied no context-and-length-compatible structural anchor)"
+        ],
+    )
 
 
 def derive_structural_realization(
@@ -84,342 +298,328 @@ def derive_structural_realization(
     seed: int | None = None,
     freedom: Any = None,
 ) -> StructuralRealization | None:
-    """Derive soft structural targets for ONE piece from measured corpus evidence."""
+    """Derive one reproducible, joint empirical realization for a piece."""
     if profile is None:
         return None
 
-    mode_str = mode.value if isinstance(mode, WritingMode) else (str(mode) if mode else "article")
-    mode_str_clean = mode_str.lower().strip()
-
-    # 1. Determine effective target words
-    effective_target_words: int
-    if target_words and target_words > 0:
-        effective_target_words = target_words
-    elif outline and getattr(outline, "target_words", None):
-        effective_target_words = outline.target_words  # type: ignore[assignment]
-    else:
-        effective_target_words = DEFAULT_TARGET_WORDS.get(mode_str_clean, 500)
-
-    # 2. Context resolution and evidence pool selection
-    desired_context = MODE_CONTEXT_MAP.get(mode_str_clean, "general")
-    ctx = profile.contexts.get(desired_context)
-    source_context: str
-    candidate_vectors: list[StructuralVector] = []
-
-    if ctx is not None and ctx.document_count >= 3 and ctx.confidence >= 0.25 and ctx.structural_vectors:
-        source_context = desired_context
-        candidate_vectors = [v for v in ctx.structural_vectors if v.words > 0]
-    elif profile.structural_vectors:
-        source_context = (
-            f"global (context '{desired_context}' insufficient: {ctx.document_count if ctx else 0} docs)"
-            if ctx is not None
-            else "global"
-        )
-        candidate_vectors = [v for v in profile.structural_vectors if v.words > 0]
-    else:
-        source_context = "global (distribution fallback)"
-        candidate_vectors = []
-
-    # 3. Seed initialization
-    outline_repr = ""
-    if outline:
-        node_len = len(getattr(outline, "nodes", []))
-        tw = getattr(outline, "target_words", "")
-        outline_repr = f"nodes={node_len};target={tw}"
-
+    mode_value = mode.value if isinstance(mode, WritingMode) else str(mode or "custom")
+    mode_name = mode_value.lower().strip()
+    effective_target = int(
+        target_words
+        or (outline.target_words if outline and outline.target_words else 0)
+        or DEFAULT_TARGET_WORDS.get(mode_name, 500)
+    )
+    desired_context = MODE_CONTEXT_MAP.get(mode_name, "general")
+    freedom_name = _resolve_freedom(outline, freedom)
     actual_seed = seed
     if actual_seed is None:
         actual_seed = derive_seed(
-            profile_name=profile.profile_name or "voice",
-            mode=mode_str_clean,
-            input_text=input_text,
-            outline_summary=outline_repr,
-            target_words=effective_target_words,
+            profile.profile_name or "voice",
+            mode_name,
+            input_text,
+            _outline_fingerprint(outline),
+            effective_target,
         )
 
-    rng = random.Random(actual_seed)
+    pool, candidate_count, source_context, conditioning, fallback = _select_pool(
+        profile, desired_context, effective_target
+    )
+    if not pool:
+        return _no_guidance_realization(
+            desired_context=desired_context,
+            candidate_count=candidate_count,
+            seed=actual_seed,
+            target_words=effective_target,
+            freedom=freedom_name,
+            length_conditioning=conditioning,
+            fallback_behavior=fallback,
+        )
+
+    anchor = random.Random(actual_seed).choice(pool)
+    paragraph_mean = anchor.paragraph_words_mean
+    if paragraph_mean <= 0:
+        paragraph_mean = anchor.words / max(1, anchor.paragraphs)
+    paragraph_mean = max(1.0, paragraph_mean)
+    base_paragraphs = max(1, round(effective_target / paragraph_mean))
+    paragraph_region = (max(1, base_paragraphs - 1), base_paragraphs + 1)
+
+    short_tendency = (
+        "prominent"
+        if anchor.short_sentence_rate >= 0.22
+        else "moderate"
+        if anchor.short_sentence_rate >= 0.10
+        else "minimal"
+    )
+    long_tendency = (
+        "prominent"
+        if anchor.long_sentence_rate >= 0.22
+        else "moderate"
+        if anchor.long_sentence_rate >= 0.10
+        else "minimal"
+    )
+    transition_tendency = (
+        "moderate"
+        if anchor.transition_rate >= 0.08
+        else "light"
+        if anchor.transition_rate >= 0.03
+        else "minimal"
+    )
+
+    section_count = _section_count(outline)
+    if freedom_name == "minimal":
+        guidance_level = "none"
+    elif freedom_name == "low" or section_count >= 2:
+        guidance_level = "cadence_only"
+    else:
+        guidance_level = "full"
+
     overrides: list[str] = []
-
-    # 4. Length-conditioned anchor selection or quantile derivation
-    if candidate_vectors:
-        selection_method = "EMPIRICAL_ANCHOR_VECTOR"
-        sample_count = len(candidate_vectors)
-
-        # Length conditioning: prefer vectors reasonably compatible with target length if available
-        close_length = [
-            v for v in candidate_vectors
-            if (effective_target_words * 0.5) <= v.words <= (effective_target_words * 2.0)
-        ]
-        length_compatible = [
-            v for v in candidate_vectors
-            if (effective_target_words * 0.25) <= v.words <= (effective_target_words * 4.0)
-        ]
-        if close_length:
-            pool = close_length
-        elif len(length_compatible) >= 2:
-            pool = length_compatible
-        else:
-            pool = candidate_vectors
-        anchor = rng.choice(pool)
-
-        # Paragraph count & size calculation
-        pwm = max(20.0, anchor.paragraph_words_mean if anchor.paragraph_words_mean > 0 else 55.0)
-        if 0.5 <= (anchor.words / max(1, effective_target_words)) <= 2.0 and anchor.paragraphs >= 2:
-            base_p = anchor.paragraphs
-        else:
-            base_p = max(2, round(effective_target_words / pwm))
-
-        p_min = max(2, base_p - 1)
-        p_max = max(p_min + 1, base_p + 1)
-        paragraph_count_region = (p_min, p_max)
-        paragraph_words_mean_target = round(pwm, 1)
-        paragraph_sentences_mean_target = round(
-            max(1.5, anchor.paragraph_sentences_mean if anchor.paragraph_sentences_mean > 0 else 3.0), 1
-        )
-        single_sentence_paragraph_eligible = anchor.single_sentence_paragraph_rate >= 0.08
-
-        sentence_length_mean_target = round(
-            anchor.sentence_length_mean if anchor.sentence_length_mean > 0 else 18.0, 1
-        )
-        sentence_length_stdev_target = round(
-            anchor.sentence_length_stdev if anchor.sentence_length_stdev > 0 else 6.0, 1
-        )
-
-        short_rate = anchor.short_sentence_rate
-        short_sentence_tendency = (
-            "prominent" if short_rate >= 0.22 else ("moderate" if short_rate >= 0.10 else "minimal")
-        )
-
-        long_rate = anchor.long_sentence_rate
-        long_sentence_tendency = (
-            "prominent" if long_rate >= 0.22 else ("moderate" if long_rate >= 0.10 else "minimal")
-        )
-
-        trans_rate = anchor.transition_rate
-        transition_density_tendency = (
-            "moderate" if trans_rate >= 0.08 else ("light" if trans_rate >= 0.03 else "minimal")
-        )
-
-        opening_behavior = anchor.opening_class or "direct_thesis"
-        ending_behavior = anchor.closing_class or "declarative_stop"
-
-    else:
-        # Bounded fallback when no structural vectors exist in legacy profile
-        selection_method = "BOUNDED_DISTRIBUTION_SAMPLE"
-        dist = profile.distributions
-        sample_count = profile.corpus_summary.included_documents if profile.corpus_summary else 0
-
-        pwm = dist.paragraph_words_mean if (dist and dist.paragraph_words_mean > 0) else 60.0
-        base_p = max(2, round(effective_target_words / max(20.0, pwm)))
-        paragraph_count_region = (max(2, base_p - 1), max(3, base_p + 1))
-        paragraph_words_mean_target = round(pwm, 1)
-        paragraph_sentences_mean_target = round(dist.paragraph_sentences_mean if dist else 3.0, 1)
-        single_sentence_paragraph_eligible = (
-            (dist.single_sentence_paragraph_rate >= 0.08) if dist else False
-        )
-        sentence_length_mean_target = round(dist.sentence_length_mean if dist else 18.0, 1)
-        sentence_length_stdev_target = round(dist.sentence_length_stdev if dist else 6.0, 1)
-        short_sentence_tendency = "moderate"
-        long_sentence_tendency = "moderate"
-        transition_density_tendency = "minimal"
-        opening_behavior = "direct_thesis"
-        ending_behavior = "declarative_stop"
-
-    # 5. Zero-inflated behavioral choices: presence check then intensity
-    # First Person
-    fp_dist = profile.rate_distributions.get("first_person_rate")
-    if fp_dist and fp_dist.document_presence_rate > 0:
-        first_person_eligible = rng.random() < fp_dist.document_presence_rate
-        if first_person_eligible and fp_dist.has_spread:
-            first_person_target_rate = round(
-                rng.uniform(fp_dist.when_present_p10 or 0.5, fp_dist.when_present_p90 or 3.5), 2
-            )
-        elif first_person_eligible:
-            first_person_target_rate = round(fp_dist.when_present_mean or 1.5, 2)
-        else:
-            first_person_target_rate = 0.0
-    else:
-        first_person_eligible = False
-        first_person_target_rate = 0.0
-
-    # Parentheticals
-    paren_dist = profile.rate_distributions.get("parenthetical_rate")
-    if paren_dist and paren_dist.document_presence_rate > 0:
-        parenthetical_eligible = rng.random() < paren_dist.document_presence_rate
-        parenthetical_target_count = 1 if parenthetical_eligible else 0
-    else:
-        parenthetical_eligible = False
-        parenthetical_target_count = 0
-
-    # Sentence Initial Conjunctions
-    conj_dist = profile.rate_distributions.get("sentence_initial_conjunction_rate")
-    if conj_dist and conj_dist.document_presence_rate > 0:
-        sentence_initial_conjunction_eligible = rng.random() < conj_dist.document_presence_rate
-    else:
-        sentence_initial_conjunction_eligible = False
-
-    # Questions
-    q_dist = profile.rate_distributions.get("question_rate")
-    if q_dist and q_dist.document_presence_rate > 0:
-        question_eligible = rng.random() < q_dist.document_presence_rate
-    else:
-        question_eligible = False
-
-    # 6. Outline & Content Authority Overrides
-    if outline is not None:
-        nodes = getattr(outline, "nodes", []) or []
-        section_kinds = {
-            NodeKind.HEADING,
-            NodeKind.REQUIRED_POINT,
-            "heading",
-            "required_point",
-            "section",
-        }
-        section_count = len(
-            [
-                n for n in nodes
-                if getattr(n, "kind", None) in section_kinds
-                or getattr(getattr(n, "kind", None), "value", None) in section_kinds
-            ]
-        )
-        if section_count > paragraph_count_region[1]:
-            old_region = paragraph_count_region
-            paragraph_count_region = (section_count, section_count + 1)
-            overrides.append(
-                f"OUTLINE_SECTION_COUNT (outline requires {section_count} sections; "
-                f"expanded from sampled {old_region})"
-            )
-
-    # 7. Current Input Vetoes
-    has_personal_input = bool(_FIRST_PERSON_PATTERN.search(input_text))
-    if has_personal_input:
-        if not first_person_eligible:
-            first_person_eligible = True
-            first_person_target_rate = max(1.0, first_person_target_rate or 1.5)
-            overrides.append("CURRENT_INPUT_PERSONAL_PRESERVED (input contains first-person pronouns)")
-    elif mode_str_clean in ("academic", "technical") and first_person_eligible:
-        first_person_eligible = False
-        first_person_target_rate = 0.0
-        overrides.append("IMPERSONAL_INPUT_VETO (impersonal technical input; suppressed first person)")
-
-    # 8. Freedom / Near-Complete Draft Protection
-    freedom_str = str(getattr(freedom, "value", freedom) or "").lower()
-    if freedom_str == "minimal":
+    if section_count:
         overrides.append(
-            "NEAR_COMPLETE_DRAFT_PRESERVED (minimal freedom; zero structural rewrite pressure)"
+            "OUTLINE_STRUCTURE_AUTHORITY "
+            f"({section_count} supplied section/required-point node(s); "
+            "sampled paragraph shape cannot alter semantic order)"
+        )
+    if guidance_level == "cadence_only":
+        overrides.append(
+            "AUTHORSHIP_RICH_OUTLINE "
+            "(sampled paragraph/opening/closing shape suppressed; cadence only)"
+        )
+    elif guidance_level == "none":
+        overrides.append(
+            "NEAR_COMPLETE_DRAFT_PRESERVED "
+            "(minimal freedom; no sampled structural rewrite pressure)"
         )
 
-    # User overrides from profile take absolute precedence
-    if profile.overrides and profile.overrides.traits:
-        ot = profile.overrides.traits
-        if ot.get("first_person_presence") == "none":
-            first_person_eligible = False
-            first_person_target_rate = 0.0
-            overrides.append("USER_OVERRIDE (first_person_presence: none)")
-        elif ot.get("first_person_presence") in ("prominent", "frequent"):
-            first_person_eligible = True
-            first_person_target_rate = 3.0
-            overrides.append("USER_OVERRIDE (first_person_presence: prominent)")
+    first_person = anchor.first_person_rate > 0
+    first_person_rate = round(anchor.first_person_rate, 2) if first_person else 0.0
+    parenthetical = anchor.parenthetical_rate > 0
+    parenthetical_count = (
+        max(1, round(anchor.parenthetical_rate * effective_target / 100.0))
+        if parenthetical
+        else 0
+    )
+    conjunction_start = anchor.sentence_initial_conjunction_rate > 0
+    question = anchor.question_rate > 0
+    fragment = anchor.fragment_rate > 0
 
-        if ot.get("parenthetical_asides") == "none":
-            parenthetical_eligible = False
-            parenthetical_target_count = 0
+    # Persistent profile overrides are explicit user choices, but wording that
+    # already exists in the current input still wins over a sampled absence.
+    if profile.overrides and profile.overrides.traits:
+        traits = profile.overrides.traits
+        if traits.get("first_person_presence") == "none":
+            first_person = False
+            first_person_rate = 0.0
+            overrides.append("USER_OVERRIDE (first_person_presence: none)")
+        elif traits.get("first_person_presence") in ("prominent", "frequent"):
+            first_person = True
+            first_person_rate = max(3.0, first_person_rate)
+            overrides.append("USER_OVERRIDE (first_person_presence: prominent)")
+        if traits.get("parenthetical_asides") == "none":
+            parenthetical = False
+            parenthetical_count = 0
             overrides.append("USER_OVERRIDE (parenthetical_asides: none)")
+
+    authority_text = input_text
+    if outline is not None:
+        authority_text = "\n".join(
+            [input_text, *[node.text for node in outline.nodes if node.text]]
+        )
+    has_personal = bool(_FIRST_PERSON_PATTERN.search(authority_text))
+    has_parenthetical = bool(_PARENTHETICAL_PATTERN.search(authority_text))
+    has_question = "?" in authority_text
+    has_conjunction_start = bool(_CONJUNCTION_START_PATTERN.search(authority_text))
+
+    if has_personal:
+        if not first_person:
+            overrides.append(
+                "CURRENT_INPUT_PERSONAL_PRESERVED "
+                "(current author text overrides sampled/profile absence)"
+            )
+        first_person = True
+        first_person_rate = max(1.0, first_person_rate)
+    elif authority_text.strip() and first_person:
+        first_person = False
+        first_person_rate = 0.0
+        overrides.append(
+            "IMPERSONAL_INPUT_VETO "
+            "(sampled first person cannot invent an author experience)"
+        )
+
+    if has_parenthetical and not parenthetical:
+        parenthetical = True
+        parenthetical_count = max(
+            1, len(_PARENTHETICAL_PATTERN.findall(authority_text))
+        )
+        overrides.append("CURRENT_INPUT_PARENTHETICAL_PRESERVED")
+    if has_question and not question:
+        question = True
+        overrides.append("CURRENT_INPUT_QUESTION_PRESERVED")
+    if has_conjunction_start and not conjunction_start:
+        conjunction_start = True
+        overrides.append("CURRENT_INPUT_CONJUNCTION_START_PRESERVED")
+
+    # In formal/technical work, absent sparse devices are not an invitation to
+    # add them. In sparse social prompts they remain optional evidence, never
+    # quotas; cadence-only/none rendering suppresses them entirely.
+    formal_input = mode_name in {
+        "academic",
+        "technical",
+        "documentation",
+        "professional",
+        "email",
+    }
+    if formal_input and authority_text.strip():
+        if not has_parenthetical:
+            parenthetical = False
+            parenthetical_count = 0
+        if not has_question:
+            question = False
+        if not has_conjunction_start:
+            conjunction_start = False
+        fragment = False
 
     return StructuralRealization(
         source_context=source_context,
-        sample_count=sample_count,
-        selection_method=selection_method,
+        selected_anchor_context=anchor.context or "unknown",
+        candidate_count=candidate_count,
+        sample_count=len(pool),
+        selection_method="EMPIRICAL_JOINT_ANCHOR_VECTOR",
+        length_conditioning=conditioning,
+        fallback_behavior=fallback,
         seed=actual_seed,
         reproducible=True,
-        target_words=effective_target_words,
-        paragraph_count_region=paragraph_count_region,
-        paragraph_words_mean_target=paragraph_words_mean_target,
-        paragraph_sentences_mean_target=paragraph_sentences_mean_target,
-        single_sentence_paragraph_eligible=single_sentence_paragraph_eligible,
-        sentence_length_mean_target=sentence_length_mean_target,
-        sentence_length_stdev_target=sentence_length_stdev_target,
-        short_sentence_tendency=short_sentence_tendency,
-        long_sentence_tendency=long_sentence_tendency,
-        first_person_eligible=first_person_eligible,
-        first_person_target_rate=first_person_target_rate,
-        parenthetical_eligible=parenthetical_eligible,
-        parenthetical_target_count=parenthetical_target_count,
-        sentence_initial_conjunction_eligible=sentence_initial_conjunction_eligible,
-        question_eligible=question_eligible,
-        transition_density_tendency=transition_density_tendency,
-        opening_behavior=opening_behavior,
-        ending_behavior=ending_behavior,
+        model_generation_deterministic=False,
+        target_words=effective_target,
+        paragraph_count_region=paragraph_region,
+        paragraph_words_mean_target=round(paragraph_mean, 1),
+        paragraph_sentences_mean_target=round(
+            anchor.paragraph_sentences_mean or 3.0, 1
+        ),
+        single_sentence_paragraph_eligible=(
+            anchor.single_sentence_paragraph_rate > 0
+        ),
+        sentence_length_mean_target=round(anchor.sentence_length_mean or 18.0, 1),
+        sentence_length_stdev_target=round(
+            anchor.sentence_length_stdev or 6.0, 1
+        ),
+        short_sentence_tendency=short_tendency,
+        long_sentence_tendency=long_tendency,
+        first_person_eligible=first_person,
+        first_person_target_rate=first_person_rate,
+        parenthetical_eligible=parenthetical,
+        parenthetical_target_count=parenthetical_count,
+        sentence_initial_conjunction_eligible=conjunction_start,
+        question_eligible=question,
+        fragment_eligible=fragment,
+        transition_density_tendency=transition_tendency,
+        opening_behavior=_OPENING_CLASSES.get(anchor.opening_class, ""),
+        ending_behavior=_CLOSING_CLASSES.get(anchor.closing_class, ""),
         overrides=overrides,
+        generation_freedom=freedom_name,
+        guidance_level=guidance_level,
     )
 
 
-def render_structural_realization_prompt(realization: StructuralRealization) -> list[str]:
-    """Render the soft per-piece structural realization into prompt instructions."""
-    p_low, p_high = realization.paragraph_count_region
-    lines: list[str] = [
-        "STRUCTURAL REALIZATION FOR THIS PIECE (sampled from author's distribution; guidance only):",
-        (
-            f"  - structural shape: target roughly {p_low}-{p_high} paragraphs for this piece "
-            "(subject to outline and argument requirements)"
-        ),
-        (
-            f"  - paragraph weighting: aim for average blocks around "
-            f"~{realization.paragraph_words_mean_target:.0f} words, varying naturally between "
-            "focal and fuller blocks"
-        ),
-        (
-            f"  - sentence rhythm: average ~{realization.sentence_length_mean_target:.0f} words/sentence, "
-            f"with {realization.short_sentence_tendency} concise statements and "
-            f"{realization.long_sentence_tendency} developed sentences"
-        ),
+def render_structural_realization_prompt(
+    realization: StructuralRealization,
+) -> list[str]:
+    """Render evidence as optional guidance without turning it into a quota."""
+    lines = [
+        "STRUCTURAL REALIZATION FOR THIS PIECE "
+        "(one empirical document anchor; guidance only):"
     ]
+    if realization.guidance_level == "none":
+        lines.extend(
+            [
+                "  - current-authority result: do not apply sampled structural "
+                "pressure; preserve the supplied draft and its paragraphing",
+                f"  - {realization.escape_clause}",
+            ]
+        )
+        return lines
+
+    lines.append(
+        "  - sentence rhythm: the selected real document used about "
+        f"{realization.sentence_length_mean_target:.0f} words per sentence, "
+        f"with {realization.short_sentence_tendency} concise statements and "
+        f"{realization.long_sentence_tendency} developed sentences; vary as "
+        "clarity requires"
+    )
+    if realization.guidance_level == "cadence_only":
+        lines.extend(
+            [
+                "  - outline authority: use this cadence only; retain the "
+                "author's section order, paragraph architecture, opening, and ending",
+                f"  - {realization.escape_clause}",
+            ]
+        )
+        return lines
+
+    low, high = realization.paragraph_count_region
+    lines.extend(
+        [
+            "  - structural shape: the empirical anchor scales to roughly "
+            f"{low}-{high} paragraphs at this target length; treat this as a "
+            "starting region, never a count to hit",
+            "  - paragraph weighting: the anchor averaged about "
+            f"{realization.paragraph_words_mean_target:.0f} words per block; "
+            "preserve natural unevenness and let the argument set every break",
+        ]
+    )
 
     if realization.single_sentence_paragraph_eligible:
         lines.append(
-            "  - focal paragraphs: a single-sentence paragraph is acceptable for deliberate emphasis "
-            "if natural, but not required"
+            "  - focal paragraphs: the anchor contained a single-sentence "
+            "paragraph; one is permissible when the idea earns it, never required"
         )
-
     if realization.parenthetical_eligible:
         lines.append(
-            "  - parenthetical asides: present for this piece (at most one concise aside, "
-            "where it adds authentic nuance)"
+            "  - parentheticals: the anchor used them; retain any already in "
+            "the input, but do not add one merely to match the anchor"
         )
-    else:
-        lines.append(
-            "  - parenthetical asides: absent for this piece (reflecting author's natural "
-            "variation where most pieces use none)"
-        )
-
     if realization.first_person_eligible:
         lines.append(
-            "  - author stance: personal perspective and conversational pronouns ('I', 'we') "
-            "are natural here"
+            "  - author stance: retain the personal perspective already "
+            "authorized by the current input; never invent an anecdote"
         )
     else:
         lines.append(
-            "  - author stance: objective or direct argument; do not invent unnecessary "
-            "first-person framing"
+            "  - author stance: do not invent first-person experience or an "
+            "authorial role absent from the current input"
         )
-
     if realization.sentence_initial_conjunction_eligible:
         lines.append(
-            "  - sentence openings: an occasional sentence starting with a conjunction ('And', 'But') "
-            "is acceptable if natural"
+            "  - conjunction starts: permissible where they already sound "
+            "natural; do not insert one to satisfy this realization"
         )
-
-    if realization.opening_behavior:
-        lines.append(f"  - opening tendency: {realization.opening_behavior.replace('_', ' ')}")
-
-    if realization.ending_behavior:
-        lines.append(f"  - closing move: {realization.ending_behavior.replace('_', ' ')}")
-
-    if any("NEAR_COMPLETE_DRAFT_PRESERVED" in o for o in realization.overrides):
+    if realization.question_eligible:
         lines.append(
-            "  - NEAR-COMPLETE DRAFT PRESERVATION: Existing draft structure strictly outranks "
-            "voice realization; minimum necessary edit only."
+            "  - questions: permissible when the current argument genuinely "
+            "asks one; do not manufacture a rhetorical question"
         )
-
+    if realization.fragment_eligible:
+        lines.append(
+            "  - fragments: a deliberate fragment is permissible for natural "
+            "emphasis; do not manufacture one"
+        )
+    if realization.transition_density_tendency != "minimal":
+        lines.append(
+            "  - transitions: the anchor's signposting was "
+            f"{realization.transition_density_tendency}; use only transitions "
+            "the logic needs"
+        )
+    if realization.opening_behavior:
+        lines.append(
+            "  - opening tendency: "
+            f"{realization.opening_behavior.replace('_', ' ')}; the prompt or "
+            "outline wins if it supplies an opening"
+        )
+    if realization.ending_behavior:
+        lines.append(
+            "  - closing tendency: "
+            f"{realization.ending_behavior.replace('_', ' ')}; do not force it "
+            "over the argument's natural endpoint"
+        )
     lines.append(f"  - {realization.escape_clause}")
     return lines

@@ -137,13 +137,7 @@ def _load_voice_profile(value: str | None) -> VoiceProfile | None:
             overrides_path = path.parent / "overrides.yaml"
             if overrides_path.is_file():
                 profile.overrides = store.load_overrides()
-            if not profile.structural_vectors:
-                vectors = store.load_structural_vectors()
-                if vectors:
-                    profile.structural_vectors = vectors
-                    for ctx_name, ctx in profile.contexts.items():
-                        if not ctx.structural_vectors:
-                            ctx.structural_vectors = [v for v in vectors if v.context == ctx_name]
+            store.attach_structural_vectors(profile)
         except Exception:
             pass
     return profile

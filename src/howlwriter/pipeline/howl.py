@@ -44,6 +44,7 @@ from howlwriter.domain.generation_provenance import (
     LEVEL_SUMMARY,
     GenerationProvenance,
     StageRecord,
+    normalize_reviewer_independence,
     sha256_text,
 )
 from howlwriter.domain.outline import Outline
@@ -133,11 +134,9 @@ def _draft_from_outline(
     profile = _load_voice_profile(config.voice_profile)
     realization = None
     if profile is not None:
-        freedom_val = (
-            getattr(outline.assess_freedom(), "freedom", None)
-            if hasattr(outline, "assess_freedom")
-            else None
-        )
+        from howlwriter.outline.freedom import assess_freedom
+
+        freedom_val = assess_freedom(outline).freedom
         realization = derive_structural_realization(
             profile=profile,
             mode=mode,
@@ -193,7 +192,7 @@ def run_howl_pipeline(
         writing_mode=mode.value if mode else None,
         provenance_level=provenance_level,
         outline_present=outline is not None,
-        voice_profile=config.voice_profile,
+        voice_profile=("configured_voice_profile" if config.voice_profile else None),
     )
     stage_index = 0
 
@@ -284,13 +283,14 @@ def _run(
 
             profile = _load_voice_profile(config.voice_profile)
             if profile is not None:
+                input_words = count_body_words(original_document.text)
                 realization = derive_structural_realization(
                     profile=profile,
                     mode=mode,
-                    target_words=target_words or original_document.stats.words,
+                    target_words=target_words or input_words,
                     input_text=text,
                     seed=seed,
-                    freedom="MINIMAL" if original_document.stats.words > 100 else "HIGH",
+                    freedom="MINIMAL" if input_words > 100 else "HIGH",
                 )
                 if realization:
                     provenance.structural_realization = realization.to_dict()
@@ -372,13 +372,13 @@ def _run(
                 run_id=active_run_id,
             )
             meaning_reviewer_provider = semantic_meaning_result.provider
-            reviewer_independence = (
+            reviewer_independence = normalize_reviewer_independence(
                 semantic_meaning_result.independence_status
             )
             provenance.reviewer_independence_by_stage["meaning_review"] = (
                 reviewer_independence or "UNKNOWN"
             )
-        elif humanizer_provider is not None:
+        else:
             reviewer_independence = "NO_REVIEWER"
             provenance.reviewer_independence_by_stage["meaning_review"] = "NO_REVIEWER"
 

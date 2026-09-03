@@ -36,10 +36,15 @@ class StructuralRealization(DataClassSerializationMixin):
 
     # --- Origin and Provenance ---
     source_context: str = "global"
+    selected_anchor_context: str = ""
+    candidate_count: int = 0
     sample_count: int = 0
-    selection_method: str = "EMPIRICAL_ANCHOR_VECTOR"
+    selection_method: str = "EMPIRICAL_JOINT_ANCHOR_VECTOR"
+    length_conditioning: str = ""
+    fallback_behavior: str = ""
     seed: int | None = None
     reproducible: bool = True
+    model_generation_deterministic: bool = False
 
     # --- Length and Paragraph Architecture ---
     target_words: int | None = None
@@ -61,6 +66,7 @@ class StructuralRealization(DataClassSerializationMixin):
     parenthetical_target_count: int = 0
     sentence_initial_conjunction_eligible: bool = False
     question_eligible: bool = False
+    fragment_eligible: bool = False
     transition_density_tendency: str = "minimal"  # minimal | light | moderate | signposted
 
     # --- Opening and Ending Moves ---
@@ -69,6 +75,8 @@ class StructuralRealization(DataClassSerializationMixin):
 
     # --- Authority and Escape Guardrails ---
     overrides: list[str] = field(default_factory=list)
+    generation_freedom: str = ""
+    guidance_level: str = "full"  # full | cadence_only | none
     escape_clause: str = (
         "Content requirements, outline points, and factual clarity strictly "
         "outrank this structural guidance. Do not force paragraph counts if "

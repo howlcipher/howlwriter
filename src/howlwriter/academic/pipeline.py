@@ -36,6 +36,7 @@ from howlwriter.academic.ai_disclosure import build_ai_use_statement
 from howlwriter.academic.spec import AssignmentSpec, load_assignment_spec
 from howlwriter.domain.generation_provenance import (
     GenerationProvenance,
+    normalize_reviewer_independence,
     sha256_text as prov_sha256,
 )
 from howlwriter.integration.provenance_capture import ProvenanceRecorder
@@ -186,7 +187,7 @@ def _run_academic_pipeline(
         workflow="paper-outline" if outline is not None else "paper",
         writing_mode="academic",
         outline_present=outline is not None,
-        voice_profile=cfg.voice_profile,
+        voice_profile=("configured_voice_profile" if cfg.voice_profile else None),
     )
     if outline is not None:
         from howlwriter.academic.outline_bridge import (
@@ -432,6 +433,7 @@ def _run_academic_pipeline(
             cwd=cwd,
             custom_backend=custom_backend,
             run_id=active_run_id,
+            realization=realization,
         )
         transformed_doc = humanize_res.document
         humanizer_provider = humanize_res.provider
@@ -472,7 +474,9 @@ def _run_academic_pipeline(
             run_id=active_run_id,
         )
         meaning_reviewer_provider = semantic_res.provider
-        reviewer_independence = semantic_res.independence_status
+        reviewer_independence = normalize_reviewer_independence(
+            semantic_res.independence_status
+        )
         provenance.reviewer_independence_by_stage["meaning_review"] = (
             reviewer_independence or "UNKNOWN"
         )
@@ -492,10 +496,19 @@ def _run_academic_pipeline(
             custom_backend=custom_backend,
             run_id=active_run_id,
         )
+        reviewed_provider = humanizer_provider or writer_provider
         consistency_indep = (
             "INDEPENDENT_PROVIDER"
-            if (writer_provider and consistency_res.provider and writer_provider != consistency_res.provider)
-            else ("SAME_PROVIDER" if (writer_provider and consistency_res.provider) else "UNKNOWN")
+            if (
+                reviewed_provider
+                and consistency_res.provider
+                and reviewed_provider != consistency_res.provider
+            )
+            else (
+                "SAME_PROVIDER"
+                if reviewed_provider and consistency_res.provider
+                else "UNKNOWN"
+            )
         )
         provenance.reviewer_independence_by_stage["consistency_review"] = consistency_indep
     else:
@@ -559,10 +572,7 @@ def _run_academic_pipeline(
     if outline is not None:
         authorship_coverage = check_coverage(outline, final_document.text)
         provenance.coverage = authorship_coverage.to_dict()
-        has_authorship_deficiency = (
-            getattr(authorship_coverage, "status", None) == "FAIL"
-            or getattr(authorship_coverage, "verdict", None) == "FAIL"
-        )
+        has_authorship_deficiency = authorship_coverage.status == "FAIL"
 
     if (
         has_length_deficiency

@@ -171,6 +171,7 @@ class StructuralVector(DataClassSerializationMixin):
     single_sentence_paragraph_rate: float = 0.0
     transition_rate: float = 0.0
     sentence_initial_conjunction_rate: float = 0.0
+    fragment_rate: float = 0.0
     first_person_rate: float = 0.0
     parenthetical_rate: float = 0.0
     question_rate: float = 0.0

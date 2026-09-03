@@ -61,6 +61,17 @@ LOW_CONFIDENCE = 0.45
 #: split renders as an unqualified instruction.
 MIN_TRAIT_AGREEMENT = 0.50
 
+# These document-level traits are represented by the selected joint anchor.
+# Rendering their corpus-wide plurality as well would reintroduce the shared
+# template the per-piece realization is meant to replace.
+_STRUCTURAL_TRAITS = {
+    "argument_structure",
+    "opening_behavior",
+    "conclusion_behavior",
+    "transition_behavior",
+    "rhetorical_questions",
+}
+
 
 #: How each zero-inflated behaviour is named and counted when rendered.
 #:
@@ -338,7 +349,12 @@ def render_profile(
                 "whichever side suits this piece and let other pieces differ; "
                 "applying it every time is what turns a tendency into a tell.)"
             )
-        for name, trait in sorted(profile.traits.items()):
+        visible_traits = {
+            name: trait
+            for name, trait in profile.traits.items()
+            if realization is None or name not in _STRUCTURAL_TRAITS
+        }
+        for name, trait in sorted(visible_traits.items()):
             lines.append(_trait_line(name, trait))
         lines.append("")
 
@@ -405,10 +421,12 @@ def render_profile(
         strong = {
             name: trait for name, trait in context.traits.items()
             if trait.confidence >= MIN_CONTEXT_TRAIT_CONFIDENCE
+            and (realization is None or name not in _STRUCTURAL_TRAITS)
         }
         weak = {
             name: trait for name, trait in context.traits.items()
             if trait.confidence < MIN_CONTEXT_TRAIT_CONFIDENCE
+            and (realization is None or name not in _STRUCTURAL_TRAITS)
         }
         lines.append(
             f"IN {context_name.upper()} WRITING this author differs from the above "
@@ -436,7 +454,11 @@ def render_profile(
                     "(thin evidence; do not let this override the global tendency)"
                 )
         # Context-specific structural spread if available with confidence
-        if context.confidence >= MIN_CONTEXT_TRAIT_CONFIDENCE and context.distributions:
+        if (
+            realization is None
+            and context.confidence >= MIN_CONTEXT_TRAIT_CONFIDENCE
+            and context.distributions
+        ):
             cd = context.distributions
             ctx_spread = []
             if _has_spread(cd.get("paragraph_words_p10"), cd.get("paragraph_words_p90")):
@@ -461,7 +483,11 @@ def render_profile(
         # they actually DIFFER from it. A thin slice repeating the global
         # presence rate would read as independent confirmation of a number it
         # simply inherited.
-        if context.confidence >= MIN_CONTEXT_TRAIT_CONFIDENCE and context.rate_distributions:
+        if (
+            realization is None
+            and context.confidence >= MIN_CONTEXT_TRAIT_CONFIDENCE
+            and context.rate_distributions
+        ):
             differing = {
                 name: dist
                 for name, dist in context.rate_distributions.items()

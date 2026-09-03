@@ -7,6 +7,7 @@ import argparse
 from pathlib import Path
 import time
 
+from howlwriter.academic.length import count_body_words
 from howlwriter.config.loader import ConfigLoader
 from howlwriter.diagnostic.run_record import (
     RunRecord,
@@ -149,13 +150,14 @@ def run(args: argparse.Namespace) -> int:
 
         profile = _load_voice_profile(config.voice_profile)
         if profile is not None:
+            input_words = count_body_words(document.text)
             realization = derive_structural_realization(
                 profile=profile,
                 mode=mode,
-                target_words=document.stats.words,
+                target_words=input_words,
                 input_text=document.text,
                 seed=args.seed,
-                freedom="MINIMAL" if document.stats.words > 100 else "HIGH",
+                freedom="MINIMAL" if input_words > 100 else "HIGH",
             )
 
     try:

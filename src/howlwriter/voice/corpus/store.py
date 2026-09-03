@@ -180,10 +180,26 @@ class VoiceStore:
     # --- reading -----------------------------------------------------
 
     def load_structural_vectors(self) -> list[StructuralVector]:
-        """Load compact structural vectors cached from training documents."""
+        """Load compact structural vectors cached from training documents only.
+
+        The feature cache also contains holdout, excluded, and review-held
+        documents.  It is a cache, not an eligibility list.  Reconstructing an
+        older profile from every cached entry silently contaminates both the
+        training distribution and its holdout, so source records remain the
+        authority for which keys may become anchors.
+        """
         docs = self.load_features()
+        sources = self.load_sources()
+        eligible = {
+            key
+            for key, record in sources.items()
+            if record.split == "train"
+            and record.inclusion in ("include", "include_low_weight")
+        }
         vectors: list[StructuralVector] = []
         for key, entry in docs.items():
+            if key not in eligible:
+                continue
             if not isinstance(entry, dict):
                 continue
             feat_dict = entry.get("features")
@@ -204,6 +220,24 @@ class VoiceStore:
                 )
         return vectors
 
+    def attach_structural_vectors(self, profile: VoiceProfile) -> None:
+        """Re-attach cached structural vectors to a profile that lacks them.
+
+        Structural vectors live in the feature cache rather than the profile
+        file, so a profile loaded from JSON alone carries none. Both this store
+        and the standalone loader in humanize/rewriter.py need the same
+        re-attachment, so it lives here rather than being written twice.
+        """
+        if profile.structural_vectors:
+            return
+        vectors = self.load_structural_vectors()
+        if not vectors:
+            return
+        profile.structural_vectors = vectors
+        for ctx_name, ctx in profile.contexts.items():
+            if not ctx.structural_vectors:
+                ctx.structural_vectors = [v for v in vectors if v.context == ctx_name]
+
     def load_profile(self) -> VoiceProfile:
         path = self.directory / PROFILE_FILE
         if not path.is_file():
@@ -212,13 +246,7 @@ class VoiceStore:
                 f"Build one with: howlwriter voice build --name {self.name} --source <path>"
             )
         profile = VoiceProfile.from_dict(json.loads(path.read_text(encoding="utf-8")))
-        if not profile.structural_vectors:
-            vectors = self.load_structural_vectors()
-            if vectors:
-                profile.structural_vectors = vectors
-                for ctx_name, ctx in profile.contexts.items():
-                    if not ctx.structural_vectors:
-                        ctx.structural_vectors = [v for v in vectors if v.context == ctx_name]
+        self.attach_structural_vectors(profile)
         return profile
 
     def load_sources(self) -> dict[str, SourceRecord]:
