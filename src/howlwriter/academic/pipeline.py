@@ -73,6 +73,7 @@ from howlwriter.domain.provenance import ProvenanceGraph
 from howlwriter.domain.report import WritingReport
 from howlwriter.domain.source import (
     DEPTH_METADATA_ONLY,
+    FreshnessStatus,
     RELEVANCE_IRRELEVANT,
     Source,
 )
@@ -501,6 +502,7 @@ def _run_academic_pipeline(
         sources,
         stated_claims=writer_stated_claims,
         additional_grounding_texts=[spec.topic, *spec.requirements, *spec.known_identifiers],
+        spec=spec,
     )
     unsupported_ids = {c.id for c in provenance_graph.unsupported_claims()}
     supported_additions = {
@@ -521,6 +523,7 @@ def _run_academic_pipeline(
         "partially_supported": verif_summary.partially_supported_claims,
         "unsupported": verif_summary.unsupported_claims,
         "contradicted": verif_summary.contradicted_claims,
+        "freshness_warnings": len(verif_summary.freshness_warnings),
         "total_claims": len(provenance_graph.claims),
     })
 
@@ -751,6 +754,14 @@ def _run_academic_pipeline(
         or verif_summary.contradicted_claims > 0
         or bool(verif_summary.quotation_warnings)
         or bool(verif_summary.identifier_warnings)
+        or any(
+            f.severity in ("NEEDS_REVIEW", "WARNING", "BLOCKED")
+            for f in verif_summary.freshness_findings
+        )
+    )
+    has_blocking_deficiency = any(
+        f.severity == "BLOCKED" or getattr(f.severity, "value", "") == "BLOCKED"
+        for f in verif_summary.freshness_findings
     )
     has_length_deficiency = wc_status in ("TOO_SHORT", "HARD_LIMIT_FAILURE")
 
@@ -761,7 +772,9 @@ def _run_academic_pipeline(
         provenance.coverage = authorship_coverage.to_dict()
         has_authorship_deficiency = authorship_coverage.status == "FAIL"
 
-    if (
+    if has_blocking_deficiency:
+        final_status = "BLOCKED"
+    elif (
         has_length_deficiency
         or outline_res.status != "PASS"
         or coverage_res.status != "PASS"
@@ -870,6 +883,8 @@ def _run_academic_pipeline(
         contradicted_claims=verif_summary.contradicted_claims,
         quotation_warnings=len(verif_summary.quotation_warnings),
         identifier_warnings=len(verif_summary.identifier_warnings),
+        freshness_warnings=len(verif_summary.freshness_warnings) or None,
+        freshness_findings=[f.to_dict() for f in verif_summary.freshness_findings],
         citation_style=spec.citation_style,
         in_text_citations=citation_analysis.in_text_citation_count,
         reference_entries=len(citation_analysis.used_sources) or len(sources),
@@ -902,6 +917,7 @@ def _run_academic_pipeline(
         requirements_coverage_status=coverage_res.status,
         redundancy_flagged=has_redundancy_deficiency,
         identifier_grounding_flagged=bool(verif_summary.identifier_warnings),
+        source_freshness_flagged=bool(verif_summary.freshness_findings),
         consistency_review_status=consistency_res.verdict if consistency_res else None,
         humanizer_duration_seconds=humanize_duration,
         meaning_reviewer_duration_seconds=meaning_review_duration,
@@ -930,12 +946,24 @@ def _run_academic_pipeline(
         "semantic_meaning": semantic_res.verdict if semantic_res else None,
         "consistency": consistency_res.verdict if consistency_res else None,
         "readiness": final_status,
+        "source_freshness": "PASS" if not verif_summary.freshness_findings else verif_summary.status,
+        "freshness_findings_count": len(verif_summary.freshness_findings),
     })
+    if verif_summary.freshness_findings:
+        provenance.review["freshness_findings"] = [
+            f.to_dict() for f in verif_summary.freshness_findings
+        ]
     provenance.research.update(
         {
             "sources_retrieved": len(sources),
             "claims_verified": len(provenance_graph.claims),
             "unsupported_claims": len(provenance_graph.unsupported_claims()),
+            "superseded_sources": sum(
+                1 for s in sources if s.freshness.freshness_status == FreshnessStatus.SUPERSEDED
+            ),
+            "current_sources": sum(
+                1 for s in sources if s.freshness.freshness_status == FreshnessStatus.CURRENT
+            ),
         }
     )
     if outline is not None and authorship_coverage is None:

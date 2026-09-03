@@ -4,11 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import re
+from typing import Any
 
 from howlwriter.academic.attack import validate_attack_mapping
+from howlwriter.academic.freshness import (
+    FreshnessFinding,
+    FreshnessSeverity,
+    evaluate_source_freshness_for_claim,
+)
 from howlwriter.academic.identifiers import find_ungrounded_identifiers
 from howlwriter.academic.telemetry import find_telemetry_mismatches_in_text
-from howlwriter.domain.claim import Claim, ClaimType, VerificationStatus
+from howlwriter.domain.claim import Claim, ClaimTemporalContext, ClaimType, VerificationStatus
 from howlwriter.domain.document import Document
 from howlwriter.domain.provenance import ProvenanceGraph
 from howlwriter.domain.serialization import DataClassSerializationMixin
@@ -39,7 +45,19 @@ class VerificationSummary(DataClassSerializationMixin):
     quotation_claims: int = 0
     quotation_warnings: list[str] = field(default_factory=list)
     identifier_warnings: list[str] = field(default_factory=list)
-    status: str = "PASS"  # "PASS" | "NEEDS_REVIEW" | "REJECTED"
+    freshness_findings: list[FreshnessFinding] = field(default_factory=list)
+    freshness_warnings: list[str] = field(default_factory=list)
+    status: str = "PASS"  # "PASS" | "NEEDS_REVIEW" | "BLOCKED" | "REJECTED"
+
+    @classmethod
+    def from_dict(cls, data: dict) -> VerificationSummary:
+        data = dict(data)
+        if "freshness_findings" in data and isinstance(data["freshness_findings"], list):
+            data["freshness_findings"] = [
+                FreshnessFinding.from_dict(f) if isinstance(f, dict) else f
+                for f in data["freshness_findings"]
+            ]
+        return super().from_dict(data)
 
 
 # Markers that tend to escalate a claim beyond the evidence in a source.
@@ -120,6 +138,7 @@ class AcademicVerifier:
         sources: list[Source],
         stated_claims: list[dict] | None = None,
         additional_grounding_texts: list[str] | None = None,
+        spec: Any | None = None,
     ) -> tuple[ProvenanceGraph, VerificationSummary]:
         """Extracts claims from paper, cross-references with sources, and verifies evidence.
 
@@ -145,11 +164,26 @@ class AcademicVerifier:
                 cid = f"C{idx:03d}"
                 text = str(sc.get("claim") or "")
                 if text and cid not in claim_map:
+                    t_ctx = sc.get("temporal_context")
+                    if t_ctx and isinstance(t_ctx, str):
+                        try:
+                            t_ctx = ClaimTemporalContext(t_ctx)
+                        except ValueError:
+                            t_ctx = ClaimTemporalContext.UNKNOWN
+                    elif isinstance(t_ctx, ClaimTemporalContext):
+                        pass
+                    else:
+                        t_ctx = ClaimTemporalContext.UNKNOWN
                     claim_map[cid] = Claim(
                         id=cid,
                         text=text,
                         claim_type=ClaimType.FACTUAL,
                         verification_status=VerificationStatus.UNVERIFIABLE,
+                        temporal_context=t_ctx,
+                        target_version=sc.get("target_version"),
+                        target_family=sc.get("target_family"),
+                        intentional_historical_use=bool(sc.get("intentional_historical_use")),
+                        historical_use_reason=sc.get("historical_use_reason"),
                     )
 
         # 3. Check direct quotations
@@ -210,6 +244,8 @@ class AcademicVerifier:
         contradicted_count = 0
         opinion_count = 0
         quote_count = len(quotes)
+        freshness_findings: list[FreshnessFinding] = []
+        freshness_warnings: list[str] = []
 
         # 4. Verify each claim against source text
         for claim_id, claim in claim_map.items():
@@ -260,20 +296,53 @@ class AcademicVerifier:
                         claim, matched_source.retrieved_text
                     )
                 ):
-                    ev_id = f"E{evidence_counter:03d}"
-                    evidence_counter += 1
-                    ev = Evidence(
-                        id=ev_id,
-                        source_id=matched_source.id,
-                        claim_id=claim.id,
-                        snippet=matched_snippet or matched_source.retrieved_text[:150],
-                        supports=True,
-                        notes=f"Corroborated by {matched_source.title}",
+                    freshness_sev, f_finding = evaluate_source_freshness_for_claim(
+                        claim, matched_source, spec=spec
                     )
-                    graph.add_evidence(ev)
-                    claim.supporting_sources.append(matched_source.id)
-                    claim.verification_status = VerificationStatus.SUPPORTED
-                    supported_count += 1
+                    if f_finding:
+                        freshness_findings.append(f_finding)
+                        freshness_warnings.append(f_finding.render_diagnostic())
+
+                    if freshness_sev == FreshnessSeverity.BLOCKED:
+                        ev_id = f"E{evidence_counter:03d}"
+                        evidence_counter += 1
+                        ev = Evidence(
+                            id=ev_id,
+                            source_id=matched_source.id,
+                            claim_id=claim.id,
+                            snippet=matched_snippet or matched_source.retrieved_text[:150],
+                            supports=False,
+                            notes=(
+                                f"Version mismatch with {matched_source.title}: "
+                                f"{f_finding.reason if f_finding else 'Source version does not match claim requirement'}."
+                            ),
+                        )
+                        graph.add_evidence(ev)
+                        claim.verification_status = VerificationStatus.UNSUPPORTED
+                        unsupported_count += 1
+                    else:
+                        ev_id = f"E{evidence_counter:03d}"
+                        evidence_counter += 1
+                        note = f"Corroborated by {matched_source.title}"
+                        if f_finding:
+                            status_str = (
+                                f_finding.freshness_status.value
+                                if hasattr(f_finding.freshness_status, "value")
+                                else str(f_finding.freshness_status)
+                            )
+                            note += f" [Freshness: {status_str}]"
+                        ev = Evidence(
+                            id=ev_id,
+                            source_id=matched_source.id,
+                            claim_id=claim.id,
+                            snippet=matched_snippet or matched_source.retrieved_text[:150],
+                            supports=True,
+                            notes=note,
+                        )
+                        graph.add_evidence(ev)
+                        claim.supporting_sources.append(matched_source.id)
+                        claim.verification_status = VerificationStatus.SUPPORTED
+                        supported_count += 1
                 else:
                     # A match was found, but the source is either metadata-only,
                     # tangential/irrelevant, or the claim escalates beyond the
@@ -311,8 +380,14 @@ class AcademicVerifier:
             or contradicted_count > 0
             or quotation_warnings
             or identifier_warnings
+            or any(
+                f.severity in (FreshnessSeverity.NEEDS_REVIEW, FreshnessSeverity.WARNING)
+                for f in freshness_findings
+            )
         ):
             overall_status = "NEEDS_REVIEW"
+        if any(f.severity == FreshnessSeverity.BLOCKED for f in freshness_findings):
+            overall_status = "BLOCKED"
 
         summary = VerificationSummary(
             total_claims=len(claim_map),
@@ -324,6 +399,8 @@ class AcademicVerifier:
             quotation_claims=quote_count,
             quotation_warnings=quotation_warnings,
             identifier_warnings=identifier_warnings,
+            freshness_findings=freshness_findings,
+            freshness_warnings=freshness_warnings,
             status=overall_status,
         )
 
