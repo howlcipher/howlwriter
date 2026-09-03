@@ -257,6 +257,7 @@ class SemanticMeaningResult(DataClassSerializationMixin):
     duration_seconds: float = 0.0
     independence_status: str = "INDEPENDENT"
     metadata: dict[str, Any] = field(default_factory=dict)
+    fallback_record: ReviewerFallbackRecord | None = None
 
 
 class ModelMeaningReviewer(Protocol):
@@ -297,6 +298,7 @@ class RealModelMeaningReviewer:
         humanizer_provider: str | None = None,
         cwd: Path | str | None = None,
         custom_backend: Any | None = None,
+        fallback_backend: Any | None = None,
         run_id: str | None = None,
     ) -> SemanticMeaningResult:
         if (
@@ -315,20 +317,13 @@ Your mission is to compare the ORIGINAL text against the REVISED text and evalua
 whether factual meaning, intent, technical precision, or claims were altered.
 
 EVALUATION CRITERIA (substantive changes only):
-1. Changed meaning, thesis, or polarity (e.g. negative turned into positive)
-2. Stronger or bolder claims than the original justified
-3. Weaker claims or dropped core assertions
-4. Removed qualifiers, hedges, or conditions (e.g. "may", "approximately", "likely")
-5. Changed opinions or altered author stance
-6. New factual assertions fabricated by the rewrite
-7. Removed or altered technical details, software versions, IP addresses, or units
-8. Altered numbers, statistics, percentages, currency, ranges, or dates
-9. Removed or altered source attribution, quotes, or citations
-10. Changed uncertainty levels or causation (e.g. correlation changed to causation)
+- Did the rewrite introduce any factual claim not present in the original?
+- Did it drop an important qualifier, constraint, or condition?
+- Did it alter numbers, metrics, or technical specifics?
+- Did it change who or what is attributed as the source of a claim?
+- Did it invert or weaken a causal relationship (e.g. "X causes Y" -> "X is correlated with Y")?
 
-BENIGN STYLE EDITS (do NOT return FAIL for these):
-- Removing filler words such as "Furthermore", "Moreover", "In conclusion"
-- Changing transition words ("However" -> "Yet")
+BENIGN CADENCE REWRITES (MUST BE TOLERATED):
 - Adapting to conversational/social medium cadence (e.g. natural first/second
   person, compact paragraphs, standard hashtags) while preserving causal logic
 - Splitting or combining sentences while the propositions remain the same
@@ -381,7 +376,42 @@ rationale: "<summary explanation of verdict>"
             custom_backend=custom_backend,
         )
 
-        if (
+        fallback_rec: ReviewerFallbackRecord | None = None
+        if not result.success and fallback_backend:
+            primary_err = result.error_message or "Reviewer execution failed"
+            primary_backend_name = str(custom_backend or self.role.value)
+            fb_res = bridge.execute_writing_role(
+                role=self.role,
+                prompt=prompt,
+                context={
+                    "original_title": original.title,
+                    "revised_title": revised.title,
+                    "humanizer_provider": humanizer_provider,
+                    "run_id": run_id,
+                },
+                avoid_provider=None,
+                timeout_seconds=300,
+                cwd=cwd,
+                custom_backend=fallback_backend,
+            )
+            if fb_res.success:
+                result = fb_res
+                indep = (
+                    "SAME_PROVIDER"
+                    if (humanizer_provider and fb_res.provider == humanizer_provider)
+                    else "INDEPENDENT"
+                )
+                result.independence_status = indep
+                fallback_rec = ReviewerFallbackRecord(
+                    stage="meaning_review",
+                    requested_reviewer=primary_backend_name,
+                    failure_reason=primary_err,
+                    fallback_reviewer=str(fallback_backend),
+                    provider=fb_res.provider,
+                    model=fb_res.model,
+                    independence_status=indep,
+                )
+        elif (
             not result.success
             and humanizer_provider
             and (
@@ -407,6 +437,15 @@ rationale: "<summary explanation of verdict>"
             if fallback_res.success:
                 result = fallback_res
                 result.independence_status = "SAME_PROVIDER"
+                fallback_rec = ReviewerFallbackRecord(
+                    stage="meaning_review",
+                    requested_reviewer=str(custom_backend or self.role.value),
+                    failure_reason="No independent reviewer available",
+                    fallback_reviewer=str(custom_backend or self.role.value),
+                    provider=fallback_res.provider,
+                    model=fallback_res.model,
+                    independence_status="SAME_PROVIDER",
+                )
 
         if not result.success:
             err = result.error_message or "Reviewer execution failed"
@@ -424,6 +463,7 @@ rationale: "<summary explanation of verdict>"
                 duration_seconds=result.duration_seconds,
                 independence_status=result.independence_status,
                 metadata=result.metadata,
+                fallback_record=fallback_rec,
             )
 
         structured = result.structured_output or {}
@@ -462,4 +502,5 @@ rationale: "<summary explanation of verdict>"
             duration_seconds=result.duration_seconds,
             independence_status=result.independence_status,
             metadata=result.metadata,
+            fallback_record=fallback_rec,
         )

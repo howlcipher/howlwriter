@@ -37,6 +37,20 @@ class Paragraph(DataClassSerializationMixin):
     index: int
     raw_text: str
     sentences: list[Sentence] = field(default_factory=list)
+    section_type: str = "body"
+
+
+_REFERENCES_HEADING = re.compile(
+    r"^(?:#{1,6}\s*)?(?:references|bibliography|works cited)\s*$", re.IGNORECASE
+)
+_PROVENANCE_HEADING = re.compile(
+    r"^(?:#{1,6}\s*)?(?:appendix:\s*generation provenance|generation provenance|provenance appendix)\s*$",
+    re.IGNORECASE,
+)
+_MANIFEST_HEADING = re.compile(
+    r"^(?:---\s*manifest\s*---|generation manifest)\s*$", re.IGNORECASE
+)
+_GENERIC_HEADING = re.compile(r"^#{1,6}\s+\S+", re.MULTILINE)
 
 
 @dataclass
@@ -50,6 +64,10 @@ class Document(DataClassSerializationMixin):
     def text(self) -> str:
         return "\n\n".join(p.raw_text for p in self.paragraphs)
 
+    @property
+    def body_text(self) -> str:
+        return "\n\n".join(p.raw_text for p in self.body_paragraphs())
+
     def sentence(self, paragraph_index: int, sentence_index: int) -> Sentence:
         return self.paragraphs[paragraph_index].sentences[sentence_index]
 
@@ -61,16 +79,44 @@ class Document(DataClassSerializationMixin):
             for s in p.sentences
         ]
 
+    def body_paragraphs(self) -> list[Paragraph]:
+        """Paragraphs in the document body, excluding references, appendices, manifests, etc."""
+        return [p for p in self.paragraphs if p.section_type == "body"]
+
+    def body_sentences(self) -> list[tuple[int, int, Sentence]]:
+        """Sentences in body paragraphs only."""
+        return [
+            (p.index, s.index, s)
+            for p in self.paragraphs
+            if p.section_type == "body"
+            for s in p.sentences
+        ]
+
     @classmethod
     def parse(cls, text: str, *, title: str = "", mode: WritingMode = WritingMode.CUSTOM) -> "Document":
-        """Splits plain text or Markdown into paragraphs and sentences.
-
-        Paragraph boundaries are blank lines. Sentence boundaries are a
-        regex heuristic (see module docstring for known limitations).
+        """Splits plain text or Markdown into paragraphs and sentences,
+        classifying each paragraph into its document section (body, references, provenance, manifest).
         """
         raw_paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
         paragraphs: list[Paragraph] = []
+        current_section = "body"
+
         for p_index, raw in enumerate(raw_paragraphs):
+            first_line = raw.split("\n")[0].strip()
+            if _REFERENCES_HEADING.match(first_line):
+                current_section = "references"
+            elif _PROVENANCE_HEADING.match(first_line):
+                current_section = "provenance"
+            elif _MANIFEST_HEADING.match(first_line):
+                current_section = "manifest"
+            elif _GENERIC_HEADING.match(first_line) and current_section != "body":
+                # Check if this heading indicates an appendix or non-body section
+                if re.match(r"^#{1,6}\s+appendix\b", first_line, re.IGNORECASE):
+                    current_section = "provenance"
+                else:
+                    # Return to body if another regular section begins
+                    current_section = "body"
+
             sentences: list[Sentence] = []
             cursor = 0
             for s_index, chunk in enumerate(_split_sentences(raw)):
@@ -78,7 +124,14 @@ class Document(DataClassSerializationMixin):
                 end = start + len(chunk)
                 cursor = end
                 sentences.append(Sentence(index=s_index, text=chunk, char_start=start, char_end=end))
-            paragraphs.append(Paragraph(index=p_index, raw_text=raw, sentences=sentences))
+            paragraphs.append(
+                Paragraph(
+                    index=p_index,
+                    raw_text=raw,
+                    sentences=sentences,
+                    section_type=current_section,
+                )
+            )
         return cls(title=title, paragraphs=paragraphs, mode=mode)
 
 

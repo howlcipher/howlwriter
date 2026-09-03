@@ -5,18 +5,27 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import re
 
+from howlwriter.academic.attack import validate_attack_mapping
 from howlwriter.academic.identifiers import find_ungrounded_identifiers
+from howlwriter.academic.telemetry import find_telemetry_mismatches_in_text
 from howlwriter.domain.claim import Claim, ClaimType, VerificationStatus
 from howlwriter.domain.document import Document
 from howlwriter.domain.provenance import ProvenanceGraph
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.domain.source import (
+    DEPTH_ABSTRACT,
+    DEPTH_FULL_TEXT,
+    DEPTH_METADATA_ONLY,
+    DEPTH_PARTIAL_TEXT,
+    DEPTH_UNAVAILABLE,
     RELEVANCE_DIRECT,
     RELEVANCE_SUPPORTING,
     Evidence,
     Source,
 )
 from howlwriter.facts.extraction import HeuristicClaimExtractor
+
+_PAGE_NUMBER_RE = re.compile(r"\b(?:p\.|pp\.|page|pages)\s*\d+\b", re.IGNORECASE)
 
 
 @dataclass
@@ -145,12 +154,13 @@ class AcademicVerifier:
 
         # 3. Check direct quotations
         quotation_warnings: list[str] = []
-        quotes = re.findall(r'"([^"\n]{10,250})"', document.text)
+        quotes = re.findall(r'"([^"\n]{10,250})"', document.body_text)
         for quote_text in quotes:
-            # Check if this quote exists verbatim in any source's retrieved text
+            # Check if this quote exists verbatim in any source's retrieved text with sufficient depth
             found_in_source = any(
                 quote_text.lower() in (s.retrieved_text or "").lower()
                 for s in sources
+                if s.evidence_depth in (DEPTH_FULL_TEXT, DEPTH_PARTIAL_TEXT, "OTHER")
             )
             if not found_in_source:
                 quotation_warnings.append(
@@ -162,12 +172,36 @@ class AcademicVerifier:
         # grounding text (e.g. the assignment's own topic/requirements).
         grounding_texts = [s.retrieved_text or "" for s in sources]
         grounding_texts.extend(additional_grounding_texts or [])
-        identifier_findings = find_ungrounded_identifiers(document.text, grounding_texts)
+        identifier_findings = find_ungrounded_identifiers(document.body_text, grounding_texts)
         identifier_warnings = [
             f'Ungrounded {f.kind} "{f.identifier}" (context: "{f.context_snippet}") was not found '
             "in any retrieved source or assignment text."
             for f in identifier_findings
         ]
+
+        # Check telemetry source/event misattributions
+        telemetry_mismatches = find_telemetry_mismatches_in_text(document.body_text)
+        identifier_warnings.extend(telemetry_mismatches)
+
+        # Check deep semantic grounding for any ATT&CK techniques in body
+        attack_ids = list(re.findall(r"\bT\d{4}(?:\.\d{3})?\b", document.body_text))
+        for t_id in set(attack_ids):
+            snippet = ""
+            for p in document.body_paragraphs():
+                if t_id.lower() in p.raw_text.lower():
+                    snippet = p.raw_text
+                    break
+            val = validate_attack_mapping(
+                t_id,
+                snippet,
+                sources=sources,
+                additional_grounding_texts=grounding_texts,
+                all_mapped_techniques=attack_ids,
+            )
+            if not val.is_verified:
+                identifier_warnings.append(
+                    f'ATT&CK Semantic Grounding failure for "{t_id}": {val.notes}'
+                )
 
         evidence_counter = 1
         supported_count = 0
@@ -214,8 +248,17 @@ class AcademicVerifier:
                         matched_snippet = s.retrieved_text[:200] if s.retrieved_text else ""
 
             if matched_source and matched_source.retrieved_text:
-                if _source_can_support(matched_source) and not _claim_escalates_evidence(
-                    claim, matched_source.retrieved_text
+                has_page_spec = bool(_PAGE_NUMBER_RE.search(claim.text))
+                depth_inadequate_for_page = (
+                    has_page_spec
+                    and matched_source.evidence_depth in (DEPTH_ABSTRACT, DEPTH_METADATA_ONLY, DEPTH_UNAVAILABLE)
+                )
+                if (
+                    _source_can_support(matched_source)
+                    and not depth_inadequate_for_page
+                    and not _claim_escalates_evidence(
+                        claim, matched_source.retrieved_text
+                    )
                 ):
                     ev_id = f"E{evidence_counter:03d}"
                     evidence_counter += 1
@@ -285,3 +328,5 @@ class AcademicVerifier:
         )
 
         return graph, summary
+
+    verify = build_provenance_and_verify

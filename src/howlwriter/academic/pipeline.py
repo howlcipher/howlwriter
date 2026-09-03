@@ -7,8 +7,9 @@ CONSISTENCY REVIEW -> REFERENCES -> REPORT.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
+import re
 import time
 from typing import Any, Callable
 
@@ -18,6 +19,7 @@ from howlwriter.academic.consistency import (
     RealModelConsistencyReviewer,
     has_staged_content,
 )
+from howlwriter.academic.detection_coverage import evaluate_technique_detection_coverage
 from howlwriter.academic.coverage import CoverageResult, check_requirements_coverage
 from howlwriter.academic.length import (
     count_body_words,
@@ -606,6 +608,8 @@ def _run_academic_pipeline(
         reviewer_independence = normalize_reviewer_independence(
             semantic_res.independence_status
         )
+        if getattr(semantic_res, "fallback_record", None):
+            provenance.reviewer_fallbacks.append(semantic_res.fallback_record)
         provenance.reviewer_independence_by_stage["meaning_review"] = (
             reviewer_independence or "UNKNOWN"
         )
@@ -625,20 +629,26 @@ def _run_academic_pipeline(
             custom_backend=custom_backend,
             run_id=active_run_id,
         )
-        reviewed_provider = humanizer_provider or writer_provider
-        consistency_indep = (
-            "INDEPENDENT_PROVIDER"
-            if (
-                reviewed_provider
-                and consistency_res.provider
-                and reviewed_provider != consistency_res.provider
+        if getattr(consistency_res, "fallback_record", None):
+            provenance.reviewer_fallbacks.append(consistency_res.fallback_record)
+            consistency_indep = normalize_reviewer_independence(
+                consistency_res.fallback_record.independence_status
             )
-            else (
-                "SAME_PROVIDER"
-                if reviewed_provider and consistency_res.provider
-                else "UNKNOWN"
+        else:
+            reviewed_provider = humanizer_provider or writer_provider
+            consistency_indep = (
+                "INDEPENDENT_PROVIDER"
+                if (
+                    reviewed_provider
+                    and consistency_res.provider
+                    and reviewed_provider != consistency_res.provider
+                )
+                else (
+                    "SAME_PROVIDER"
+                    if reviewed_provider and consistency_res.provider
+                    else "UNKNOWN"
+                )
             )
-        )
         provenance.reviewer_independence_by_stage["consistency_review"] = consistency_indep
     else:
         provenance.reviewer_independence_by_stage["consistency_review"] = "NO_REVIEWER"
@@ -692,6 +702,20 @@ def _run_academic_pipeline(
         1 for m in lint_after if m.rule_code == AI_STYLE_BANNED_WORD
     )
     ai_style_count = len(lint_after) - banned_word_count
+
+    # Technique detection coverage validation
+    attack_ids = sorted(set(re.findall(r"\bT\d{4}(?:\.\d{3})?\b", final_document.body_text)))
+    requires_detection = any(
+        any(k in r.lower() for k in ("detection", "telemetry", "defensive", "sensor", "observability", "logging", "choke point"))
+        for r in (spec.requirements or []) + [spec.topic, spec.title]
+    )
+    if requires_detection and attack_ids:
+        detection_summary = evaluate_technique_detection_coverage(final_document, attack_ids)
+        if detection_summary.status == "FAIL":
+            for m in detection_summary.missing_techniques:
+                verif_summary.identifier_warnings.append(
+                    f"Technique detection coverage missing for {m}: no mapped detection telemetry or observability analysis."
+                )
 
     has_source_deficiency = (
         len(citation_analysis.used_sources) < spec.source_requirements.minimum_sources

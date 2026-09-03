@@ -78,6 +78,10 @@ class AIUseStatement:
     reference: AIReferenceEntry = field(default_factory=AIReferenceEntry)
     notes: list[str] = field(default_factory=list)
 
+    @property
+    def text(self) -> str:
+        return self.statement
+
     def to_dict(self) -> dict:
         return {
             "used_generative_ai": self.used_generative_ai,
@@ -204,9 +208,38 @@ def build_ai_use_statement(
 
     parts: list[str] = []
     if wrote and provenance.outline_present:
-        if freedom in ("HIGH", "MEDIUM"):
-            # The honest reading of a sparse outline: most sentences are the
-            # model's, and a statement that implied otherwise would be false.
+        is_model_derived_outline = (
+            contribution.model_derived_outline_nodes > 0
+            and contribution.human_claims == 0
+            and contribution.human_authored_words == 0
+        )
+        is_mixed_outline = (
+            contribution.model_derived_outline_nodes > 0
+            and (contribution.human_claims > 0 or contribution.human_authored_words > 0)
+        )
+
+        if freedom == "MINIMAL":
+            # Near-complete draft supplied by user
+            parts.append(
+                "The author supplied a near-complete draft. Model assistance "
+                "was limited to editing, stylistic refinement, and review."
+            )
+        elif is_model_derived_outline:
+            # Lab 01 scenario: human provided assignment, model derived outline/claims
+            parts.append(
+                "The assignment requirements were supplied by the user. "
+                "Model-backed roles derived a detailed outline and attack scenarios "
+                "from those requirements and generated substantial draft prose."
+            )
+        elif is_mixed_outline:
+            # Mixed human and model outline
+            parts.append(
+                "The author supplied core requirements and initial structure/claims, "
+                "and model-backed roles derived additional outline sections, "
+                "expanding the material into full draft prose."
+            )
+        elif freedom in ("HIGH", "MEDIUM"):
+            # Sparse human outline
             parts.append(
                 "HowlWriter expanded the author's outline into prose. The "
                 "author supplied the topic, structure, and required points; "
@@ -214,12 +247,7 @@ def build_ai_use_statement(
                 "produced by a generative model under those constraints."
             )
         else:
-            # "Limited to development and transitions" is only true when the
-            # author actually supplied a substantial share of the prose. A
-            # heavily structured outline can still leave the model writing
-            # almost every sentence, and claiming otherwise because the
-            # freedom label says LOW would be exactly the overstatement this
-            # function exists to prevent.
+            # Detailed human-authored outline
             if _wrote_most_of_the_words(contribution):
                 parts.append(
                     "HowlWriter expanded the author's outline into prose. The "
@@ -236,21 +264,33 @@ def build_ai_use_statement(
                     "was limited to development, transitions, and connective "
                     "prose."
                 )
-        parts.append(
-            f"The author supplied {contribution.claims_supplied} claim(s), "
-            f"{contribution.preserved_supplied} passage(s) reproduced verbatim, "
-            f"and {contribution.required_points_supplied} required point(s), of "
-            f"which {contribution.required_points_represented} are represented "
-            "in the final text."
-        )
+
+        if contribution.human_claims > 0 or contribution.preserved_supplied > 0 or contribution.required_points_supplied > 0:
+            parts.append(
+                f"The author supplied {contribution.human_claims} claim(s), "
+                f"{contribution.preserved_supplied} passage(s) reproduced verbatim, "
+                f"and {contribution.required_points_supplied} required point(s), of "
+                f"which {contribution.required_points_represented} are represented "
+                "in the final text."
+            )
+        elif is_model_derived_outline:
+            req_supplied = contribution.assignment_derived_requirements or contribution.required_points_supplied
+            parts.append(
+                f"The author supplied {req_supplied} assignment requirement(s). "
+                f"Model roles derived {contribution.model_derived_outline_nodes} outline node(s)."
+            )
+
         if contribution.user_words_supplied and contribution.artifact_words:
-            # The plainest fact available, and the one a reader most needs: how
-            # many words the author wrote against how many are in the document.
             parts.append(
                 f"Of roughly {contribution.artifact_words} words in the final "
                 f"text, {contribution.user_words_supplied} were supplied "
                 "directly by the author as claims, preserved passages, or "
                 "examples. This is a word count, not a measure of authorship."
+            )
+        elif contribution.artifact_words and is_model_derived_outline:
+            parts.append(
+                f"Of roughly {contribution.artifact_words} words in the final text, "
+                "0 words of draft prose were supplied directly by the author."
             )
     elif wrote:
         parts.append(
@@ -258,8 +298,7 @@ def build_ai_use_statement(
             "supplied by the author."
         )
     else:
-        # No writer ran. Claiming generation here would be the exact
-        # overstatement this function exists to prevent.
+        # No writer ran.
         parts.append(
             "No text was generated from scratch by a model. HowlWriter applied "
             "prose refinement and review to text the author supplied; claims, "

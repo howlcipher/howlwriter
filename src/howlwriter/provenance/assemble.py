@@ -28,10 +28,11 @@ from howlwriter.domain.generation_provenance import (
     ContributionSummary,
     GenerationProvenance,
     redact,
+    sanitize_voice_profile_ref,
     sha256_text,
 )
 from howlwriter.domain.io import atomic_write_text
-from howlwriter.domain.outline import NodeKind, Outline
+from howlwriter.domain.outline import NodeKind, NodeOrigin, Outline
 from howlwriter.provenance.manifest import render_manifest
 
 
@@ -87,36 +88,61 @@ def build_contribution(
     research_grounded: int = 0,
     unsupported: int = 0,
 ) -> ContributionSummary:
-    """Counts of supplied versus represented. Never a percentage."""
+    """Counts of supplied versus represented, strictly distinguishing human authorship
+    from model derivation or assignment constraints."""
+    art_words = len(artifact_text.split())
+    added_c_count = len(added_claims or [])
     summary = ContributionSummary(
-        artifact_words=len(artifact_text.split()),
-        model_added_claims=len(added_claims or []),
+        artifact_words=art_words,
+        model_added_claims=added_c_count,
         gaps_reported=len(gaps or []),
         research_grounded_additions=research_grounded,
         unsupported_additions=unsupported,
+        research_grounded_additions_count=research_grounded,
     )
     if outline is not None:
-        summary.claims_supplied = len(outline.claims())
-        summary.required_points_supplied = len(outline.required_points())
-        summary.preserved_supplied = len(outline.preserved())
-        summary.examples_supplied = len(
-            outline.nodes_of(NodeKind.EXAMPLE, NodeKind.EXPERIENCE)
+        human_claims_list = outline.human_claims()
+        assignment_nodes = [
+            n for n in outline.all_nodes() if n.origin == NodeOrigin.ASSIGNMENT_SOURCE.value
+        ]
+        model_nodes = outline.model_derived_nodes()
+
+        summary.human_authored_words = outline.supplied_words()
+        summary.user_words_supplied = summary.human_authored_words
+        summary.human_claims = len(human_claims_list)
+        summary.claims_supplied = len(human_claims_list)
+        summary.assignment_derived_requirements = len(assignment_nodes)
+        summary.model_derived_outline_nodes = len(model_nodes)
+        summary.model_created_claims = added_c_count + len(
+            [n for n in outline.claims() if not n.is_user_authored]
         )
-        summary.voice_seeds_supplied = len(outline.voice_seeds())
-        summary.user_words_supplied = outline.supplied_words()
+        summary.model_generated_prose_words = max(0, art_words - summary.human_authored_words)
+
+        summary.required_points_supplied = len(
+            [n for n in outline.required_points() if n.is_user_authored]
+        )
+        summary.preserved_supplied = len(
+            [n for n in outline.preserved() if n.is_user_authored]
+        )
+        summary.preserved_human_passages = summary.preserved_supplied
+        summary.examples_supplied = len(
+            [n for n in outline.nodes_of(NodeKind.EXAMPLE, NodeKind.EXPERIENCE) if n.is_user_authored]
+        )
+        summary.voice_seeds_supplied = len(
+            [n for n in outline.voice_seeds() if n.is_user_authored]
+        )
+
     if coverage:
         summary.required_points_represented = coverage.get("required_represented", 0)
         summary.preserved_retained = coverage.get("preserved_retained", 0)
         summary.examples_represented = coverage.get("examples_represented", 0)
-        # A claim counts as represented when its node did; the coverage report
-        # already decided that per node, so it is read back rather than re-judged.
         represented = {
             f["node_id"] for f in coverage.get("findings", [])
             if f.get("status") == "PRESENT"
         }
         if outline is not None:
             summary.claims_represented = sum(
-                1 for node in outline.claims() if node.id in represented
+                1 for node in outline.human_claims() if node.id in represented
             )
     return summary
 
@@ -153,6 +179,7 @@ def finalize(
     """
     reduced = GenerationProvenance.from_dict(provenance.to_dict())
     reduced.provenance_level = level
+    reduced.voice_profile = sanitize_voice_profile_ref(reduced.voice_profile)
     reduced.calls = [
         call.redacted(level=level, mask_paths=mask_paths) for call in provenance.calls
     ]
@@ -176,7 +203,7 @@ def write_artifacts(
     level: str = LEVEL_SUMMARY,
     outline: Outline | None = None,
     sources: Any = None,
-    mask_paths: bool = False,
+    mask_paths: bool = True,
 ) -> ProvenanceArtifacts:
     """Write the sidecars beside the artifact. Local, private, never published."""
     target = Path(artifact_path)

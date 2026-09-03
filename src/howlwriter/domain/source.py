@@ -9,7 +9,7 @@ support" without denormalizing data into either object.
 from __future__ import annotations
 
 import enum
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from howlwriter.domain.serialization import DataClassSerializationMixin
@@ -34,9 +34,29 @@ RELEVANCE_IRRELEVANT = "IRRELEVANT"
 
 # Evidence depth actually retrieved for the source.
 DEPTH_FULL_TEXT = "FULL_TEXT"
+DEPTH_PARTIAL_TEXT = "PARTIAL_TEXT"
 DEPTH_ABSTRACT = "ABSTRACT"
 DEPTH_METADATA_ONLY = "METADATA_ONLY"
+DEPTH_UNAVAILABLE = "UNAVAILABLE"
 DEPTH_OTHER = "OTHER"
+
+
+class FreshnessStatus(str, enum.Enum):
+    CURRENT = "CURRENT"
+    SUPERSEDED = "SUPERSEDED"
+    HISTORICAL_REQUIRED = "HISTORICAL_REQUIRED"
+    VERSION_UNKNOWN = "VERSION_UNKNOWN"
+
+
+@dataclass
+class SourceFreshness(DataClassSerializationMixin):
+    retrieved_at: str | None = None
+    published_at: str | None = None
+    last_modified: str | None = None
+    source_version: str | None = None
+    superseded_by: str | None = None
+    freshness_status: FreshnessStatus = FreshnessStatus.VERSION_UNKNOWN
+    intentional_historical_notes: str | None = None
 
 
 @dataclass
@@ -56,6 +76,7 @@ class Source(DataClassSerializationMixin):
     relevance: str = RELEVANCE_DIRECT
     # Explicit evidence depth, independent of the free-text field.
     evidence_depth: str = DEPTH_OTHER
+    freshness: SourceFreshness = field(default_factory=SourceFreshness)
 
     @property
     def was_accessed(self) -> bool:
@@ -74,11 +95,14 @@ class Source(DataClassSerializationMixin):
 
     @property
     def is_substantive_evidence(self) -> bool:
-        """True only if the source has some real retrieved text beyond metadata."""
+        """True only if the source has some real retrieved text beyond metadata,
+        and the evidence depth is not metadata-only or unavailable."""
         text = (self.retrieved_text or "").strip()
         if not text:
             return False
-        return self.evidence_depth in (DEPTH_FULL_TEXT, DEPTH_ABSTRACT, DEPTH_OTHER)
+        if self.evidence_depth in (DEPTH_METADATA_ONLY, DEPTH_UNAVAILABLE):
+            return False
+        return self.evidence_depth in (DEPTH_FULL_TEXT, DEPTH_PARTIAL_TEXT, DEPTH_ABSTRACT, DEPTH_OTHER)
 
 
 @dataclass
@@ -102,4 +126,9 @@ def source_from_dict(entry: dict) -> Source:
         entry["access_date"] = date.fromisoformat(entry["access_date"])
     if entry.get("source_type"):
         entry["source_type"] = SourceType(entry["source_type"])
+    if entry.get("freshness") and isinstance(entry["freshness"], dict):
+        f_data = dict(entry["freshness"])
+        if f_data.get("freshness_status"):
+            f_data["freshness_status"] = FreshnessStatus(f_data["freshness_status"])
+        entry["freshness"] = SourceFreshness(**f_data)
     return Source.from_dict(entry)

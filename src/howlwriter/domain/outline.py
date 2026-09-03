@@ -95,9 +95,25 @@ class NodeKind(enum.Enum):
     VOICE_SEED = "voice_seed"
 
 
-#: Kinds whose text is the user's own writing rather than an instruction about
-#: writing. These are what the contribution report counts, and what must never
-#: be attributed to the model.
+class NodeOrigin(str, enum.Enum):
+    """Where content in an outline node came from.
+    
+    Prevents model-derived outline material from being silently credited
+    as user-supplied merely because it entered as input to a later stage.
+    """
+    USER_AUTHORED = "USER_AUTHORED"
+    ASSIGNMENT_SOURCE = "ASSIGNMENT_SOURCE"
+    SOURCE_DOCUMENT = "SOURCE_DOCUMENT"
+    MODEL_DERIVED_OUTLINE = "MODEL_DERIVED_OUTLINE"
+    MODEL_RESEARCH_SYNTHESIS = "MODEL_RESEARCH_SYNTHESIS"
+    MODEL_GENERATED_CLAIM = "MODEL_GENERATED_CLAIM"
+    MODEL_DRAFTING = "MODEL_DRAFTING"
+    HUMANIZER_EDIT = "HUMANIZER_EDIT"
+    REVIEWER_CORRECTION = "REVIEWER_CORRECTION"
+
+
+#: Kinds whose text is candidate user writing rather than an instruction about
+#: writing. A node must ALSO have origin == USER_AUTHORED to be counted as human writing.
 USER_AUTHORED_KINDS = frozenset(
     {
         NodeKind.THESIS,
@@ -259,6 +275,8 @@ class OutlineNode(DataClassSerializationMixin):
     children: list["OutlineNode"] = field(default_factory=list)
     #: Free-form note carried into provenance but never into the artifact.
     note: str = ""
+    #: Origin of this node: USER_AUTHORED, ASSIGNMENT_SOURCE, MODEL_DERIVED_OUTLINE, etc.
+    origin: str = NodeOrigin.USER_AUTHORED.value
 
     @property
     def authority(self) -> AuthorityLayer:
@@ -266,7 +284,10 @@ class OutlineNode(DataClassSerializationMixin):
 
     @property
     def is_user_authored(self) -> bool:
-        return self.kind in USER_AUTHORED_KINDS
+        return (
+            self.origin == NodeOrigin.USER_AUTHORED.value
+            and self.kind in USER_AUTHORED_KINDS
+        )
 
     @property
     def is_required(self) -> bool:
@@ -354,6 +375,20 @@ class Outline(DataClassSerializationMixin):
             for node in self.all_nodes()
             if node.is_user_authored
         )
+
+    def human_claims(self) -> list[OutlineNode]:
+        return [node for node in self.claims() if node.is_user_authored]
+
+    def model_derived_nodes(self) -> list[OutlineNode]:
+        return [
+            node for node in self.all_nodes()
+            if node.origin in (
+                NodeOrigin.MODEL_DERIVED_OUTLINE.value,
+                NodeOrigin.MODEL_RESEARCH_SYNTHESIS.value,
+                NodeOrigin.MODEL_GENERATED_CLAIM.value,
+                NodeOrigin.MODEL_DRAFTING.value,
+            )
+        ]
 
     @classmethod
     def from_dict(cls, data: dict) -> "Outline":
