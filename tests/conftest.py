@@ -4,6 +4,15 @@ import pytest
 
 from howlwriter.integration.howlplane_bridge import set_howlplane_bridge
 
+# Ensure control plane fakes are installed for portable test execution if HowlPlane is not installed.
+try:
+    import src.control_plane.role_binding  # noqa: F401
+    import src.control_plane.agent_execution  # noqa: F401
+except ImportError:
+    from tests.fakes.control_plane import install_control_plane_fakes
+
+    install_control_plane_fakes()
+
 
 @pytest.fixture(autouse=True)
 def reset_global_bridges():

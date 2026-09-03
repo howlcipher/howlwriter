@@ -107,15 +107,25 @@ def get_git_revision(repo_dir: Path | str | None = None) -> str | None:
 
 
 def get_howlplane_git_revision() -> str | None:
-    candidate_paths = [
-        Path("/run/media/system/tallgeese/dev/howlplane"),
-        Path(__file__).resolve().parents[4] / "howlplane",
-    ]
-    for p in candidate_paths:
+    env_root = os.environ.get("HOWLPLANE_ROOT")
+    if env_root:
+        p = Path(env_root).resolve()
         if p.is_dir() and (p / ".git").exists():
             rev = get_git_revision(p)
             if rev:
                 return rev
+    try:
+        import howlplane
+
+        if hasattr(howlplane, "__file__") and howlplane.__file__:
+            pkg_dir = Path(howlplane.__file__).resolve().parent
+            for candidate in [pkg_dir, pkg_dir.parent]:
+                if (candidate / ".git").exists():
+                    rev = get_git_revision(candidate)
+                    if rev:
+                        return rev
+    except Exception:
+        pass
     return None
 
 

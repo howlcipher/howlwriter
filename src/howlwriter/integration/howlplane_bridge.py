@@ -9,6 +9,7 @@ HowlPlane owns execution, provider resolution, reviewer independence, and contro
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 import sys
 from typing import Any
@@ -19,18 +20,17 @@ from howlwriter.integration.model_role import (
 )
 from howlwriter.integration.provenance_capture import capture_call
 
-# Optional dynamic discovery of HowlPlane source tree if not directly in sys.path
-_KNOWN_HOWLPLANE_PATHS = [
-    Path("/run/media/system/tallgeese/dev/howlplane"),
-    Path(__file__).resolve().parents[4] / "howlplane",
-]
-
-for p in _KNOWN_HOWLPLANE_PATHS:
-    if p.is_dir() and str(p) not in sys.path:
-        sys.path.insert(0, str(p))
+def _ensure_howlplane_on_path() -> None:
+    """Discovers HowlPlane from HOWLPLANE_ROOT environment variable if provided."""
+    env_root = os.environ.get("HOWLPLANE_ROOT")
+    if env_root:
+        p = Path(env_root).resolve()
+        if p.is_dir() and str(p) not in sys.path:
+            sys.path.insert(0, str(p))
 
 
 def _try_import_howlplane() -> tuple[Any, Any, Any, Any, Any] | None:
+    _ensure_howlplane_on_path()
     try:
         from src.control_plane.role_binding import (
             IndependenceStatus,
