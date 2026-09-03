@@ -365,6 +365,11 @@ def build_voice(
         context_result = context_stage.classify_context(
             path=entry.path, text=cleaned.text, cleanup=cleaned, features=features,
         )
+        structural_labels = {
+            "opening_class": diversity_stage.classify_opening(cleaned.text),
+            "closing_class": diversity_stage.classify_closing(cleaned.text),
+            "reasoning_shape": diversity_stage.classify_reasoning_shape(cleaned.text),
+        }
 
         texts[key] = cleaned.text
         features_by_key[key] = features
@@ -406,6 +411,7 @@ def build_voice(
             "classification": assessment.classification,
             "reused": unchanged,
             "model_traits": cached_traits.get(key, {}),
+            "structural_labels": structural_labels,
         }
 
     stage_times["extracting"] = round(time.time() - stage_start, 2)
@@ -464,6 +470,9 @@ def build_voice(
             features=features_by_key[key],
             context=contexts[key],
             weight=weights[key],
+            structural_labels=dict(
+                feature_cache[key].get("structural_labels") or {}
+            ),
         )
         for key in included_keys
     ]

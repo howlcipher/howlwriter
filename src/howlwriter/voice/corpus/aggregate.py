@@ -118,6 +118,7 @@ class DocumentEvidence:
     context: str = "unknown"
     weight: float = 1.0
     model_traits: dict[str, str] = field(default_factory=dict)
+    structural_labels: dict[str, str] = field(default_factory=dict)
 
     @property
     def words(self) -> int:
@@ -548,8 +549,9 @@ def aggregate(documents: list[DocumentEvidence]) -> AggregateResult:
     result.structural_vectors = [
         doc.features.to_structural_vector(
             context=doc.context,
-            opening_class=(doc.model_traits or {}).get("opening_behavior", ""),
-            closing_class=(doc.model_traits or {}).get("conclusion_behavior", ""),
+            opening_class=(doc.structural_labels or {}).get("opening_class", ""),
+            closing_class=(doc.structural_labels or {}).get("closing_class", ""),
+            reasoning_shape=(doc.structural_labels or {}).get("reasoning_shape", ""),
         )
         for doc in usable
         if getattr(doc, "features", None) is not None and doc.words > 0
@@ -586,8 +588,9 @@ def aggregate(documents: list[DocumentEvidence]) -> AggregateResult:
         context_vectors = [
             doc.features.to_structural_vector(
                 context=context,
-                opening_class=(doc.model_traits or {}).get("opening_behavior", ""),
-                closing_class=(doc.model_traits or {}).get("conclusion_behavior", ""),
+                opening_class=(doc.structural_labels or {}).get("opening_class", ""),
+                closing_class=(doc.structural_labels or {}).get("closing_class", ""),
+                reasoning_shape=(doc.structural_labels or {}).get("reasoning_shape", ""),
             )
             for doc in members
             if getattr(doc, "features", None) is not None and doc.words > 0

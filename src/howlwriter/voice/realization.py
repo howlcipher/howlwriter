@@ -27,10 +27,27 @@ _CONJUNCTION_START_PATTERN = re.compile(
     r"(?:^|(?<=[.!?])\s+)(?:And|But|Or|Yet|So)\b",
     re.I,
 )
+_LIST_SHAPE_PATTERN = re.compile(
+    r"(?:^\s*(?:[-*+•]|\d+[.)])\s+|\b(?:bullet(?:ed)?|numbered)\s+list\b|"
+    r"\bchecklist\b)",
+    re.I | re.M,
+)
+_HEADING_SHAPE_PATTERN = re.compile(
+    r"(?:^\s*#{1,6}\s+|\b(?:with|using|use)\s+(?:clear\s+)?"
+    r"(?:headings|sections)\b)",
+    re.I | re.M,
+)
 
 # One document is evidence of one document, not a distribution from which
 # different legitimate shapes can be selected.
 MIN_CONTEXT_POOL = 2
+
+# Paragraph measurements from list- or heading-dominated documents describe
+# that format, not interchangeable prose blocks. Applying their density while
+# suppressing the list/heading relationship creates a synthetic structure even
+# though the row itself is empirical.
+MAX_UNREQUESTED_LIST_RATE = 0.20
+MAX_UNREQUESTED_HEADING_RATE = 0.20
 
 # Writing modes and voice contexts are different concepts. Keep this mapping
 # aligned with voice.application.MODE_CONTEXTS.
@@ -85,8 +102,31 @@ _CLOSING_CLASSES = {
     "recommendation": "recommendation",
     "implication": "implication",
     "personal_reflection": "personal_reflection",
+    "qualified_conclusion": "qualified_conclusion",
     "question": "question",
 }
+
+
+def _reasoning_guidance(reasoning_shape: str) -> str:
+    """Turn an empirical move sequence into a broad family, not a checklist."""
+    moves = set(reasoning_shape.split(">"))
+    if "experience" in moves:
+        return "experience-led reflection"
+    if "problem" in moves and "recommendation" in moves:
+        return "problem-to-recommendation development"
+    if "recommendation" in moves:
+        return "claim developed toward a recommendation"
+    if "contrast" in moves:
+        return "contrast-led development"
+    if "example" in moves:
+        return "example-led explanation"
+    if "mechanism" in moves:
+        return "claim developed through causal mechanism"
+    if "implication" in moves:
+        return "claim developed toward an implication"
+    if "question" in moves:
+        return "question-led exploration"
+    return "explanatory development" if reasoning_shape else ""
 
 
 def derive_seed(
@@ -161,18 +201,44 @@ def _select_pool(
     profile: VoiceProfile,
     desired_context: str,
     target_words: int,
-) -> tuple[list[StructuralVector], int, str, str, str]:
-    """Return pool, candidate count, source, length rule, and fallback."""
+    *,
+    allow_list_shape: bool,
+    allow_heading_shape: bool,
+) -> tuple[list[StructuralVector], int, int, str, str, str, str]:
+    """Return a context-, length-, and document-format-compatible pool."""
     all_vectors = [vector for vector in profile.structural_vectors if vector.words > 0]
-    context_vectors = [
-        vector
-        for vector in all_vectors
-        if vector.context == desired_context
+    raw_context_vectors = [
+        vector for vector in all_vectors if vector.context == desired_context
     ]
     compatible_names = _COMPATIBLE_CONTEXTS.get(
         desired_context, {desired_context, "unknown", "mixed", ""}
     )
-    global_vectors = [v for v in all_vectors if v.context in compatible_names]
+    raw_global_vectors = [v for v in all_vectors if v.context in compatible_names]
+
+    def format_compatible(vector: StructuralVector) -> bool:
+        if (
+            not allow_list_shape
+            and vector.list_rate > MAX_UNREQUESTED_LIST_RATE
+        ):
+            return False
+        if (
+            not allow_heading_shape
+            and vector.heading_rate > MAX_UNREQUESTED_HEADING_RATE
+        ):
+            return False
+        return True
+
+    context_vectors = [v for v in raw_context_vectors if format_compatible(v)]
+    global_vectors = [v for v in raw_global_vectors if format_compatible(v)]
+
+    if allow_list_shape and allow_heading_shape:
+        format_conditioning = "LIST_AND_HEADING_SHAPES_AUTHORIZED"
+    elif allow_list_shape:
+        format_conditioning = "LIST_SHAPE_AUTHORIZED;UNREQUESTED_HEADINGS_EXCLUDED"
+    elif allow_heading_shape:
+        format_conditioning = "HEADING_SHAPE_AUTHORIZED;UNREQUESTED_LISTS_EXCLUDED"
+    else:
+        format_conditioning = "UNREQUESTED_LIST_AND_HEADING_SHAPES_EXCLUDED"
 
     context_close, context_wide = _length_pools(context_vectors, target_words)
     global_close, global_wide = _length_pools(global_vectors, target_words)
@@ -184,6 +250,7 @@ def _select_pool(
     choices = (
         (
             context_close if len(context_close) >= MIN_CONTEXT_POOL else [],
+            len(raw_context_vectors),
             len(context_vectors),
             desired_context,
             "CONTEXT_CLOSE_0.5X_TO_2X",
@@ -191,6 +258,7 @@ def _select_pool(
         ),
         (
             global_close if len(global_close) >= MIN_CONTEXT_POOL else [],
+            len(raw_global_vectors),
             len(global_vectors),
             "global",
             "GLOBAL_CLOSE_0.5X_TO_2X",
@@ -198,6 +266,7 @@ def _select_pool(
         ),
         (
             context_wide if len(context_wide) >= MIN_CONTEXT_POOL else [],
+            len(raw_context_vectors),
             len(context_vectors),
             desired_context,
             "CONTEXT_WIDE_0.25X_TO_4X",
@@ -205,21 +274,39 @@ def _select_pool(
         ),
         (
             global_wide if len(global_wide) >= MIN_CONTEXT_POOL else [],
+            len(raw_global_vectors),
             len(global_vectors),
             "global",
             "GLOBAL_WIDE_0.25X_TO_4X",
             "GLOBAL_WIDE_LENGTH_FALLBACK",
         ),
     )
-    for pool, candidate_count, source, conditioning, fallback in choices:
+    for (
+        pool,
+        candidate_count,
+        format_eligible_count,
+        source,
+        conditioning,
+        fallback,
+    ) in choices:
         if pool:
-            return pool, candidate_count, source, conditioning, fallback
+            return (
+                pool,
+                candidate_count,
+                format_eligible_count,
+                source,
+                conditioning,
+                format_conditioning,
+                fallback,
+            )
 
     return (
         [],
+        len(raw_context_vectors) or len(raw_global_vectors),
         len(context_vectors) or len(global_vectors),
         desired_context,
         "NO_LENGTH_COMPATIBLE_VECTOR",
+        format_conditioning,
         "NO_STRUCTURAL_GUIDANCE",
     )
 
@@ -232,6 +319,8 @@ def _no_guidance_realization(
     target_words: int,
     freedom: str,
     length_conditioning: str,
+    format_conditioning: str,
+    format_eligible_count: int,
     fallback_behavior: str,
 ) -> StructuralRealization:
     return StructuralRealization(
@@ -240,7 +329,9 @@ def _no_guidance_realization(
         sample_count=0,
         selection_method="NO_COMPATIBLE_EMPIRICAL_VECTOR",
         length_conditioning=length_conditioning,
+        format_conditioning=format_conditioning,
         fallback_behavior=fallback_behavior,
+        format_eligible_count=format_eligible_count,
         seed=seed,
         reproducible=True,
         model_generation_deterministic=False,
@@ -288,8 +379,35 @@ def derive_structural_realization(
             effective_target,
         )
 
-    pool, candidate_count, source_context, conditioning, fallback = _select_pool(
-        profile, desired_context, effective_target
+    outline_has_headings = bool(
+        outline and any(node.kind == NodeKind.HEADING for node in outline.all_nodes())
+    )
+    authority_text = input_text
+    if outline is not None:
+        authority_text = "\n".join(
+            [input_text, *[node.text for node in outline.all_nodes() if node.text]]
+        )
+    allow_list_shape = bool(_LIST_SHAPE_PATTERN.search(authority_text))
+    allow_heading_shape = bool(
+        outline_has_headings
+        or _HEADING_SHAPE_PATTERN.search(authority_text)
+        or mode_name == "documentation"
+    )
+
+    (
+        pool,
+        candidate_count,
+        format_eligible_count,
+        source_context,
+        conditioning,
+        format_conditioning,
+        fallback,
+    ) = _select_pool(
+        profile,
+        desired_context,
+        effective_target,
+        allow_list_shape=allow_list_shape,
+        allow_heading_shape=allow_heading_shape,
     )
     if not pool:
         return _no_guidance_realization(
@@ -299,6 +417,8 @@ def derive_structural_realization(
             target_words=effective_target,
             freedom=freedom_name,
             length_conditioning=conditioning,
+            format_conditioning=format_conditioning,
+            format_eligible_count=format_eligible_count,
             fallback_behavior=fallback,
         )
 
@@ -387,11 +507,6 @@ def derive_structural_realization(
             parenthetical_count = 0
             overrides.append("USER_OVERRIDE (parenthetical_asides: none)")
 
-    authority_text = input_text
-    if outline is not None:
-        authority_text = "\n".join(
-            [input_text, *[node.text for node in outline.all_nodes() if node.text]]
-        )
     has_personal = bool(_FIRST_PERSON_PATTERN.search(authority_text))
     has_parenthetical = bool(_PARENTHETICAL_PATTERN.search(authority_text))
     has_question = "?" in authority_text
@@ -463,7 +578,9 @@ def derive_structural_realization(
         sample_count=len(pool),
         selection_method="EMPIRICAL_JOINT_ANCHOR_VECTOR",
         length_conditioning=conditioning,
+        format_conditioning=format_conditioning,
         fallback_behavior=fallback,
+        format_eligible_count=format_eligible_count,
         seed=actual_seed,
         reproducible=True,
         model_generation_deterministic=False,
@@ -492,6 +609,7 @@ def derive_structural_realization(
         transition_density_tendency=transition_tendency,
         opening_behavior=_OPENING_CLASSES.get(anchor.opening_class, ""),
         ending_behavior=_CLOSING_CLASSES.get(anchor.closing_class, ""),
+        reasoning_shape=anchor.reasoning_shape,
         overrides=overrides,
         generation_freedom=freedom_name,
         guidance_level=guidance_level,
@@ -597,6 +715,13 @@ def render_structural_realization_prompt(
             "  - closing tendency: "
             f"{realization.ending_behavior.replace('_', ' ')}; do not force it "
             "over the argument's natural endpoint"
+        )
+    reasoning_guidance = _reasoning_guidance(realization.reasoning_shape)
+    if reasoning_guidance:
+        lines.append(
+            "  - development tendency: the anchor used "
+            f"{reasoning_guidance}; borrow that broad movement only when it "
+            "fits this argument, never as a paragraph-by-paragraph checklist"
         )
     lines.append(f"  - {realization.escape_clause}")
     return lines

@@ -207,8 +207,14 @@ class VoiceStore:
                 continue
             context = str(entry.get("context") or "")
             model_traits = entry.get("model_traits") or {}
-            opening = model_traits.get("opening_behavior", "")
-            closing = model_traits.get("conclusion_behavior", "")
+            structural_labels = entry.get("structural_labels") or {}
+            opening = structural_labels.get(
+                "opening_class", model_traits.get("opening_behavior", "")
+            )
+            closing = structural_labels.get(
+                "closing_class", model_traits.get("conclusion_behavior", "")
+            )
+            reasoning = structural_labels.get("reasoning_shape", "")
             features = DocumentFeatures.from_dict(feat_dict)
             if features.words > 0:
                 vectors.append(
@@ -216,27 +222,27 @@ class VoiceStore:
                         context=context,
                         opening_class=opening,
                         closing_class=closing,
+                        reasoning_shape=reasoning,
                     )
                 )
         return vectors
 
     def attach_structural_vectors(self, profile: VoiceProfile) -> None:
-        """Re-attach cached structural vectors to a profile that lacks them.
+        """Attach current, training-eligible vectors from the feature cache.
 
-        Structural vectors live in the feature cache rather than the profile
-        file, so a profile loaded from JSON alone carries none. Both this store
-        and the standalone loader in humanize/rewriter.py need the same
-        re-attachment, so it lives here rather than being written twice.
+        The profile may contain vectors written by an older schema, including
+        one that predates format-composition fields. The feature cache and
+        source registry remain the authoritative inputs: when they are present,
+        rebuild the compact rows so holdout eligibility and every current field
+        are enforced. A standalone profile with no adjacent cache keeps its
+        embedded vectors for portability.
         """
-        if profile.structural_vectors:
-            return
         vectors = self.load_structural_vectors()
         if not vectors:
             return
         profile.structural_vectors = vectors
         for ctx_name, ctx in profile.contexts.items():
-            if not ctx.structural_vectors:
-                ctx.structural_vectors = [v for v in vectors if v.context == ctx_name]
+            ctx.structural_vectors = [v for v in vectors if v.context == ctx_name]
 
     def load_profile(self) -> VoiceProfile:
         path = self.directory / PROFILE_FILE

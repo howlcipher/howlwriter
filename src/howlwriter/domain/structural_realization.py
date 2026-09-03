@@ -41,7 +41,9 @@ class StructuralRealization(DataClassSerializationMixin):
     sample_count: int = 0
     selection_method: str = "EMPIRICAL_JOINT_ANCHOR_VECTOR"
     length_conditioning: str = ""
+    format_conditioning: str = ""
     fallback_behavior: str = ""
+    format_eligible_count: int = 0
     seed: int | None = None
     reproducible: bool = True
     model_generation_deterministic: bool = False
@@ -72,6 +74,7 @@ class StructuralRealization(DataClassSerializationMixin):
     # --- Opening and Ending Moves ---
     opening_behavior: str = "direct_thesis"
     ending_behavior: str = "declarative_stop"
+    reasoning_shape: str = ""
 
     # --- Authority and Escape Guardrails ---
     overrides: list[str] = field(default_factory=list)

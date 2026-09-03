@@ -175,8 +175,11 @@ class StructuralVector(DataClassSerializationMixin):
     first_person_rate: float = 0.0
     parenthetical_rate: float = 0.0
     question_rate: float = 0.0
+    list_rate: float = 0.0
+    heading_rate: float = 0.0
     opening_class: str = ""
     closing_class: str = ""
+    reasoning_shape: str = ""
     context: str = ""
 
 

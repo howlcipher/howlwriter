@@ -36,6 +36,7 @@ def _sample_vectors() -> list[StructuralVector]:
             fragment_rate=0.15,
             opening_class="direct_entry",
             closing_class="call_to_action",
+            reasoning_shape="thesis>mechanism>recommendation",
         ),
         StructuralVector(
             context="professional",
@@ -57,6 +58,7 @@ def _sample_vectors() -> list[StructuralVector]:
             fragment_rate=0.0,
             opening_class="contextual_setup",
             closing_class="stops",
+            reasoning_shape="problem>explanation>takeaway",
         ),
         StructuralVector(
             context="academic",
@@ -78,6 +80,7 @@ def _sample_vectors() -> list[StructuralVector]:
             fragment_rate=0.0,
             opening_class="contextual_setup",
             closing_class="restatement",
+            reasoning_shape="setup>mechanism>implication",
         ),
         StructuralVector(
             context="academic",
@@ -99,6 +102,7 @@ def _sample_vectors() -> list[StructuralVector]:
             fragment_rate=0.0,
             opening_class="brief_setup",
             closing_class="concise",
+            reasoning_shape="setup>contrast>takeaway",
         ),
     ]
 
@@ -170,10 +174,13 @@ def test_realization_provenance_has_selection_evidence_but_no_source_identity():
         "selection_method",
         "seed",
         "length_conditioning",
+        "format_conditioning",
+        "format_eligible_count",
         "fallback_behavior",
         "overrides",
     } <= payload.keys()
     assert payload["candidate_count"] >= payload["sample_count"] >= 2
+    assert payload["format_eligible_count"] >= payload["sample_count"]
 
     exported = json.dumps(payload)
     assert "bounded queues protect service reliability" not in exported
@@ -234,6 +241,7 @@ def test_covariance_preservation_from_anchor():
                 real.fragment_eligible,
                 real.opening_behavior,
                 real.ending_behavior,
+                real.reasoning_shape,
             )
         )
 
@@ -241,9 +249,9 @@ def test_covariance_preservation_from_anchor():
     # Independent marginal sampling would create additional combinations.
     assert observed == {
         (37.5, 12.5, "prominent", True, True, True, True,
-         "direct_thesis", "recommendation"),
+         "direct_thesis", "recommendation", "thesis>mechanism>recommendation"),
         (50.0, 14.0, "moderate", False, False, False, False,
-         "contextual_statement", "declarative_stop"),
+         "contextual_statement", "declarative_stop", "problem>explanation>takeaway"),
     }
 
 
@@ -292,6 +300,53 @@ def test_one_compatible_document_is_not_misrepresented_as_a_sampling_pool():
     assert real.selection_method == "NO_COMPATIBLE_EMPIRICAL_VECTOR"
     assert real.sample_count == 0
     assert real.guidance_level == "none"
+
+
+def test_list_dominated_anchor_is_not_applied_to_unstructured_prose():
+    prose_a = _sample_vectors()[0]
+    prose_b = _sample_vectors()[1]
+    list_anchor = StructuralVector(
+        context="professional",
+        words=200,
+        paragraphs=40,
+        paragraph_words_mean=5.0,
+        sentence_length_mean=5.0,
+        sentence_length_stdev=1.0,
+        list_rate=1.0,
+    )
+    profile = VoiceProfile(
+        author_name="format-test",
+        profile_name="format-test",
+        generated_from="corpus_build",
+        structural_vectors=[prose_a, prose_b, list_anchor],
+    )
+
+    prose_results = [
+        derive_structural_realization(
+            profile,
+            mode=WritingMode.LINKEDIN,
+            target_words=200,
+            input_text="Explain why bounded queues protect services.",
+            seed=seed,
+        )
+        for seed in range(30)
+    ]
+    assert all(result is not None for result in prose_results)
+    assert all(result.paragraph_words_mean_target != 5.0 for result in prose_results)
+    assert all(result.format_eligible_count == 2 for result in prose_results)
+
+    list_results = [
+        derive_structural_realization(
+            profile,
+            mode=WritingMode.LINKEDIN,
+            target_words=200,
+            input_text="Turn this into a numbered list of queue safeguards.",
+            seed=seed,
+        )
+        for seed in range(30)
+    ]
+    assert any(result.paragraph_words_mean_target == 5.0 for result in list_results)
+    assert all("LIST_SHAPE_AUTHORIZED" in result.format_conditioning for result in list_results)
 
 
 def _impersonal_profile() -> VoiceProfile:
@@ -518,13 +573,16 @@ def test_render_structural_realization_prompt():
         profile,
         mode=WritingMode.LINKEDIN,
         target_words=250,
-        seed=42,
+        seed=1,
     )
     lines = render_structural_realization_prompt(real)
     rendered = "\n".join(lines)
     assert "STRUCTURAL REALIZATION FOR THIS PIECE" in rendered
     assert "structural shape:" in rendered
     assert "sentence rhythm:" in rendered
+    assert "development tendency:" in rendered
+    assert "claim developed toward a recommendation" in rendered
+    assert "paragraph-by-paragraph checklist" in rendered
     assert real.escape_clause in rendered
 
 

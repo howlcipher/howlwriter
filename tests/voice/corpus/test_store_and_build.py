@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from howlwriter.domain.voice import VOICE_PROFILE_VERSION, VoiceOverrides, VoiceProfile
+from howlwriter.domain.voice import (
+    VOICE_PROFILE_VERSION,
+    StructuralVector,
+    VoiceOverrides,
+    VoiceProfile,
+)
 from howlwriter.voice.corpus.build import build_voice
 from howlwriter.voice.corpus.features import extract_features
 from howlwriter.voice.corpus.store import (
@@ -180,6 +185,11 @@ def test_structural_vector_migration_excludes_holdout_and_ineligible_sources(
         features[key] = {
             "features": measured.to_dict(),
             "context": context,
+            "structural_labels": {
+                "opening_class": "direct_thesis",
+                "closing_class": "declarative_stop",
+                "reasoning_shape": "thesis>explanation>takeaway",
+            },
             "model_traits": {
                 "opening_behavior": "direct_entry",
                 "conclusion_behavior": "stops",
@@ -192,15 +202,56 @@ def test_structural_vector_migration_excludes_holdout_and_ineligible_sources(
                 author_name="subject",
                 profile_name="subject",
                 generated_from="corpus_build",
+                # Simulate a profile written by the initial milestone: an
+                # embedded row exists but predates composition-aware vectors.
+                structural_vectors=[
+                    StructuralVector(
+                        context="academic",
+                        words=9999,
+                        paragraphs=999,
+                    )
+                ],
             )
         )
         staged.write_sources(sources)
         staged.write_features(features)
         staged.commit()
 
-    vectors = store.load_structural_vectors()
+    profile = store.load_profile()
+    vectors = profile.structural_vectors
     assert len(vectors) == 2
     assert {vector.context for vector in vectors} == {"professional"}
+    assert all(vector.words != 9999 for vector in vectors)
+    assert all(
+        vector.reasoning_shape == "thesis>explanation>takeaway"
+        for vector in vectors
+    )
+
+
+def test_deterministic_build_caches_privacy_safe_rhetorical_labels(
+    store_root, build_corpus
+):
+    build_voice(
+        "subject",
+        [build_corpus(12)],
+        store_root=store_root,
+        deterministic_only=True,
+    )
+    cache = VoiceStore("subject", root=store_root).load_features()
+    labelled = [
+        entry.get("structural_labels") or {}
+        for entry in cache.values()
+        if isinstance(entry.get("features"), dict)
+    ]
+
+    assert labelled
+    assert all(
+        set(item) == {"opening_class", "closing_class", "reasoning_shape"}
+        for item in labelled
+    )
+    serialized = json.dumps(labelled)
+    assert REAL_SENTENCE not in serialized
+    assert "/home/" not in serialized
 
 
 def test_temporary_extraction_leaves_nothing_behind_on_failure(store_root, corpus_dir, monkeypatch):
@@ -233,7 +284,7 @@ def test_the_feature_cache_holds_vectors_not_prose(store_root, corpus_dir):
     for entry in cache["documents"].values():
         assert set(entry) <= {
             "content_hash", "feature_schema", "features", "context",
-            "classification", "reused", "model_traits",
+            "classification", "reused", "model_traits", "structural_labels",
         }
         assert all(isinstance(v, (int, float)) for v in entry["features"].values())
         # Cached trait labels are short vocabulary values, never prose.

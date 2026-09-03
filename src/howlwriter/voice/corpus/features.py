@@ -143,6 +143,7 @@ class DocumentFeatures:
         context: str = "",
         opening_class: str = "",
         closing_class: str = "",
+        reasoning_shape: str = "",
     ) -> Any:
         from howlwriter.domain.voice import StructuralVector
 
@@ -163,8 +164,11 @@ class DocumentFeatures:
             first_person_rate=self.first_person_rate,
             parenthetical_rate=self.parenthetical_rate,
             question_rate=self.question_rate,
+            list_rate=self.list_rate,
+            heading_rate=self.heading_rate,
             opening_class=opening_class,
             closing_class=closing_class,
+            reasoning_shape=reasoning_shape,
             context=context,
         )
 
