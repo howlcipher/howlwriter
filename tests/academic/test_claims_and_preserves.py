@@ -6,6 +6,7 @@ import pytest
 
 from howlwriter.academic.pipeline import run_academic_pipeline
 from howlwriter.academic.spec import AssignmentSpec
+from howlwriter.config.schema import BannedWord, HowlWriterConfig
 from howlwriter.domain.outline import NodeKind, Outline, OutlineNode
 from howlwriter.integration.howlplane_bridge import (
     HowlPlaneWritingBridge,
@@ -300,6 +301,33 @@ def test_humanizer_that_alters_preserved_text_is_rejected_and_recorded():
     assert altered not in result.final_document.text
     assert result.provenance.coverage["preserved_retained"] == 1
     assert result.provenance.review["preserve_guard"][0]["stage"] == "humanizer"
+    assert any("prior artifact was retained" in item for item in result.provenance.warnings)
+
+
+def test_deterministic_safe_rewriter_cannot_alter_preserved_text():
+    preserved = "The analysis must delve into this exact boundary."
+    outline = Outline(
+        title="Boundary",
+        topic="boundary analysis",
+        nodes=[OutlineNode(id="p1", kind=NodeKind.PRESERVE, text=preserved)],
+    )
+    config = HowlWriterConfig(
+        banned_words=[BannedWord(word="delve", replacement="examine")],
+        apply_safe_rewrites=True,
+    )
+
+    result = run_academic_pipeline(
+        None,
+        config=config,
+        outline=outline,
+        deterministic_only=True,
+        max_length_retries=0,
+    )
+
+    assert preserved in result.final_document.text
+    assert "must examine into" not in result.final_document.text
+    guard = result.provenance.review["preserve_guard"][0]
+    assert guard["stage"] == "safe_rewriter"
     assert any("prior artifact was retained" in item for item in result.provenance.warnings)
 
 

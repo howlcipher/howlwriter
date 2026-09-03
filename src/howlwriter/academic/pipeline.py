@@ -571,7 +571,33 @@ def _run_academic_pipeline(
         humanize_duration = humanize_res.duration_seconds
     else:
         safe_res = SafeRewriter().rewrite(draft_doc, cfg)
-        transformed_doc = safe_res.document
+        candidate_doc = safe_res.document
+        violations = preserved_violations(outline, candidate_doc.text)
+        structure_changed = bool(
+            realization
+            and realization.guidance_level == "none"
+            and paragraph_structure_changed(draft_doc.text, candidate_doc.text)
+        )
+        if violations:
+            _record_preserve_rejection(
+                provenance, stage="safe_rewriter", violations=violations
+            )
+            transformed_doc = draft_doc
+        elif structure_changed:
+            provenance.review.setdefault("authority_guard", []).append(
+                {
+                    "stage": "safe_rewriter",
+                    "action": "REJECTED_CANDIDATE_AND_RETAINED_PRIOR_ARTIFACT",
+                    "near_complete_structure_changed": True,
+                }
+            )
+            provenance.warnings.append(
+                "Safe rewriter output was rejected because it restructured a "
+                "near-complete draft. The prior artifact was retained."
+            )
+            transformed_doc = draft_doc
+        else:
+            transformed_doc = candidate_doc
     _notify("humanizing", "DONE", "Safe Prose Humanizing", {
         "provider": humanizer_provider or "deterministic",
         "duration": humanize_duration,
@@ -897,10 +923,8 @@ def _run_academic_pipeline(
     provenance.artifact_sha256 = compute_sha256(final_document.text)
     provenance.completed_at = datetime.now(timezone.utc).isoformat()
     # Every read below is a contract with another stage's result dataclass.
-    #  was one of these and did not exist; the field is
-    # , and no deterministic test reached this line because the
-    # consistency reviewer needs both a model and staged content. See
-    # tests/academic/test_provenance_contract.py.
+    # Keep these accesses explicit so a result-schema mismatch fails loudly
+    # in the pipeline contract tests instead of being silently omitted.
     provenance.review.update({
         "meaning_preservation": meaning_det.status,
         "semantic_meaning": semantic_res.verdict if semantic_res else None,

@@ -19,7 +19,6 @@ Usage:
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 import sys
 
@@ -52,10 +51,9 @@ def _recompute(payload: dict, arm: str) -> dict:
 
 
 def _recompute_ablation(payload: dict, arm: str) -> dict:
-    """Recompute an ablation arm, including the live corpus comparison."""
+    """Recompute an ablation arm from output and stored structural evidence."""
     from metrics import analyze_batch, grouped_variation
-    from per_piece_ablation_runner import _eligible_corpus
-    from howlwriter.voice.corpus.store import VoiceStore
+    from howlwriter.voice.corpus.features import DocumentFeatures
 
     records = payload["generations"][arm]
     texts = [
@@ -63,8 +61,19 @@ def _recompute_ablation(payload: dict, arm: str) -> dict:
         for record in records
         if record.get("status") == "OK" and record.get("output")
     ]
-    store = VoiceStore(os.environ.get("HOWLWRITER_REVIEW_VOICE", "william"))
-    corpus, professional = _eligible_corpus(store)
+    evidence = payload.get("structural_evidence") or {}
+    corpus = [
+        DocumentFeatures.from_dict(item)
+        for item in evidence.get("training_feature_vectors", [])
+    ]
+    professional = [
+        DocumentFeatures.from_dict(item)
+        for item in evidence.get("professional_feature_vectors", [])
+    ]
+    if not corpus:
+        raise ValueError(
+            "ablation artifact has no structural evidence; cannot verify diversity"
+        )
     analysis = analyze_batch(
         texts,
         corpus_features=corpus,

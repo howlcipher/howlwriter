@@ -39,7 +39,7 @@ def test_restating_the_authors_own_claim_is_logical_expansion():
 
 
 def test_inflection_does_not_turn_a_restatement_into_a_new_assertion():
-    """"creates friction" and "created friction" are the same commitment."""
+    """"Creates friction" and "created friction" are the same commitment."""
     finding = classify_addition(
         "Implementation costs created competitive frictions.", _OUTLINE
     )
@@ -98,7 +98,6 @@ def test_evidence_makes_an_addition_safe_without_erasing_its_origin():
     )
     assert review.blocks_readiness is False
     assert review.findings[0].classification == NEW_FACTUAL
-    assert "matched to retrieved evidence" in review.findings[0].detail
     assert "matched to retrieved evidence" in review.findings[0].detail
 
 

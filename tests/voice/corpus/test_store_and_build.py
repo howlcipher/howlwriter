@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from howlwriter.domain.voice import VOICE_PROFILE_VERSION, VoiceOverrides
+from howlwriter.domain.voice import VOICE_PROFILE_VERSION, VoiceOverrides, VoiceProfile
 from howlwriter.voice.corpus.build import build_voice
+from howlwriter.voice.corpus.features import extract_features
 from howlwriter.voice.corpus.store import (
     OVERRIDES_FILE,
     PROFILE_FILE,
@@ -146,6 +147,60 @@ def test_a_corpus_built_profile_holds_no_examples_or_phrase_bank(store_root, bui
     assert outcome.profile.disliked_phrases == []
     assert outcome.profile.generated_from == "corpus_build"
     assert outcome.profile.version == VOICE_PROFILE_VERSION
+
+
+def test_structural_vector_migration_excludes_holdout_and_ineligible_sources(
+    store_root,
+):
+    """The feature cache is not itself an anchor eligibility list.
+
+    Older profile files carry no embedded structural vectors, so loading one
+    rebuilds them from the cache. Holdout and excluded documents coexist in
+    that cache and must never silently enter the generation distribution.
+    """
+    store = VoiceStore("subject", root=store_root)
+    cases = {
+        "train": ("train", "include", "professional"),
+        "low_weight": ("train", "include_low_weight", "professional"),
+        "holdout": ("holdout", "include", "professional"),
+        "excluded": ("train", "exclude", "academic"),
+        "review": ("train", "review", "academic"),
+    }
+    sources = {}
+    features = {}
+    for index, (key, (split, inclusion, context)) in enumerate(cases.items()):
+        measured = extract_features(synthetic_prose(index, paragraphs=3))
+        sources[key] = SourceRecord(
+            key=key,
+            path=f"private-{key}.md",
+            split=split,
+            inclusion=inclusion,
+            context=context,
+        )
+        features[key] = {
+            "features": measured.to_dict(),
+            "context": context,
+            "model_traits": {
+                "opening_behavior": "direct_entry",
+                "conclusion_behavior": "stops",
+            },
+        }
+
+    with store.stage() as staged:
+        staged.write_profile(
+            VoiceProfile(
+                author_name="subject",
+                profile_name="subject",
+                generated_from="corpus_build",
+            )
+        )
+        staged.write_sources(sources)
+        staged.write_features(features)
+        staged.commit()
+
+    vectors = store.load_structural_vectors()
+    assert len(vectors) == 2
+    assert {vector.context for vector in vectors} == {"professional"}
 
 
 def test_temporary_extraction_leaves_nothing_behind_on_failure(store_root, corpus_dir, monkeypatch):

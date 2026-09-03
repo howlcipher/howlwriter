@@ -153,14 +153,15 @@ def _eligible_corpus(
         if source.split == "train"
         and source.inclusion in ("include", "include_low_weight")
     }
+    ordered_keys = sorted(eligible)
     corpus = [
         DocumentFeatures.from_dict(cached[key]["features"])
-        for key in eligible
+        for key in ordered_keys
         if key in cached and isinstance(cached[key].get("features"), dict)
     ]
     professional = [
         DocumentFeatures.from_dict(cached[key]["features"])
-        for key in eligible
+        for key in ordered_keys
         if key in cached
         and sources[key].context == "professional"
         and isinstance(cached[key].get("features"), dict)
@@ -174,8 +175,8 @@ def _new_payload(
     repeats: int,
     target_words: int,
     seed_base: int,
-    corpus_count: int,
-    professional_count: int,
+    corpus: list[DocumentFeatures],
+    professional: list[DocumentFeatures],
 ) -> dict[str, Any]:
     return {
         "schema": SCHEMA,
@@ -194,10 +195,17 @@ def _new_payload(
         },
         "voice": "local_profile",
         "corpus_evidence": {
-            "eligible_training_vectors": corpus_count,
-            "professional_training_vectors": professional_count,
+            "eligible_training_vectors": len(corpus),
+            "professional_training_vectors": len(professional),
             "raw_text_persisted": False,
             "source_identity_persisted": False,
+        },
+        # Numeric/categorical structural measurements make report verification
+        # self-contained without persisting the private profile name, paths, or
+        # source keys. Structural statistics are the permitted evidence here.
+        "structural_evidence": {
+            "training_feature_vectors": [item.to_dict() for item in corpus],
+            "professional_feature_vectors": [item.to_dict() for item in professional],
         },
         "arm_definitions": {
             "medium_only": "mode rules; no personal voice profile",
@@ -317,8 +325,8 @@ def run(args: argparse.Namespace) -> int:
             repeats=args.repeats,
             target_words=args.target_words,
             seed_base=args.seed_base,
-            corpus_count=len(corpus),
-            professional_count=len(professional),
+            corpus=corpus,
+            professional=professional,
         )
 
     started = time.monotonic()
@@ -400,7 +408,16 @@ def run(args: argparse.Namespace) -> int:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--voice", default="william")
+    default_voice = os.environ.get("HOWLWRITER_REVIEW_VOICE")
+    parser.add_argument(
+        "--voice",
+        default=default_voice,
+        required=default_voice is None,
+        help=(
+            "local voice registry name (or set HOWLWRITER_REVIEW_VOICE); "
+            "the name is never written to the benchmark artifact"
+        ),
+    )
     parser.add_argument("--provider", default="agy")
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--target-words", type=int, default=200)

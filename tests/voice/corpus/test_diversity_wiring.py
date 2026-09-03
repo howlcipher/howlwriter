@@ -19,6 +19,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 from howlwriter.voice.corpus.diversity import (
     FAIL,
     NOT_EVALUATED,
@@ -112,3 +114,35 @@ def test_the_build_records_not_evaluated_because_no_generated_text_exists_yet():
     source = inspect.getsource(build)
     assert "diversity=diversity_stage.NOT_EVALUATED" in source
     assert "diversity=diversity_stage.PASS" not in source
+
+
+def test_ablation_artifact_carries_numeric_evidence_without_private_voice_name():
+    from per_piece_ablation_runner import _new_payload
+
+    corpus = _corpus(3)
+    payload = _new_payload(
+        provider="fake",
+        repeats=2,
+        target_words=200,
+        seed_base=17,
+        corpus=corpus,
+        professional=corpus[:2],
+    )
+
+    assert payload["voice"] == "local_profile"
+    assert len(
+        payload["structural_evidence"]["training_feature_vectors"]
+    ) == 3
+    serialized = str(payload)
+    assert "/home/" not in serialized
+    assert "/run/media/" not in serialized
+
+
+def test_ablation_runner_requires_voice_name_instead_of_committing_personal_default(
+    monkeypatch,
+):
+    from per_piece_ablation_runner import parse_args
+
+    monkeypatch.delenv("HOWLWRITER_REVIEW_VOICE", raising=False)
+    with pytest.raises(SystemExit):
+        parse_args([])

@@ -147,6 +147,16 @@ def main() -> int:
             and "source_filename" not in json.dumps(ablation)
             and ablation.get("voice") == "local_profile",
         ))
+        evidence = ablation.get("structural_evidence") or {}
+        checks.append((
+            "the ablation stores privacy-safe structural evidence for offline recomputation",
+            len(evidence.get("training_feature_vectors", []))
+            == ablation.get("corpus_evidence", {}).get("eligible_training_vectors")
+            and len(evidence.get("professional_feature_vectors", []))
+            == ablation.get("corpus_evidence", {}).get(
+                "professional_training_vectors"
+            ),
+        ))
 
     structural = _load("structural_variance_v2")
     if structural is None:

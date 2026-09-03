@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from howlwriter.domain.modes import WritingMode
 from howlwriter.domain.outline import NodeKind, Outline, OutlineNode
 from howlwriter.domain.voice import StructuralVector, VoiceContext, VoiceProfile
@@ -147,6 +149,40 @@ def test_seed_determinism():
     assert real1.to_dict() == real2.to_dict()
     assert real1.paragraph_count_region == real2.paragraph_count_region
     assert real1.sentence_length_mean_target == real2.sentence_length_mean_target
+
+
+def test_realization_provenance_has_selection_evidence_but_no_source_identity():
+    real = derive_structural_realization(
+        _sample_profile(),
+        mode=WritingMode.LINKEDIN,
+        target_words=250,
+        input_text="Explain why bounded queues protect service reliability.",
+        seed=42,
+    )
+    assert real is not None
+    payload = real.to_dict()
+
+    assert {
+        "source_context",
+        "selected_anchor_context",
+        "candidate_count",
+        "sample_count",
+        "selection_method",
+        "seed",
+        "length_conditioning",
+        "fallback_behavior",
+        "overrides",
+    } <= payload.keys()
+    assert payload["candidate_count"] >= payload["sample_count"] >= 2
+
+    exported = json.dumps(payload)
+    assert "bounded queues protect service reliability" not in exported
+    assert "/home/" not in exported
+    assert "/run/media/" not in exported
+    assert not any(
+        key in payload
+        for key in ("source_path", "source_filename", "source_key", "raw_text")
+    )
 
 
 def test_different_seeds_produce_variance():
