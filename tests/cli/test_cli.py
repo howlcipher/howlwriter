@@ -3,9 +3,19 @@ from pathlib import Path
 
 import pytest
 
+from howlwriter import __version__
 from howlwriter.cli.main import main
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
+
+
+def test_version_flag_reports_package_version(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--version"])
+
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == f"howlwriter {__version__}"
 
 
 def test_lint_command_runs_and_reports_findings(tmp_path, capsys):

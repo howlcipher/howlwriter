@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from howlwriter import __version__
 from howlwriter.cli.commands import (
     cite,
     editor,
@@ -57,6 +58,11 @@ def build_parser() -> argparse.ArgumentParser:
         prog="howlwriter",
         description="A controlled writing, editing, humanization, research, citation, "
         "provenance, and verification system.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"howlwriter {__version__}",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     for module in _COMMAND_MODULES:

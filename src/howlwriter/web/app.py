@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from howlwriter import __version__
 from howlwriter.web.routes.academic import router as academic_router
 from howlwriter.web.routes.documents import router as documents_router
 from howlwriter.web.routes.howl import router as howl_router
@@ -25,7 +26,7 @@ def create_app(static_dir: Path | str | None = None) -> FastAPI:
     app = FastAPI(
         title="HowlWriter Local Web Application",
         description="Local writing control system, voice preservation & review interface.",
-        version="0.1.0",
+        version=__version__,
         docs_url="/api/docs",
         redoc_url="/api/redoc",
     )
