@@ -8,8 +8,6 @@ import threading
 import time
 import webbrowser
 
-from howlwriter.web.app import create_app
-
 
 def add_subparser(
     subparsers: argparse._SubParsersAction,
@@ -45,12 +43,25 @@ def add_subparser(
 
 
 def run(args: argparse.Namespace) -> int:
+    # fastapi/uvicorn are the "web" extra, not a core dependency -- every
+    # other howlwriter subcommand (including --version/--help) must keep
+    # working with just the core install, so these imports stay deferred
+    # to here rather than at module load time.
     try:
         import uvicorn
     except ImportError:
         print(
             "error: uvicorn is required to run the local web UI. "
             "Please install it with: pip install 'uvicorn[standard]' or 'fastapi[standard]'",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        from howlwriter.web.app import create_app
+    except ImportError:
+        print(
+            "error: fastapi is required to run the local web UI. "
+            "Please install it with: pip install 'howlwriter[web]'",
             file=sys.stderr,
         )
         return 1
