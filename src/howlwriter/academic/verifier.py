@@ -206,6 +206,24 @@ _DECREASE_MARKERS = (
 )
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _PARENTHETICAL = re.compile(r"\([^()]*\)")
+# Clauses inside one sentence can report different metrics moving different
+# ways: "Latency fell by 10% and throughput grew by 20%."
+_CLAUSE_SPLIT = re.compile(
+    r"\s+(?:and|but|while|whereas|although|though)\s+|[;,]\s+"
+)
+# Only a negation sitting immediately before a direction word reverses it:
+# "did not increase" is not a rise. The window is one token on purpose.
+# Widening it to three turned litotes ("a not insignificant increase of 15%")
+# and quantifiers ("with no overhead latency fell") into contradictions, and
+# only verbal negators are listed because "no" and "none" are usually
+# quantifying something other than the verb.
+_DIRECTION_NEGATORS = frozenset({
+    "not", "never", "cannot", "cant", "dont", "doesnt", "didnt",
+    "isnt", "arent", "wasnt", "werent", "wont",
+})
+# "not only fell" is an emphasis idiom, not a negation of the verb.
+_NEGATION_IDIOM_FOLLOWERS = frozenset({"only", "just", "merely", "solely"})
+_DIRECTION_TOKEN = re.compile(r"[A-Za-z']+")
 
 
 def _direction_of(text: str) -> str | None:
@@ -218,13 +236,61 @@ def _direction_of(text: str) -> str | None:
 
     Parentheticals are dropped first. Direction belongs to the prose, and an
     author named Rose in "(Rose, 2024)" otherwise reads as the verb "rose".
+
+    A negation immediately before the direction word flips it: "Deployment
+    velocity did not increase by 15%" otherwise read as a rise and agreed with
+    a source reporting one. Prevention framing ("a 15% increase was
+    prevented") is deliberately not handled -- every rule broad enough to
+    catch it also flipped "avoided deadlock by increasing timeouts by 15%"
+    and "increased by 15% because bottlenecks were eliminated".
     """
     lowered = _PARENTHETICAL.sub(" ", text).lower()
-    up = any(_has_marker(lowered, m) for m in _INCREASE_MARKERS)
-    down = any(_has_marker(lowered, m) for m in _DECREASE_MARKERS)
+    tokens = [t.replace("'", "") for t in _DIRECTION_TOKEN.findall(lowered)]
+
+    up = False
+    down = False
+    for index, token in enumerate(tokens):
+        if token in _INCREASE_MARKERS:
+            polarity = "up"
+        elif token in _DECREASE_MARKERS:
+            polarity = "down"
+        else:
+            continue
+        previous = tokens[index - 1] if index else ""
+        negated = previous in _DIRECTION_NEGATORS and not (
+            previous == "not"
+            and index + 1 < len(tokens)
+            and tokens[index + 1] in _NEGATION_IDIOM_FOLLOWERS
+        )
+        if negated:
+            polarity = "down" if polarity == "up" else "up"
+        if polarity == "up":
+            up = True
+        else:
+            down = True
+
     if up == down:
         return None
     return "up" if up else "down"
+
+
+def _directed_figures(text: str) -> list[tuple[float, str]]:
+    """Each percentage in the text paired with the way its clause says it moved.
+
+    Pairing them per clause is what lets a single sentence report two metrics
+    moving opposite ways. Reading direction from the whole sentence instead
+    returned nothing for "Latency fell by 10% and throughput grew by 20%",
+    because it carries both, which let a claim swapping the two figures pass.
+    """
+    figures: list[tuple[float, str]] = []
+    for sentence in _SENTENCE_SPLIT.split(text):
+        for clause in _CLAUSE_SPLIT.split(sentence):
+            direction = _direction_of(clause)
+            if direction is None:
+                continue
+            for value in _percentages(clause):
+                figures.append((value, direction))
+    return figures
 
 
 def _claim_reverses_source_direction(claim: Claim, source_text: str) -> bool:
@@ -236,43 +302,31 @@ def _claim_reverses_source_direction(claim: Claim, source_text: str) -> bool:
     citation resolves, the number checks out, and the sentence asserts the
     reverse of the evidence.
 
-    Direction is compared only within the source sentence that reports the
-    same figure, so an unrelated trend elsewhere in an abstract cannot
-    manufacture a disagreement.
+    Each figure is compared against the clauses reporting that same figure, so
+    a source can report two metrics moving opposite ways and support a claim
+    about either. A claim is only reversed when nothing reporting its figure
+    agrees and something contradicts it.
     """
-    claimed = _percentages(claim.text)
+    claimed = _directed_figures(claim.text)
     if not claimed:
         return False
-    claim_direction = _direction_of(claim.text)
-    if claim_direction is None:
+    source_figures = _directed_figures(source_text)
+    if not source_figures:
         return False
 
-    # Every sentence that reports the same figure gets a vote. A source can
-    # report the same percentage for two different metrics moving opposite
-    # ways ("Throughput rose by 15%. Latency fell by 15%."), and a claim about
-    # either one is supported. Rejecting on the first sentence that disagreed
-    # threw out correct claims, so a claim is only reversed when no sentence
-    # reporting its figure agrees and at least one contradicts it.
-    agrees = False
-    contradicts = False
-    for sentence in _SENTENCE_SPLIT.split(source_text):
-        sentence_values = _percentages(sentence)
-        if not sentence_values:
-            continue
-        if not any(
-            _rounds_to(candidate, f"{value:g}")
-            for value in claimed
-            for candidate in sentence_values
-        ):
-            continue
-        source_direction = _direction_of(sentence)
-        if source_direction is None:
-            continue
-        if source_direction == claim_direction:
-            agrees = True
-        else:
-            contradicts = True
-    return contradicts and not agrees
+    for value, claim_direction in claimed:
+        agrees = False
+        contradicts = False
+        for source_value, source_direction in source_figures:
+            if not _rounds_to(source_value, f"{value:g}"):
+                continue
+            if source_direction == claim_direction:
+                agrees = True
+            else:
+                contradicts = True
+        if contradicts and not agrees:
+            return True
+    return False
 
 
 def _best_snippet(claim_text: str, source_text: str) -> str:
