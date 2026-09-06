@@ -44,11 +44,26 @@ _HEDGE_WORDS = (
 # Negation carries the polarity of a claim. Dropping or adding one inverts what
 # the sentence asserts, which is the most damaging meaning change a rewrite can
 # make and the one a word-frequency check would otherwise miss entirely.
-_NEGATION_MARKERS = (
+_NEGATION_MARKERS = frozenset({
     "not", "no", "never", "cannot", "cant", "dont", "doesnt", "didnt",
     "isnt", "arent", "wasnt", "werent", "wont", "nor", "neither",
-    "none", "without", "unable", "fails to", "failed to", "lacks",
-)
+    "none", "without", "unable", "lacks", "lacking",
+})
+# Curly apostrophes are folded onto the ASCII one so "doesn't" and "doesn’t"
+# are the same word; without this a typographic substitution alone read as a
+# dropped negation.
+_APOSTROPHES = ("\u2019", "\u2018", "\u02bc")
+# How many content words after a negation are taken as what it negates.
+_POLARITY_SCOPE_WORDS = 3
+# Shared negated words above which a removal and an addition are read as
+# one negation reworded rather than two polarity changes.
+_POLARITY_REPHRASE_OVERLAP = 2
+_SCOPE_STOPWORDS = frozenset({
+    "a", "an", "the", "to", "of", "in", "it", "its", "is", "are", "was",
+    "were", "be", "been", "being", "that", "this", "these", "those", "and",
+    "or", "for", "as", "at", "by", "on", "with", "from", "does", "do", "did",
+    "has", "have", "had", "any", "all", "will", "would", "can", "could",
+})
 _CAUSAL_MARKERS = (
     "causes", "caused", "causing", "causation", "leads to",
     "resulted in", "produces", "produced",
@@ -92,28 +107,40 @@ def _count_markers(text: str, markers: tuple[str, ...]) -> Counter:
     })
 
 
-def _count_polarity_markers(text: str) -> int:
-    """Total negation strength of a passage.
+def _shared_scope_words(left: str, right: str) -> int:
+    """How many negated content words two scopes have in common."""
+    return len(set(left.split()) & set(right.split()))
 
-    A single total is deliberate. Which words carry the negation is a style
-    choice -- "lacks support" and "without support" mean the same thing, and
-    "does not" and "doesn't" are the same word -- so comparing marker identity
-    reports a difference every time a rewrite swaps synonyms. What actually
-    changes the claim is how many negations survive, so that is what is
-    compared.
+
+def _negation_scopes(text: str) -> Counter:
+    """What each negation in the passage negates.
+
+    Comparing scopes rather than counts is deliberate. A total count cancels
+    out -- moving a negation from one sentence to another leaves the count
+    unchanged while inverting both sentences -- and comparing negation words
+    individually reports a difference every time a rewrite swaps synonyms.
+    The words a negation governs are what actually carries the claim, so
+    "lacks textual support" and "without textual support" agree, while
+    "does not block SSH" and "does not block HTTP" do not.
     """
     lowered = text.lower()
-    total = 0
-    for marker in _NEGATION_MARKERS:
-        if " " in marker:
-            total += lowered.count(marker)
-    # Apostrophes are dropped so contracted and uncontracted spellings of the
-    # same negation collapse onto one token.
-    tokens = Counter(t.replace("'", "") for t in _WORD.findall(lowered))
-    for marker in _NEGATION_MARKERS:
-        if " " not in marker:
-            total += tokens[marker]
-    return total
+    for apostrophe in _APOSTROPHES:
+        lowered = lowered.replace(apostrophe, "'")
+    tokens = [t.replace("'", "") for t in _WORD.findall(lowered)]
+
+    scopes: Counter = Counter()
+    for index, token in enumerate(tokens):
+        if token not in _NEGATION_MARKERS:
+            continue
+        scope: list[str] = []
+        for following in tokens[index + 1:]:
+            if following in _SCOPE_STOPWORDS or following in _NEGATION_MARKERS:
+                continue
+            scope.append(following)
+            if len(scope) == _POLARITY_SCOPE_WORDS:
+                break
+        scopes[" ".join(scope)] += 1
+    return scopes
 
 
 def _count_words(text: str, words: tuple[str, ...]) -> Counter:
@@ -224,28 +251,60 @@ class MeaningPreservationReviewer:
         both sides catches that inversion without needing to parse the
         sentence.
         """
-        original_count = _count_polarity_markers(original_text)
-        revised_count = _count_polarity_markers(revised_text)
-        if original_count == revised_count:
-            return []
+        original_scopes = _negation_scopes(original_text)
+        revised_scopes = _negation_scopes(revised_text)
+        removed = list((original_scopes - revised_scopes).elements())
+        added = list((revised_scopes - original_scopes).elements())
 
-        if revised_count < original_count:
-            return [
+        # A removal and an addition that still share most of the negated words
+        # are one negation reworded, not a polarity change: "not considered a
+        # valid source" and "not treated as a valid source" negate the same
+        # proposition. Pair those off so only genuinely different negations are
+        # reported. Requiring a majority of the words to survive keeps real
+        # inversions ("not block SSH" vs "not block HTTP", which share only
+        # one) out of the pairing.
+        rephrased: list[tuple[str, str]] = []
+        for old_scope in list(removed):
+            match = next(
+                (
+                    new_scope
+                    for new_scope in added
+                    if _shared_scope_words(old_scope, new_scope)
+                    >= _POLARITY_REPHRASE_OVERLAP
+                ),
+                None,
+            )
+            if match is not None:
+                removed.remove(old_scope)
+                added.remove(match)
+                rephrased.append((old_scope, match))
+
+        diffs = []
+        for scope in removed:
+            diffs.append(
                 MeaningDiff(
                     "negation_removed",
-                    f"{original_count - revised_count} negation(s) were "
-                    f"dropped ({original_count} -> {revised_count}) -- the "
-                    "revision may assert the opposite of the original.",
+                    f'The negation of "{scope}" was dropped -- the revision '
+                    "may assert the opposite of the original.",
                 )
-            ]
-        return [
-            MeaningDiff(
-                "negation_added",
-                f"{revised_count - original_count} negation(s) were added "
-                f"({original_count} -> {revised_count}) -- the revision may "
-                "deny something the original asserted.",
             )
-        ]
+        for scope in added:
+            diffs.append(
+                MeaningDiff(
+                    "negation_added",
+                    f'A negation of "{scope}" was added -- the revision may '
+                    "deny something the original asserted.",
+                )
+            )
+        for old_scope, new_scope in rephrased:
+            diffs.append(
+                MeaningDiff(
+                    "negation_rephrased",
+                    f'A negation was reworded from "{old_scope}" to '
+                    f'"{new_scope}" -- confirm the claim still holds.',
+                )
+            )
+        return diffs
 
     @staticmethod
     def _causal_diffs(

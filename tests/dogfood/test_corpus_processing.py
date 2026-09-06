@@ -109,7 +109,8 @@ resulting_text: |
   # Infrastructure Migration Metrics
 
   During Q3, 12 engineers migrated 45 microservices to cloud clusters.
-  The migration spanned 3 regional data centers and decommissioned 14 legacy server racks.
+  The migration spanned 3 regional data centers and decommissioned 14 legacy
+  server racks without user interruption.
 changes_made:
   - "tightened phrasing"
 rationale: "Preserved all metrics."
@@ -142,3 +143,33 @@ rationale: "Preserved code blocks and quote attribution."
 
     assert "async def fetch_all" in res.final_document.text
     assert "Edsger W. Dijkstra" in res.final_document.text
+
+
+def test_dropped_qualifier_is_caught_even_when_numbers_survive():
+    """Preserving every figure is not the same as preserving the claim.
+
+    The rewrite below keeps all four metrics but silently deletes "without
+    user interruption", which is the sentence's actual guarantee.
+    """
+    doc_path = CORPUS_DIR / "05_prose_with_numbers.md"
+
+    fake_backend = FakeAgentBackend(
+        agent_id="mock_humanizer",
+        default_stdout="""```yaml
+resulting_text: |
+  # Infrastructure Migration Metrics
+
+  During Q3, 12 engineers migrated 45 microservices to cloud clusters.
+  The migration spanned 3 regional data centers and decommissioned 14 legacy
+  server racks.
+changes_made:
+  - "tightened phrasing"
+rationale: "Preserved all metrics."
+```""",
+    )
+
+    res = run_howl_pipeline(doc_path, default_config(), custom_backend=fake_backend)
+
+    for num in ["12", "45", "3", "14"]:
+        assert num in res.final_document.text
+    assert res.report.meaning_preservation == "FLAGGED"

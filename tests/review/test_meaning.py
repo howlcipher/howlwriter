@@ -168,3 +168,53 @@ def test_identical_text_reports_no_polarity_change():
     result = MeaningPreservationReviewer().compare(text, text)
 
     assert result.status == "PASS"
+
+
+def test_moving_a_negation_between_sentences_is_not_cancelled_out():
+    """Total negation counts cancel; what each negation governs does not."""
+    original = Document.parse(
+        "The firewall does not block SSH. The firewall permits HTTP traffic."
+    )
+    revised = Document.parse(
+        "The firewall permits SSH. The firewall does not block HTTP traffic."
+    )
+
+    result = MeaningPreservationReviewer().compare(original, revised)
+
+    assert result.status == "FLAGGED"
+    kinds = {d.kind for d in result.diffs}
+    assert "negation_removed" in kinds
+    assert "negation_added" in kinds
+
+
+def test_curly_apostrophe_negation_is_still_tracked():
+    original = Document.parse("The service doesn’t allow anonymous execution.")
+    revised = Document.parse("The service allows anonymous execution.")
+
+    result = MeaningPreservationReviewer().compare(original, revised)
+
+    assert result.status == "FLAGGED"
+    assert "negation_removed" in {d.kind for d in result.diffs}
+
+
+def test_apostrophe_style_change_alone_is_not_a_meaning_change():
+    original = Document.parse("The service doesn't allow execution.")
+    revised = Document.parse("The service doesn’t allow execution.")
+
+    result = MeaningPreservationReviewer().compare(original, revised)
+
+    assert [d for d in result.diffs if d.kind.startswith("negation_")] == []
+
+
+def test_rewording_a_negation_is_reported_as_a_rephrase_not_an_inversion():
+    """"not considered a valid source" and "not treated as a valid source"
+    negate the same proposition and must not read as a polarity flip."""
+    original = Document.parse("Model memory is never considered a valid source.")
+    revised = Document.parse("Model memory is never treated as a valid source.")
+
+    result = MeaningPreservationReviewer().compare(original, revised)
+
+    kinds = {d.kind for d in result.diffs}
+    assert "negation_removed" not in kinds
+    assert "negation_added" not in kinds
+    assert "negation_rephrased" in kinds
