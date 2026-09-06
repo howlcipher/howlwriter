@@ -266,7 +266,7 @@ def _stem(word: str) -> str:
 
 def _clause_direction_and_subject(
     text: str,
-) -> tuple[str | None, tuple[str, frozenset[str]]]:
+) -> tuple[str | None, tuple[str, frozenset[str], frozenset[str]]]:
     """Which way a clause says a quantity moved, and what it says moved.
 
     The subject is the head noun standing before the direction word -- the
@@ -328,7 +328,7 @@ def _clause_direction_and_subject(
             down = True
 
     if up == down:
-        return None, ("", frozenset())
+        return None, ("", frozenset(), frozenset())
 
     marker_index = first_marker if first_marker is not None else 0
 
@@ -341,28 +341,49 @@ def _clause_direction_and_subject(
             and len(t) > 2
         ]
 
-    # The metric is the head noun: the last thing named before the verb.
-    # Intersecting every leading word instead made unrelated clauses
-    # contradict each other whenever they shared a modifier -- "median request
-    # latency fell" and "median request throughput grew" are about different
-    # metrics.
+    # The metric is the noun closest to the percentage. For active clauses it
+    # is the last content word before the value preposition; for intransitive
+    # or passive clauses it falls back to the leading head or the first word
+    # after the percentage. Stopwords and boilerplate after the percentage are
+    # intentionally kept out of the head, so shared context ("across clusters")
+    # does not ground a claim by itself.
+    trailing_tokens = tokens[marker_index + 1:]
+    value_prep_index = None
+    for i, t in enumerate(trailing_tokens):
+        if t in ("by", "of", "to"):
+            value_prep_index = i
+            break
+    before_value = content(
+        trailing_tokens[:value_prep_index]
+        if value_prep_index is not None
+        else trailing_tokens
+    )
     leading = content(tokens[:marker_index])
-    if leading:
-        stems = [_stem(t) for t in leading]
-        subject = (stems[-1], frozenset(stems))
+    leading_stems = [_stem(t) for t in leading]
+    trailing_stems = [_stem(t) for t in before_value]
+    if trailing_stems:
+        # Active: "reduced lateral movement by 41%" -> metric is "incidents".
+        head = trailing_stems[-1]
+    elif leading_stems:
+        # Intransitive: "throughput grew by 15%" -> metric is "throughput".
+        head = leading_stems[-1]
     else:
-        # Passive framing puts the metric after the verb -- "there was an
-        # increase of 15% in latency" names nothing before it. Reading only
-        # what precedes the verb left that clause subjectless, and a
-        # subjectless clause falls back to matching on the figure alone, which
-        # let a passive rewording of an inverted claim pass. Here the metric
-        # is the first thing named after the verb.
-        trailing = content(tokens[marker_index + 1:])
-        if trailing:
-            stems = [_stem(t) for t in trailing]
-            subject = (stems[0], frozenset(stems[:1]))
-        else:
-            subject = ("", frozenset())
+        # Passive: "an increase of 15% in latency" -> metric is "latency".
+        after_value = trailing_tokens[value_prep_index + 1:] if value_prep_index is not None else trailing_tokens
+        passive_metric = [
+            t
+            for t in after_value
+            if t not in ("percent", "percentage")
+            and t not in _SUBJECT_STOPWORDS
+            and t not in _DIRECTION_NEGATORS
+            and len(t) > 2
+        ]
+        if not passive_metric:
+            return ("up" if up else "down"), ("", frozenset(), frozenset())
+        head = _stem(passive_metric[0])
+        trailing_stems = [head]
+    all_words = frozenset(leading_stems + trailing_stems)
+    subject = (head, all_words, frozenset(trailing_stems))
     return ("up" if up else "down"), subject
 
 
@@ -373,7 +394,7 @@ def _direction_of(text: str) -> str | None:
 
 def _directed_figures(
     text: str,
-) -> list[tuple[float, str, tuple[str, frozenset[str]]]]:
+) -> list[tuple[float, str, tuple[str, frozenset[str], frozenset[str]]]]:
     """Each percentage paired with the way its clause moved and what moved.
 
     Pairing per clause is what lets a single sentence report two metrics
@@ -382,7 +403,7 @@ def _directed_figures(
     with a claim that latency grew, because the claim's figure found an
     agreeing clause belonging to the other metric.
     """
-    figures: list[tuple[float, str, tuple[str, frozenset[str]]]] = []
+    figures: list[tuple[float, str, tuple[str, frozenset[str], frozenset[str]]]] = []
     for sentence in _SENTENCE_SPLIT.split(text):
         for clause in _CLAUSE_SPLIT.split(sentence):
             direction, subject = _clause_direction_and_subject(clause)
@@ -423,8 +444,8 @@ def _claim_reverses_source_direction(claim: Claim, source_text: str) -> bool:
             # Only clauses about the same thing can agree or disagree. Where
             # neither names a subject, fall back to comparing on the figure
             # alone rather than losing the check entirely.
-            claim_head, claim_words = claim_subject
-            source_head, source_words = source_subject
+            claim_head, claim_words, _ = claim_subject
+            source_head, source_words, _ = source_subject
             if claim_head and source_head:
                 # Head nouns settle it, but a postmodified phrasing moves the
                 # head: "latency for requests" heads on "requests" while
@@ -443,6 +464,36 @@ def _claim_reverses_source_direction(claim: Claim, source_text: str) -> bool:
             else:
                 contradicts = True
         if contradicts and not agrees:
+            return True
+    return False
+
+
+def _claim_subject_grounded_in_source(claim: Claim, source_text: str) -> bool:
+    """Does the source explicitly discuss the metric a directed claim reports?
+
+    If the source has no directed figures (e.g. simple percentage statements),
+    we fall back to the existing quantity and keyword checks. Otherwise the
+    source must name a metric that also appears in the claim text, with the
+    same figure.
+    """
+    source_figures = _directed_figures(source_text)
+    if not source_figures:
+        return True
+    claim_values = _percentages(claim.text)
+    if not claim_values:
+        return True
+    claim_words = {
+        _stem(t)
+        for t in re.findall(r"\b\w{4,}\b", claim.text.lower())
+        if t not in _SUBJECT_STOPWORDS
+    }
+    for source_value, _source_direction, (source_head, _source_words, source_trailing) in source_figures:
+        if not source_head:
+            continue
+        if not any(_rounds_to(source_value, f"{v:g}") for v in claim_values):
+            continue
+        relevant = {source_head} | source_trailing
+        if any(w in claim_words for w in relevant):
             return True
     return False
 
@@ -649,6 +700,9 @@ class AcademicVerifier:
                     has_page_spec
                     and matched_source.evidence_depth in (DEPTH_ABSTRACT, DEPTH_METADATA_ONLY, DEPTH_UNAVAILABLE)
                 )
+                subject_grounded = _claim_subject_grounded_in_source(
+                    claim, matched_source.retrieved_text
+                )
                 if (
                     _source_can_support(matched_source)
                     and not depth_inadequate_for_page
@@ -662,14 +716,61 @@ class AcademicVerifier:
                         claim, matched_source.retrieved_text
                     )
                 ):
-                    freshness_sev, f_finding = evaluate_source_freshness_for_claim(
-                        claim, matched_source, spec=spec
-                    )
-                    if f_finding:
-                        freshness_findings.append(f_finding)
-                        freshness_warnings.append(f_finding.render_diagnostic())
+                    if subject_grounded:
+                        freshness_sev, f_finding = evaluate_source_freshness_for_claim(
+                            claim, matched_source, spec=spec
+                        )
+                        if f_finding:
+                            freshness_findings.append(f_finding)
+                            freshness_warnings.append(f_finding.render_diagnostic())
 
-                    if freshness_sev == FreshnessSeverity.BLOCKED:
+                        if freshness_sev == FreshnessSeverity.BLOCKED:
+                            ev_id = f"E{evidence_counter:03d}"
+                            evidence_counter += 1
+                            ev = Evidence(
+                                id=ev_id,
+                                source_id=matched_source.id,
+                                claim_id=claim.id,
+                                snippet=matched_snippet
+                                or _best_snippet(
+                                    claim.text, matched_source.retrieved_text
+                                ),
+                                supports=False,
+                                notes=(
+                                    f"Version mismatch with {matched_source.title}: "
+                                    f"{f_finding.reason if f_finding else 'Source version does not match claim requirement'}."
+                                ),
+                            )
+                            graph.add_evidence(ev)
+                            claim.verification_status = VerificationStatus.UNSUPPORTED
+                            unsupported_count += 1
+                        else:
+                            ev_id = f"E{evidence_counter:03d}"
+                            evidence_counter += 1
+                            note = f"Corroborated by {matched_source.title}"
+                            if f_finding:
+                                status_str = (
+                                    f_finding.freshness_status.value
+                                    if hasattr(f_finding.freshness_status, "value")
+                                    else str(f_finding.freshness_status)
+                                )
+                                note += f" [Freshness: {status_str}]"
+                            ev = Evidence(
+                                id=ev_id,
+                                source_id=matched_source.id,
+                                claim_id=claim.id,
+                                snippet=matched_snippet
+                                or _best_snippet(
+                                    claim.text, matched_source.retrieved_text
+                                ),
+                                supports=True,
+                                notes=note,
+                            )
+                            graph.add_evidence(ev)
+                            claim.supporting_sources.append(matched_source.id)
+                            claim.verification_status = VerificationStatus.SUPPORTED
+                            supported_count += 1
+                    else:
                         ev_id = f"E{evidence_counter:03d}"
                         evidence_counter += 1
                         ev = Evidence(
@@ -682,39 +783,13 @@ class AcademicVerifier:
                             ),
                             supports=False,
                             notes=(
-                                f"Version mismatch with {matched_source.title}: "
-                                f"{f_finding.reason if f_finding else 'Source version does not match claim requirement'}."
+                                f"Matched {matched_source.title} but the source "
+                                "does not discuss the metric this claim is about."
                             ),
                         )
                         graph.add_evidence(ev)
-                        claim.verification_status = VerificationStatus.UNSUPPORTED
-                        unsupported_count += 1
-                    else:
-                        ev_id = f"E{evidence_counter:03d}"
-                        evidence_counter += 1
-                        note = f"Corroborated by {matched_source.title}"
-                        if f_finding:
-                            status_str = (
-                                f_finding.freshness_status.value
-                                if hasattr(f_finding.freshness_status, "value")
-                                else str(f_finding.freshness_status)
-                            )
-                            note += f" [Freshness: {status_str}]"
-                        ev = Evidence(
-                            id=ev_id,
-                            source_id=matched_source.id,
-                            claim_id=claim.id,
-                            snippet=matched_snippet
-                            or _best_snippet(
-                                claim.text, matched_source.retrieved_text
-                            ),
-                            supports=True,
-                            notes=note,
-                        )
-                        graph.add_evidence(ev)
-                        claim.supporting_sources.append(matched_source.id)
-                        claim.verification_status = VerificationStatus.SUPPORTED
-                        supported_count += 1
+                        claim.verification_status = VerificationStatus.PARTIALLY_SUPPORTED
+                        partially_supported_count += 1
                 else:
                     # A match was found, but the source is either metadata-only,
                     # tangential/irrelevant, or the claim escalates beyond the
@@ -779,6 +854,7 @@ class AcademicVerifier:
         overall_status = "PASS"
         if (
             unsupported_count > 0
+            or partially_supported_count > 0
             or contradicted_count > 0
             or quotation_warnings
             or identifier_warnings
