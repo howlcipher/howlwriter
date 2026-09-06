@@ -236,6 +236,12 @@ _DIRECTION_NEGATORS = frozenset({
 })
 # "not only fell" is an emphasis idiom, not a negation of the verb.
 _NEGATION_IDIOM_FOLLOWERS = frozenset({"only", "just", "merely", "solely"})
+# A direction noun can itself be the subject of a passive prevention verb:
+# "a 15% increase was prevented" denies the increase it names. Keeping the
+# auxiliary window to one token avoids treating active or unrelated prevention
+# framing as a reversal.
+_PASSIVE_PREVENTER_AUXILIARIES = frozenset({"was", "were", "been", "be", "is", "are"})
+_PASSIVE_PREVENTERS = frozenset({"prevented", "avoided", "blocked", "stopped"})
 _DIRECTION_TOKEN = re.compile(r"[A-Za-z']+")
 
 
@@ -284,10 +290,11 @@ def _clause_direction_and_subject(
 
     A negation immediately before the direction word flips it: "Deployment
     velocity did not increase by 15%" otherwise read as a rise and agreed with
-    a source reporting one. Prevention framing ("a 15% increase was
-    prevented") is deliberately not handled -- every rule broad enough to
-    catch it also flipped "avoided deadlock by increasing timeouts by 15%"
-    and "increased by 15% because bottlenecks were eliminated".
+    a source reporting one. A direction noun subject to a passive preventer
+    also flips: "a 15% increase was prevented" denies that rise. This only
+    applies when no explicit directional verb governs the clause, preserving
+    "avoided deadlock by increasing timeouts by 15%" and ordinary directional
+    verbs followed by unrelated prevention framing.
     """
     lowered = _PARENTHETICAL.sub(" ", text).lower()
     tokens = [t.replace("'", "") for t in _DIRECTION_TOKEN.findall(lowered)]
@@ -319,7 +326,16 @@ def _clause_direction_and_subject(
             and index + 1 < len(tokens)
             and tokens[index + 1] in _NEGATION_IDIOM_FOLLOWERS
         )
-        if negated:
+        passively_prevented = (
+            not has_verb_form
+            and token in _AMBIGUOUS_METRIC_NOUNS
+            and any(
+                tokens[i] in _PASSIVE_PREVENTER_AUXILIARIES
+                and tokens[i + 1] in _PASSIVE_PREVENTERS
+                for i in range(index + 1, len(tokens) - 1)
+            )
+        )
+        if negated or passively_prevented:
             polarity = "down" if polarity == "up" else "up"
 
         if polarity == "up":
