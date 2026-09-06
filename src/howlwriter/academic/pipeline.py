@@ -749,6 +749,11 @@ def _run_academic_pipeline(
     has_source_deficiency = (
         len(citation_analysis.used_sources) < spec.source_requirements.minimum_sources
     )
+    # An in-text citation that resolves to no collected source is either
+    # fabricated or orphaned. Either way the paper is not ready.
+    has_unresolved_citation_deficiency = bool(
+        citation_analysis.unmatched_in_text_citations
+    )
     has_claim_deficiency = (
         verif_summary.unsupported_claims > 0
         or verif_summary.contradicted_claims > 0
@@ -780,6 +785,7 @@ def _run_academic_pipeline(
         or coverage_res.status != "PASS"
         or has_authorship_deficiency
         or has_source_deficiency
+        or has_unresolved_citation_deficiency
         or has_claim_deficiency
         or claim_review.blocks_readiness
         or has_redundancy_deficiency
@@ -889,6 +895,10 @@ def _run_academic_pipeline(
         in_text_citations=citation_analysis.in_text_citation_count,
         reference_entries=len(citation_analysis.used_sources) or len(sources),
         citation_warnings=len(citation_analysis.warnings),
+        citation_warning_messages=[w.message for w in citation_analysis.warnings],
+        unmatched_in_text_citations=list(
+            citation_analysis.unmatched_in_text_citations
+        ),
         writer_duration_seconds=writer_duration,
         researcher_duration_seconds=researcher_duration,
         humanizer_duration_seconds=humanize_duration,

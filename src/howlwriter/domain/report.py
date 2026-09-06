@@ -16,6 +16,9 @@ from typing import Any, Literal
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.domain.source import Source
 
+# Keeps a pathological run from burying the rest of the report.
+_MAX_RENDERED_WARNINGS = 10
+
 Status = Literal["READY", "NEEDS_REVIEW", "BLOCKED", "REJECTED"]
 MeaningPreservationStatus = Literal["PASS", "FLAGGED", "NOT_EVALUATED"]
 
@@ -47,6 +50,8 @@ class WritingReport(DataClassSerializationMixin):
     sources_required: int | None = None
     citation_errors: int | None = None
     citation_warnings: int | None = None
+    citation_warning_messages: list[str] = field(default_factory=list)
+    unmatched_in_text_citations: list[str] = field(default_factory=list)
     citation_style: str | None = None
     in_text_citations: int | None = None
     reference_entries: int | None = None
@@ -312,6 +317,17 @@ class WritingReport(DataClassSerializationMixin):
                 lines.append(f"  Reference Entries:   {self.reference_entries}")
             if self.citation_warnings is not None:
                 lines.append(f"  Warnings:            {self.citation_warnings}")
+            if self.unmatched_in_text_citations:
+                lines.append(
+                    f"  Unresolved Citations: {len(self.unmatched_in_text_citations)}"
+                )
+            # A count alone leaves the writer with no way to act on a failed
+            # citation check, so the messages themselves are listed here.
+            for message in self.citation_warning_messages[:_MAX_RENDERED_WARNINGS]:
+                lines.append(f"    - {message}")
+            remaining = len(self.citation_warning_messages) - _MAX_RENDERED_WARNINGS
+            if remaining > 0:
+                lines.append(f"    ... {remaining} more")
             lines.append("")
 
         if self.lint_before_count is not None or self.lint_after_count is not None:

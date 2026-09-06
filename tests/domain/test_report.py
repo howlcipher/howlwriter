@@ -98,3 +98,26 @@ def test_render_text_includes_new_sections_when_populated():
     assert "Redundancy findings" in text
     assert "Consistency Review:" in text
     assert "Verdict:             PASS_WITH_WARNINGS" in text
+
+
+def test_report_lists_citation_warning_messages_not_only_counts():
+    """A bare count gives the writer nothing to act on; the text must appear."""
+    report = WritingReport(
+        citation_style="apa7",
+        in_text_citations=4,
+        reference_entries=1,
+        citation_warnings=2,
+        citation_warning_messages=[
+            "In-text citation “Fenwick & Alvarez, 2019” does not resolve "
+            "to any collected source.",
+            "Title was converted to APA 7 sentence case.",
+        ],
+        unmatched_in_text_citations=["Fenwick & Alvarez, 2019"],
+    )
+
+    rendered = report.render_text()
+
+    assert "Warnings:            2" in rendered
+    assert "Unresolved Citations: 1" in rendered
+    assert "Fenwick & Alvarez, 2019" in rendered
+    assert "sentence case" in rendered

@@ -11,6 +11,63 @@ from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.domain.source import Source
 
 
+CITATION_UNRESOLVED = "CITATION_UNRESOLVED"
+
+
+@dataclass
+class _InTextCitation:
+    """One in-text citation, kept in the structured form needed to resolve it."""
+
+    raw: str
+    names: str
+    year: str | None
+    source_id: str | None = None
+
+
+def _split_names_and_year(raw: str) -> tuple[str, str | None]:
+    """Split a parenthetical citation body into its name part and its year."""
+    head, _, tail = raw.rpartition(",")
+    if not head:
+        return raw.strip(), None
+    year_token = tail.strip().split(",")[0].strip()
+    return head.strip(), year_token or None
+
+
+def _source_year(source: Source) -> str:
+    return str(source.publication_date.year) if source.publication_date else "n.d."
+
+
+def _citation_matches_source(citation: _InTextCitation, source: Source) -> bool:
+    """Does this single in-text citation resolve to this source?
+
+    Deliberately conservative: it answers "could a reader reasonably read this
+    citation as pointing at this source", so a citation is only reported as
+    unresolved when no collected source is a plausible referent. It is used
+    only to detect unresolved citations and never to decide which sources are
+    considered used, so it cannot change which entries reach the References
+    page.
+    """
+    if citation.source_id is not None:
+        return source.id == citation.source_id
+
+    if citation.year is not None and citation.year != _source_year(source):
+        return False
+
+    names = citation.names.lower()
+    if not names:
+        return False
+
+    if source.authors:
+        for author in source.authors:
+            surname = author.split(",")[0].split()[-1].strip().lower()
+            if surname and surname in names:
+                return True
+        return False
+
+    title_keyword = source.title.split()[0].lower() if source.title else ""
+    return len(title_keyword) > 4 and title_keyword in names
+
+
 @dataclass
 class CitationAnalysis(DataClassSerializationMixin):
     in_text_citation_count: int = 0
@@ -44,12 +101,28 @@ class AcademicCitationManager:
         source_id_pattern = re.compile(r"\b(S\d{3})\b")
 
         raw_in_text: list[str] = []
+        # Structured form of the same matches, used to check the opposite
+        # direction: does each in-text citation resolve to a real source?
+        extracted: list[_InTextCitation] = []
         for match in parenthetical_pattern.finditer(text):
-            raw_in_text.append(match.group(1).strip())
+            raw = match.group(1).strip()
+            raw_in_text.append(raw)
+            names, year = _split_names_and_year(raw)
+            extracted.append(_InTextCitation(raw=raw, names=names, year=year))
         for match in narrative_pattern.finditer(text):
-            raw_in_text.append(f"{match.group(1).strip()} ({match.group(2).strip()})")
+            raw = f"{match.group(1).strip()} ({match.group(2).strip()})"
+            raw_in_text.append(raw)
+            extracted.append(
+                _InTextCitation(
+                    raw=raw,
+                    names=match.group(1).strip(),
+                    year=match.group(2).strip(),
+                )
+            )
         for match in source_id_pattern.finditer(text):
-            raw_in_text.append(match.group(1).strip())
+            raw = match.group(1).strip()
+            raw_in_text.append(raw)
+            extracted.append(_InTextCitation(raw=raw, names="", year=None, source_id=raw))
 
         # Only sources that pass the relevance gate are eligible for use.
         eligible_sources = [s for s in available_sources if s.is_usable]
@@ -98,11 +171,39 @@ class AcademicCitationManager:
 
         references_markdown = f"# References\n\n{ref_page_result.text}\n"
 
+        # Resolve the opposite direction. An in-text citation that matches no
+        # eligible source is either fabricated or points at a source that was
+        # dropped from the set; either way the reader is being shown a citation
+        # that cannot be traced to a source object. Deduplicate by the raw
+        # citation text so a claim repeated three times is reported once.
+        unmatched: list[str] = []
+        seen: set[str] = set()
+        for citation in extracted:
+            if citation.raw in seen:
+                continue
+            seen.add(citation.raw)
+            if any(_citation_matches_source(citation, s) for s in eligible_sources):
+                continue
+            unmatched.append(citation.raw)
+
+        for raw in unmatched:
+            all_warnings.append(
+                CitationWarning(
+                    code=CITATION_UNRESOLVED,
+                    field="in_text_citation",
+                    message=(
+                        f"In-text citation \u201c{raw}\u201d does not resolve to any "
+                        "collected source. It must be removed or backed by a real "
+                        "source; it cannot appear in the References page."
+                    ),
+                )
+            )
+
         return CitationAnalysis(
             in_text_citation_count=len(raw_in_text),
             used_sources=used_sources,
             unused_sources=unused_sources,
-            unmatched_in_text_citations=[],
+            unmatched_in_text_citations=unmatched,
             warnings=all_warnings,
             references_section_text=references_markdown,
         )
