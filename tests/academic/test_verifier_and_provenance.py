@@ -610,3 +610,45 @@ def test_passive_framing_cannot_evade_subject_binding():
         "(Alvarez, 2024).",
         _TWO_METRICS_ONE_FIGURE,
     )
+
+
+def test_plural_metric_still_binds_to_its_singular():
+    assert not _supported_against(
+        f"Latencies grew by 15 percent {_KUBE} (Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+
+
+def test_a_shared_modifier_does_not_make_two_metrics_contradict():
+    """"median request latency" and "median request throughput" share two
+    words and are about different things."""
+    assert _supported_against(
+        f"Median request latency fell by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"Median request throughput grew by 15 percent {_KUBE}.",
+    )
+
+
+def test_a_postmodified_metric_still_binds():
+    """"latency for requests" heads on "requests"; "request latency" heads on
+    "latency". Either head naming the other clause keeps them together."""
+    assert not _supported_against(
+        f"Request latency grew by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"Latency for requests fell by 15 percent {_KUBE}.",
+    )
+
+
+def test_a_metric_named_after_a_movement_is_not_self_contradictory():
+    """"Packet loss increased" is a rise in loss.
+
+    Counting "loss" as a fall alongside "increased" as a rise made the clause
+    read as carrying both directions, which switched the check off entirely
+    and let the inversion through.
+    """
+    assert not _supported_against(
+        f"Packet loss increased by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"Packet loss fell by 15 percent {_KUBE}.",
+    )
+    assert not _supported_against(
+        f"Revenue growth fell by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"Revenue growth increased by 15 percent {_KUBE}.",
+    )
