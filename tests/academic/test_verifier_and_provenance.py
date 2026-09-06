@@ -383,3 +383,42 @@ def test_a_gain_claimed_against_a_reported_loss_is_not_supported():
         "The fund suffered a 15 percent loss across enterprise Kubernetes "
         "clusters.",
     )
+
+
+def test_each_claim_cites_the_sentence_that_bears_on_it():
+    """Evidence is the record of what a claim rests on.
+
+    Handing every claim the opening of the abstract made the graph say the
+    same thing about all of them, and for most the quoted text did not mention
+    the claim's subject at all.
+    """
+    source = _study_source(
+        "Mutual TLS deployment across the service mesh reduced lateral "
+        "movement incidents by 41 percent in Kubernetes clusters. "
+        "Separately, workload attestation via SPIFFE cut credential theft "
+        "materially. "
+        "Operators reported that policy-as-code adoption simplified audit "
+        "preparation."
+    )
+    source.authors = ["Alvarez, Nina"]
+    document = Document.parse(
+        "# P\n\n"
+        "Mutual TLS reduced lateral movement incidents by 41 percent "
+        "(Alvarez, 2024).\n"
+        "Workload attestation via SPIFFE cut credential theft (Alvarez, 2024).\n"
+        "Policy-as-code adoption simplified audit preparation (Alvarez, 2024).\n"
+    )
+
+    graph, _ = AcademicVerifier().build_provenance_and_verify(document, [source])
+
+    snippets = {
+        claim_id: graph.evidence_for_claim(claim_id)[0].snippet
+        for claim_id in graph.claims
+        if graph.evidence_for_claim(claim_id)
+    }
+    assert len(set(snippets.values())) == 3, "every claim got the same evidence"
+    for snippet, expected in zip(
+        [snippets[c] for c in sorted(snippets)],
+        ["Mutual TLS", "SPIFFE", "policy-as-code"],
+    ):
+        assert expected in snippet
