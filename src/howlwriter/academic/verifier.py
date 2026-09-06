@@ -211,20 +211,16 @@ _PARENTHETICAL = re.compile(r"\([^()]*\)")
 _CLAUSE_SPLIT = re.compile(
     r"\s+(?:and|but|while|whereas|although|though)\s+|[;,]\s+"
 )
-# A negation immediately before a direction word reverses it: "did not
-# increase" is not a rise. Only a negation that precedes the word counts, so
-# "increased without additional cost" is left alone.
+# Only a negation sitting immediately before a direction word reverses it:
+# "did not increase" is not a rise. The window is one token on purpose.
+# Widening it to three turned litotes ("a not insignificant increase of 15%")
+# and quantifiers ("with no overhead latency fell") into contradictions, and
+# only verbal negators are listed because "no" and "none" are usually
+# quantifying something other than the verb.
 _DIRECTION_NEGATORS = frozenset({
-    "not", "no", "never", "nor", "neither", "cannot", "cant", "dont",
-    "doesnt", "didnt", "isnt", "arent", "wasnt", "werent", "wont", "failed",
+    "not", "never", "cannot", "cant", "dont", "doesnt", "didnt",
+    "isnt", "arent", "wasnt", "werent", "wont",
 })
-# These reverse a direction wherever they sit in the clause: "a 15% increase
-# was prevented" reports no rise at all.
-_DIRECTION_PREVENTERS = frozenset({
-    "prevented", "prevent", "prevents", "avoided", "avoid", "avoids",
-    "averted", "avert", "averts", "forestalled", "eliminated",
-})
-_NEGATION_WINDOW = 3
 # "not only fell" is an emphasis idiom, not a negation of the verb.
 _NEGATION_IDIOM_FOLLOWERS = frozenset({"only", "just", "merely", "solely"})
 _DIRECTION_TOKEN = re.compile(r"[A-Za-z']+")
@@ -241,13 +237,15 @@ def _direction_of(text: str) -> str | None:
     Parentheticals are dropped first. Direction belongs to the prose, and an
     author named Rose in "(Rose, 2024)" otherwise reads as the verb "rose".
 
-    A negation just before the direction word, or a prevention verb anywhere
-    in the passage, flips it. "Deployment velocity did not increase by 15%"
-    otherwise read as a rise and agreed with a source reporting one.
+    A negation immediately before the direction word flips it: "Deployment
+    velocity did not increase by 15%" otherwise read as a rise and agreed with
+    a source reporting one. Prevention framing ("a 15% increase was
+    prevented") is deliberately not handled -- every rule broad enough to
+    catch it also flipped "avoided deadlock by increasing timeouts by 15%"
+    and "increased by 15% because bottlenecks were eliminated".
     """
     lowered = _PARENTHETICAL.sub(" ", text).lower()
     tokens = [t.replace("'", "") for t in _DIRECTION_TOKEN.findall(lowered)]
-    prevented = any(t in _DIRECTION_PREVENTERS for t in tokens)
 
     up = False
     down = False
@@ -258,15 +256,11 @@ def _direction_of(text: str) -> str | None:
             polarity = "down"
         else:
             continue
-        window_start = max(0, index - _NEGATION_WINDOW)
-        negated = prevented or any(
-            tokens[i] in _DIRECTION_NEGATORS
-            and not (
-                tokens[i] == "not"
-                and i + 1 < len(tokens)
-                and tokens[i + 1] in _NEGATION_IDIOM_FOLLOWERS
-            )
-            for i in range(window_start, index)
+        previous = tokens[index - 1] if index else ""
+        negated = previous in _DIRECTION_NEGATORS and not (
+            previous == "not"
+            and index + 1 < len(tokens)
+            and tokens[index + 1] in _NEGATION_IDIOM_FOLLOWERS
         )
         if negated:
             polarity = "down" if polarity == "up" else "up"

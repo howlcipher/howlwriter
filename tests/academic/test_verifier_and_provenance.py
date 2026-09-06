@@ -461,13 +461,6 @@ def test_two_metrics_in_agreement_stay_supported():
     )
 
 
-def test_a_prevented_increase_is_not_an_increase():
-    assert not _supported_against(
-        f"System downtime increased by 15 percent {_KUBE} (Alvarez, 2024).",
-        f"A 15 percent increase in system downtime was prevented {_KUBE}.",
-    )
-
-
 def test_negation_after_the_direction_word_does_not_flip_it():
     """"increased ... without additional cost" is still an increase."""
     assert _supported_against(
@@ -495,10 +488,49 @@ def test_not_only_is_emphasis_not_negation():
     )
 
 
-def test_prevention_verb_elsewhere_in_the_clause_is_not_directional():
+def test_prevention_verbs_do_not_flip_a_direction():
+    """Prevention framing is deliberately unhandled.
+
+    Every rule broad enough to read "a 15% increase was prevented" as no rise
+    also flipped these, which are ordinary prose, so the narrower rule is the
+    honest one. "A 15% increase was prevented" is therefore still read as an
+    increase; that limit is recorded rather than papered over.
+    """
     assert _supported_against(
         "The study avoided selection bias and throughput rose by 15 percent "
         f"{_KUBE} (Alvarez, 2024).",
         "The study avoided selection bias and throughput rose by 15 percent "
         f"{_KUBE}.",
+    )
+    assert _supported_against(
+        f"The protocol avoided deadlock by increasing timeouts by 15 percent "
+        f"{_KUBE} (Alvarez, 2024).",
+        f"Timeouts were increased by 15 percent {_KUBE}.",
+    )
+    assert _supported_against(
+        f"Throughput increased by 15 percent {_KUBE} because bottlenecks were "
+        "eliminated (Alvarez, 2024).",
+        f"Throughput increased by 15 percent {_KUBE}.",
+    )
+
+
+def test_litotes_and_quantifiers_are_not_read_as_negating_the_verb():
+    """"a not insignificant increase" and "with no overhead" are not denials.
+
+    A three-token negation window turned both into contradictions, so only a
+    verbal negator immediately before the direction word counts.
+    """
+    assert _supported_against(
+        "The authors observed a not insignificant increase of 15 percent in "
+        f"throughput {_KUBE} (Alvarez, 2024).",
+        f"Throughput increased by 15 percent {_KUBE}.",
+    )
+    assert _supported_against(
+        f"With no overhead latency fell by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"Latency fell by 15 percent {_KUBE}.",
+    )
+    assert _supported_against(
+        f"The team observed no fewer than 15 percent increases in throughput "
+        f"{_KUBE} (Alvarez, 2024).",
+        f"Throughput increased by 15 percent {_KUBE}.",
     )
