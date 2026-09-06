@@ -139,3 +139,64 @@ def test_identifier_grounded_via_additional_grounding_texts_not_flagged():
     )
 
     assert not any("CVE-2024-31337" in w for w in summary.identifier_warnings)
+
+
+def _latency_source() -> Source:
+    return Source(
+        id="S001",
+        title="Latency Study",
+        authors=["Rose, Scott"],
+        publication_date=date(2024, 1, 1),
+        access_date=date.today(),
+        source_type=SourceType.JOURNAL_ARTICLE,
+        retrieved_text=(
+            "Our controlled deployment of mutual TLS across the service mesh "
+            "reduced observed lateral movement incidents by 41 percent while "
+            "adding 12 milliseconds of median request latency in Kubernetes "
+            "clusters."
+        ),
+        evidence_depth="ABSTRACT",
+        relevance="DIRECT",
+    )
+
+
+def test_statistic_absent_from_the_source_is_not_supported_by_it():
+    """Topical overlap matched a source; the figure must come from it too."""
+    doc = Document.parse(
+        "# Paper\n\nMutual TLS reduced lateral movement incidents by 63 "
+        "percent in Kubernetes clusters (Rose, 2024).\n"
+    )
+
+    _, summary = AcademicVerifier().build_provenance_and_verify(
+        doc, [_latency_source()]
+    )
+
+    assert summary.supported_claims == 0
+    assert summary.unsupported_claims == 1
+
+
+def test_statistic_present_in_the_source_remains_supported():
+    doc = Document.parse(
+        "# Paper\n\nMutual TLS reduced lateral movement incidents by 41 "
+        "percent in Kubernetes clusters (Rose, 2024).\n"
+    )
+
+    _, summary = AcademicVerifier().build_provenance_and_verify(
+        doc, [_latency_source()]
+    )
+
+    assert summary.supported_claims == 1
+    assert summary.unsupported_claims == 0
+
+
+def test_claim_without_a_figure_is_unaffected_by_quantity_grounding():
+    doc = Document.parse(
+        "# Paper\n\nMutual TLS reduced observed lateral movement incidents "
+        "across Kubernetes clusters (Rose, 2024).\n"
+    )
+
+    _, summary = AcademicVerifier().build_provenance_and_verify(
+        doc, [_latency_source()]
+    )
+
+    assert summary.supported_claims == 1
