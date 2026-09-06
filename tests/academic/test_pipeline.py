@@ -1,6 +1,7 @@
 """End-to-end hermetic pipeline and CLI tests for academic paper workflows."""
 
 from datetime import date
+import json
 
 from howlwriter.academic.pipeline import run_academic_pipeline
 from howlwriter.academic.spec import AssignmentSpec
@@ -271,3 +272,12 @@ source_requirements:
     assert "# References" in out_file.read_text()
     assert "HOWLWRITER ACADEMIC REPORT" in captured.out
     assert (tmp_path / "governance_paper.sources.json").exists()
+    # --save-artifacts documents a report.json; it is the only machine-readable
+    # view of which checks failed, so its absence made every failure mode
+    # script-invisible.
+    report_file = tmp_path / "governance_paper.report.json"
+    assert report_file.exists()
+    report_data = json.loads(report_file.read_text())
+    assert report_data["status"] in {"READY", "NEEDS_REVIEW", "BLOCKED"}
+    assert "citation_warning_messages" in report_data
+    assert "unmatched_in_text_citations" in report_data

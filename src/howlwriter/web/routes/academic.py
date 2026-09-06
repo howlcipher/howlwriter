@@ -202,8 +202,11 @@ def start_generate_paper(req: GeneratePaperRequest) -> JobResponse:
                 )
             )
 
+        # Only cited works belong in a reference page. Falling back to every
+        # retrieved source published uncited works as though they had
+        # supported the text.
         refs_text = APA7Formatter().reference_page(
-            res.citation_analysis.used_sources or res.sources
+            res.citation_analysis.used_sources
         ).text
 
         citation_warnings = [
@@ -328,12 +331,37 @@ def start_generate_paper(req: GeneratePaperRequest) -> JobResponse:
             )
 
         # 6. Citations
-        if len(all_warnings) > 0:
+        # An unresolved citation is not a formatting notice. Reporting it as
+        # one told the writer that a fabricated citation was an upstream
+        # metadata problem, so it is raised separately and named for what it is.
+        unresolved = list(res.citation_analysis.unmatched_in_text_citations)
+        if unresolved:
+            shown = ", ".join(f'"{c}"' for c in unresolved[:5])
+            more = len(unresolved) - 5
+            if more > 0:
+                shown = f"{shown} and {more} more"
+            review_reasons_list.append(
+                ReviewReasonDto(
+                    category="CITATIONS",
+                    severity="critical",
+                    title=f"Unresolved in-text citations ({len(unresolved)})",
+                    explanation=(
+                        f"{shown} do not resolve to any collected source. Each "
+                        "must be removed or backed by a real source; none of "
+                        "them may appear in the References page."
+                    ),
+                )
+            )
+
+        formatting_warnings = [
+            w for w in all_warnings if "does not resolve" not in w
+        ]
+        if formatting_warnings:
             review_reasons_list.append(
                 ReviewReasonDto(
                     category="CITATIONS",
                     severity="info",
-                    title=f"APA 7 Metadata Warnings ({len(all_warnings)} notices)",
+                    title=f"APA 7 Metadata Warnings ({len(formatting_warnings)} notices)",
                     explanation=(
                         "Missing upstream Crossref metadata (dates or authors) resulted in deterministic "
                         "APA 7 fallbacks ('n.d.' or title citation)."

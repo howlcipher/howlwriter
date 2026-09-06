@@ -238,6 +238,12 @@ def run(args: argparse.Namespace) -> int:
         sources_path = out_path.with_suffix(".sources.json")
         save_sources_file(sources_path, result.sources)
         print(f"Wrote {sources_path}")
+        # The machine-readable form of the report. Without it the only way to
+        # see which checks failed is to read the rendered text, which makes
+        # every failure mode unusable from a script.
+        report_path = out_path.with_suffix(".report.json")
+        atomic_write_text(report_path, result.report.to_json() + "\n")
+        print(f"Wrote {report_path}")
 
     print()
     print(result.report.render_text())
