@@ -105,3 +105,66 @@ def test_not_configured_meaning_reviewer_raises():
     revised = Document.parse("Text.", title="t")
     with pytest.raises(ModelRoleNotConfiguredError):
         NotConfiguredMeaningReviewer().compare(original, revised)
+
+
+def test_dropped_negation_is_flagged_as_meaning_change():
+    """A rewrite that deletes a negation inverts the claim and must not pass."""
+    original = Document.parse(
+        "The vulnerability allows unauthorized read access to session tokens. "
+        "It does not permit arbitrary code execution, nor does it allow write "
+        "access to database records."
+    )
+    revised = Document.parse(
+        "The vulnerability allows unauthorized read access to session tokens. "
+        "It permits arbitrary code execution, and it allows write access to "
+        "database records."
+    )
+
+    result = MeaningPreservationReviewer().compare(original, revised)
+
+    assert result.status == "FLAGGED"
+    kinds = {d.kind for d in result.diffs}
+    assert "negation_removed" in kinds
+
+
+def test_added_negation_is_flagged_as_meaning_change():
+    original = Document.parse("The service retries failed requests.")
+    revised = Document.parse("The service does not retry failed requests.")
+
+    result = MeaningPreservationReviewer().compare(original, revised)
+
+    assert result.status == "FLAGGED"
+    assert "negation_added" in {d.kind for d in result.diffs}
+
+
+def test_negated_hedge_is_treated_as_a_hedge():
+    """"unlikely" is a distinct token from "likely" and was previously missed."""
+    original = Document.parse("The race condition permits token disclosure.")
+    revised = Document.parse(
+        "The race condition is unlikely to permit token disclosure."
+    )
+
+    result = MeaningPreservationReviewer().compare(original, revised)
+
+    assert result.status == "FLAGGED"
+    assert "hedge_added" in {d.kind for d in result.diffs}
+
+
+def test_contracted_and_uncontracted_negation_are_equivalent():
+    """Rewriting "does not" as "doesn't" is style, not a polarity change."""
+    original = Document.parse("The parser does not accept trailing commas.")
+    revised = Document.parse("The parser doesn't accept trailing commas.")
+
+    result = MeaningPreservationReviewer().compare(original, revised)
+
+    assert [d for d in result.diffs if d.kind.startswith("negation_")] == []
+
+
+def test_identical_text_reports_no_polarity_change():
+    text = Document.parse(
+        "It does not permit arbitrary code execution, nor does it allow writes."
+    )
+
+    result = MeaningPreservationReviewer().compare(text, text)
+
+    assert result.status == "PASS"

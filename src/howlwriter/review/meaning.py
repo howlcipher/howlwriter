@@ -34,6 +34,20 @@ _ATTRIBUTION_MARKERS = (
 _HEDGE_WORDS = (
     "may", "might", "could", "suggests", "appears", "likely",
     "possibly", "perhaps", "reportedly",
+    # Negated and adjacent hedges. "unlikely" is a distinct token from
+    # "likely", so without listing it a rewrite from a categorical claim to
+    # "unlikely to" changed the claim invisibly.
+    "unlikely", "unclear", "uncertain", "potentially", "presumably",
+    "apparently", "seems", "arguably", "generally", "typically",
+    "approximately", "roughly", "somewhat", "occasionally",
+)
+# Negation carries the polarity of a claim. Dropping or adding one inverts what
+# the sentence asserts, which is the most damaging meaning change a rewrite can
+# make and the one a word-frequency check would otherwise miss entirely.
+_NEGATION_MARKERS = (
+    "not", "no", "never", "cannot", "cant", "dont", "doesnt", "didnt",
+    "isnt", "arent", "wasnt", "werent", "wont", "nor", "neither",
+    "none", "without", "unable", "fails to", "failed to", "lacks",
 )
 _CAUSAL_MARKERS = (
     "causes", "caused", "causing", "causation", "leads to",
@@ -78,6 +92,30 @@ def _count_markers(text: str, markers: tuple[str, ...]) -> Counter:
     })
 
 
+def _count_polarity_markers(text: str) -> int:
+    """Total negation strength of a passage.
+
+    A single total is deliberate. Which words carry the negation is a style
+    choice -- "lacks support" and "without support" mean the same thing, and
+    "does not" and "doesn't" are the same word -- so comparing marker identity
+    reports a difference every time a rewrite swaps synonyms. What actually
+    changes the claim is how many negations survive, so that is what is
+    compared.
+    """
+    lowered = text.lower()
+    total = 0
+    for marker in _NEGATION_MARKERS:
+        if " " in marker:
+            total += lowered.count(marker)
+    # Apostrophes are dropped so contracted and uncontracted spellings of the
+    # same negation collapse onto one token.
+    tokens = Counter(t.replace("'", "") for t in _WORD.findall(lowered))
+    for marker in _NEGATION_MARKERS:
+        if " " not in marker:
+            total += tokens[marker]
+    return total
+
+
 def _count_words(text: str, words: tuple[str, ...]) -> Counter:
     tokens = [t.lower() for t in _WORD.findall(text)]
     token_counts = Counter(tokens)
@@ -97,6 +135,7 @@ class MeaningPreservationReviewer:
         substantive.extend(self._attribution_diffs(original.text, revised.text))
         substantive.extend(self._hedge_diffs(original.text, revised.text))
         substantive.extend(self._causal_diffs(original.text, revised.text))
+        substantive.extend(self._polarity_diffs(original.text, revised.text))
 
         style: list[MeaningDiff] = []
         style.extend(self._filler_and_transition_diffs(original.text, revised.text))
@@ -173,6 +212,40 @@ class MeaningPreservationReviewer:
             )
             diffs.append(MeaningDiff("hedge_added", message))
         return diffs
+
+    @staticmethod
+    def _polarity_diffs(
+        original_text: str, revised_text: str
+    ) -> list[MeaningDiff]:
+        """Flag negations that appeared or disappeared during a rewrite.
+
+        A dropped negation turns "does not permit arbitrary code execution"
+        into "permits arbitrary code execution". Counting negation markers on
+        both sides catches that inversion without needing to parse the
+        sentence.
+        """
+        original_count = _count_polarity_markers(original_text)
+        revised_count = _count_polarity_markers(revised_text)
+        if original_count == revised_count:
+            return []
+
+        if revised_count < original_count:
+            return [
+                MeaningDiff(
+                    "negation_removed",
+                    f"{original_count - revised_count} negation(s) were "
+                    f"dropped ({original_count} -> {revised_count}) -- the "
+                    "revision may assert the opposite of the original.",
+                )
+            ]
+        return [
+            MeaningDiff(
+                "negation_added",
+                f"{revised_count - original_count} negation(s) were added "
+                f"({original_count} -> {revised_count}) -- the revision may "
+                "deny something the original asserted.",
+            )
+        ]
 
     @staticmethod
     def _causal_diffs(
