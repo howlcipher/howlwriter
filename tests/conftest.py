@@ -15,6 +15,18 @@ except ImportError:
 
 
 @pytest.fixture(autouse=True)
+def isolate_diagnostic_runs(tmp_path, monkeypatch):
+    """Keep diagnostic run records out of the developer's home directory.
+
+    Most tests that exercise a pipeline never set HOWLWRITER_RUNS_DIR, so every
+    run they performed wrote a permanent record to ~/.howlwriter/runs. That
+    directory had accumulated 19,900 records, and nothing prunes it.
+    """
+    monkeypatch.setenv("HOWLWRITER_RUNS_DIR", str(tmp_path / "runs"))
+    yield
+
+
+@pytest.fixture(autouse=True)
 def reset_global_bridges():
     """Ensures each test starts with a clean, unconfigured bridge state."""
     set_howlplane_bridge(None)
