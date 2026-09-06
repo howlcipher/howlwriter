@@ -121,3 +121,19 @@ def test_report_lists_citation_warning_messages_not_only_counts():
     assert "Unresolved Citations: 1" in rendered
     assert "Fenwick & Alvarez, 2019" in rendered
     assert "sentence case" in rendered
+
+
+def test_unresolved_citations_are_listed_before_formatting_notices():
+    """Formatting notices must never push a fabricated citation past the cap."""
+    formatting = [f"Title {i} was converted to APA 7 sentence case." for i in range(20)]
+    report = WritingReport(
+        citation_style="apa7",
+        citation_warnings=21,
+        citation_warning_messages=formatting
+        + ['In-text citation "Fabricated, 2022" does not resolve to any source.'],
+        unmatched_in_text_citations=["Fabricated, 2022"],
+    )
+
+    rendered = report.render_text()
+
+    assert "Fabricated, 2022" in rendered

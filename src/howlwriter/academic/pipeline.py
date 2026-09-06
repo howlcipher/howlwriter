@@ -708,7 +708,7 @@ def _run_academic_pipeline(
         )
     _notify("citations_references", "DONE", "APA 7 Citations & References", {
         "in_text_citations": citation_analysis.in_text_citation_count,
-        "references_count": len(citation_analysis.used_sources) or len(sources),
+        "references_count": len(citation_analysis.used_sources),
         "warnings_count": len(citation_analysis.warnings),
     })
 
@@ -893,7 +893,7 @@ def _run_academic_pipeline(
         freshness_findings=[f.to_dict() for f in verif_summary.freshness_findings],
         citation_style=spec.citation_style,
         in_text_citations=citation_analysis.in_text_citation_count,
-        reference_entries=len(citation_analysis.used_sources) or len(sources),
+        reference_entries=len(citation_analysis.used_sources),
         citation_warnings=len(citation_analysis.warnings),
         citation_warning_messages=[w.message for w in citation_analysis.warnings],
         unmatched_in_text_citations=list(

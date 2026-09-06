@@ -323,7 +323,14 @@ class WritingReport(DataClassSerializationMixin):
                 )
             # A count alone leaves the writer with no way to act on a failed
             # citation check, so the messages themselves are listed here.
-            for message in self.citation_warning_messages[:_MAX_RENDERED_WARNINGS]:
+            # Unresolved citations sort first: they are the only citation
+            # warning that means the text is untrustworthy, and formatting
+            # notices are numerous enough to push them past the cap.
+            ordered = sorted(
+                self.citation_warning_messages,
+                key=lambda m: 0 if "does not resolve" in m else 1,
+            )
+            for message in ordered[:_MAX_RENDERED_WARNINGS]:
                 lines.append(f"    - {message}")
             remaining = len(self.citation_warning_messages) - _MAX_RENDERED_WARNINGS
             if remaining > 0:
