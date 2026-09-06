@@ -192,6 +192,75 @@ def _claim_asserts_ungrounded_quantity(claim: Claim, source_text: str) -> bool:
     )
 
 
+_INCREASE_MARKERS = (
+    "increase", "increased", "increases", "rose", "rise", "risen", "grew",
+    "grow", "growth", "gain", "gained", "higher", "boost", "boosted",
+    "up", "more", "greater", "accelerated", "surge", "surged",
+)
+_DECREASE_MARKERS = (
+    "decrease", "decreased", "decreases", "reduce", "reduced", "reduction",
+    "drop", "dropped", "fell", "fall", "decline", "declined", "lower",
+    "cut", "fewer", "less", "slowed", "shrank", "down",
+)
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+_PARENTHETICAL = re.compile(r"\([^()]*\)")
+
+
+def _direction_of(text: str) -> str | None:
+    """Which way a passage says a quantity moved, if it says at all.
+
+    Returns "up", "down", or None when the passage carries neither or both.
+    Ambiguous words are left out on purpose: "improved latency" means down
+    while "improved throughput" means up, so treating either as directional
+    would invent a disagreement.
+
+    Parentheticals are dropped first. Direction belongs to the prose, and an
+    author named Rose in "(Rose, 2024)" otherwise reads as the verb "rose".
+    """
+    lowered = _PARENTHETICAL.sub(" ", text).lower()
+    up = any(_has_marker(lowered, m) for m in _INCREASE_MARKERS)
+    down = any(_has_marker(lowered, m) for m in _DECREASE_MARKERS)
+    if up == down:
+        return None
+    return "up" if up else "down"
+
+
+def _claim_reverses_source_direction(claim: Claim, source_text: str) -> bool:
+    """True if the claim moves a figure the opposite way from its source.
+
+    The figure and the subject matter can both match while the claim says the
+    opposite of what was found: a source reporting that enforcement increased
+    deployment velocity 15% supported a claim that it decreased it 15%. The
+    citation resolves, the number checks out, and the sentence asserts the
+    reverse of the evidence.
+
+    Direction is compared only within the source sentence that reports the
+    same figure, so an unrelated trend elsewhere in an abstract cannot
+    manufacture a disagreement.
+    """
+    claimed = _percentages(claim.text)
+    if not claimed:
+        return False
+    claim_direction = _direction_of(claim.text)
+    if claim_direction is None:
+        return False
+
+    for sentence in _SENTENCE_SPLIT.split(source_text):
+        sentence_values = _percentages(sentence)
+        if not sentence_values:
+            continue
+        if not any(
+            _rounds_to(candidate, f"{value:g}")
+            for value in claimed
+            for candidate in sentence_values
+        ):
+            continue
+        source_direction = _direction_of(sentence)
+        if source_direction is not None and source_direction != claim_direction:
+            return True
+    return False
+
+
 def _source_can_support(source: Source) -> bool:
     """A source may support a substantive factual claim only if it is relevant
     and has some real retrieved text (not metadata only)."""
@@ -374,6 +443,9 @@ class AcademicVerifier:
                     and not _claim_asserts_ungrounded_quantity(
                         claim, matched_source.retrieved_text
                     )
+                    and not _claim_reverses_source_direction(
+                        claim, matched_source.retrieved_text
+                    )
                 ):
                     freshness_sev, f_finding = evaluate_source_freshness_for_claim(
                         claim, matched_source, spec=spec
@@ -432,7 +504,14 @@ class AcademicVerifier:
                     # Naming the specific reason matters: "the source does not
                     # report this figure" and "the source is metadata-only" ask
                     # the writer to do completely different things.
-                    if _claim_asserts_ungrounded_quantity(
+                    if _claim_reverses_source_direction(
+                        claim, matched_source.retrieved_text
+                    ):
+                        reason = (
+                            "the source reports this figure moving the "
+                            "opposite way"
+                        )
+                    elif _claim_asserts_ungrounded_quantity(
                         claim, matched_source.retrieved_text
                     ):
                         reason = (

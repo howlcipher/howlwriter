@@ -278,3 +278,78 @@ def test_leading_decimal_percentage_is_still_checked():
         f"False rejections for {_SUBJECT} dropped by .5% (Rose, 2024).",
         f"False rejections for {_SUBJECT} decreased slightly.",
     )
+
+
+_TWO_TRENDS = (
+    "Security enforcement increased deployment velocity across enterprise "
+    "Kubernetes clusters by 15 percent. Separately, incident counts decreased "
+    "by 40 percent."
+)
+_VELOCITY = (
+    "deployment velocity across enterprise Kubernetes clusters under security "
+    "enforcement"
+)
+
+
+def _supported_against(claim: str, source_text: str) -> bool:
+    source = _study_source(source_text)
+    source.authors = ["Alvarez, Nina"]
+    _, summary = AcademicVerifier().build_provenance_and_verify(
+        Document.parse(f"# P\n\n{claim}\n"), [source]
+    )
+    return summary.supported_claims == 1
+
+
+def test_claim_reversing_its_source_is_not_supported():
+    """The figure and the topic match; the claim says the opposite happened."""
+    assert not _supported_against(
+        f"Security enforcement decreased {_VELOCITY} by 15 percent "
+        "(Alvarez, 2024).",
+        _TWO_TRENDS,
+    )
+
+
+def test_claim_agreeing_with_its_source_stays_supported():
+    assert _supported_against(
+        f"Security enforcement increased {_VELOCITY} by 15 percent "
+        "(Alvarez, 2024).",
+        _TWO_TRENDS,
+    )
+
+
+def test_direction_is_bound_to_the_sentence_reporting_the_same_figure():
+    """A different trend elsewhere in the abstract must not manufacture a
+    disagreement, nor excuse a real one."""
+    assert _supported_against(
+        f"Incident counts decreased by 40 percent for {_VELOCITY} "
+        "(Alvarez, 2024).",
+        _TWO_TRENDS,
+    )
+    assert not _supported_against(
+        f"Incident counts increased by 40 percent for {_VELOCITY} "
+        "(Alvarez, 2024).",
+        _TWO_TRENDS,
+    )
+
+
+def test_claim_without_a_direction_word_is_not_judged_on_direction():
+    assert _supported_against(
+        f"Security enforcement shifted {_VELOCITY} by 15 percent "
+        "(Alvarez, 2024).",
+        _TWO_TRENDS,
+    )
+
+
+def test_author_surname_is_not_read_as_a_direction_word():
+    """"(Rose, 2024)" must not make a claim read as "rose"."""
+    source = _study_source(
+        f"Security enforcement reduced {_VELOCITY} by 15 percent."
+    )
+    _, summary = AcademicVerifier().build_provenance_and_verify(
+        Document.parse(
+            f"# P\n\nSecurity enforcement reduced {_VELOCITY} by 15 percent "
+            "(Rose, 2024).\n"
+        ),
+        [source],
+    )
+    assert summary.supported_claims == 1
