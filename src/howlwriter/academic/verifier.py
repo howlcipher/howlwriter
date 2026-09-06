@@ -196,11 +196,13 @@ _INCREASE_MARKERS = (
     "increase", "increased", "increases", "rose", "rise", "risen", "grew",
     "grow", "growth", "gain", "gained", "higher", "boost", "boosted",
     "up", "more", "greater", "accelerated", "surge", "surged",
+    "gains", "rising", "growing", "increasing",
 )
 _DECREASE_MARKERS = (
     "decrease", "decreased", "decreases", "reduce", "reduced", "reduction",
     "drop", "dropped", "fell", "fall", "decline", "declined", "lower",
     "cut", "fewer", "less", "slowed", "shrank", "down",
+    "loss", "losses", "lost", "fall", "falling", "dropping", "reducing",
 )
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _PARENTHETICAL = re.compile(r"\([^()]*\)")
@@ -245,6 +247,14 @@ def _claim_reverses_source_direction(claim: Claim, source_text: str) -> bool:
     if claim_direction is None:
         return False
 
+    # Every sentence that reports the same figure gets a vote. A source can
+    # report the same percentage for two different metrics moving opposite
+    # ways ("Throughput rose by 15%. Latency fell by 15%."), and a claim about
+    # either one is supported. Rejecting on the first sentence that disagreed
+    # threw out correct claims, so a claim is only reversed when no sentence
+    # reporting its figure agrees and at least one contradicts it.
+    agrees = False
+    contradicts = False
     for sentence in _SENTENCE_SPLIT.split(source_text):
         sentence_values = _percentages(sentence)
         if not sentence_values:
@@ -256,9 +266,13 @@ def _claim_reverses_source_direction(claim: Claim, source_text: str) -> bool:
         ):
             continue
         source_direction = _direction_of(sentence)
-        if source_direction is not None and source_direction != claim_direction:
-            return True
-    return False
+        if source_direction is None:
+            continue
+        if source_direction == claim_direction:
+            agrees = True
+        else:
+            contradicts = True
+    return contradicts and not agrees
 
 
 def _source_can_support(source: Source) -> bool:

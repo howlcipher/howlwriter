@@ -353,3 +353,33 @@ def test_author_surname_is_not_read_as_a_direction_word():
         [source],
     )
     assert summary.supported_claims == 1
+
+
+def test_same_figure_for_two_metrics_supports_a_claim_about_either():
+    """A source can report 15% for two metrics moving opposite ways.
+
+    Rejecting on the first sentence that disagreed threw out correct claims.
+    """
+    source_text = (
+        "Throughput rose by 15 percent across enterprise Kubernetes clusters. "
+        "Latency fell by 15 percent across enterprise Kubernetes clusters."
+    )
+    assert _supported_against(
+        "Latency fell by 15 percent across enterprise Kubernetes clusters "
+        "(Alvarez, 2024).",
+        source_text,
+    )
+    assert _supported_against(
+        "Throughput rose by 15 percent across enterprise Kubernetes clusters "
+        "(Alvarez, 2024).",
+        source_text,
+    )
+
+
+def test_a_gain_claimed_against_a_reported_loss_is_not_supported():
+    assert not _supported_against(
+        "The fund recorded a 15 percent gain across enterprise Kubernetes "
+        "clusters (Alvarez, 2024).",
+        "The fund suffered a 15 percent loss across enterprise Kubernetes "
+        "clusters.",
+    )
