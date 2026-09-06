@@ -534,3 +534,79 @@ def test_litotes_and_quantifiers_are_not_read_as_negating_the_verb():
         f"{_KUBE} (Alvarez, 2024).",
         f"Throughput increased by 15 percent {_KUBE}.",
     )
+
+
+_TWO_METRICS_ONE_FIGURE = (
+    "Latency fell by 15 percent while throughput grew by 15 percent "
+    "across enterprise Kubernetes clusters."
+)
+
+
+def test_same_figure_on_two_metrics_binds_to_the_right_one():
+    """A claim inverting either metric must be caught.
+
+    With direction alone, "Latency grew by 15%" found the throughput clause,
+    which also reports 15% and also rises, and was marked supported by it.
+    """
+    assert not _supported_against(
+        f"Latency grew by 15 percent {_KUBE} (Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+    assert not _supported_against(
+        f"Throughput fell by 15 percent {_KUBE} (Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+
+
+def test_same_figure_on_two_metrics_still_supports_agreeing_claims():
+    assert _supported_against(
+        f"Latency fell by 15 percent {_KUBE} (Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+    assert _supported_against(
+        f"Throughput grew by 15 percent {_KUBE} (Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+
+
+def test_a_metric_the_source_never_discusses_is_not_contradicted():
+    assert _supported_against(
+        f"Memory use grew by 15 percent {_KUBE} (Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+
+
+def test_subject_binding_falls_back_when_a_clause_names_no_subject():
+    """Passive framing puts the metric after the verb, leaving no subject.
+
+    Losing the check there would be worse than comparing on the figure alone,
+    so an unnamed subject falls back rather than abstaining.
+    """
+    assert _supported_against(
+        f"Timeouts increased by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"There was an increase of 15 percent in timeouts {_KUBE}.",
+    )
+
+
+def test_differently_worded_subject_does_not_become_a_contradiction():
+    assert _supported_against(
+        f"Response latency fell by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"Latency fell by 15 percent {_KUBE}.",
+    )
+
+
+def test_passive_framing_cannot_evade_subject_binding():
+    """"There was an increase of 15% in latency" names its metric after the
+    verb. Reading only what precedes the verb left the clause subjectless,
+    and a subjectless clause matches on the figure alone -- so a passive
+    rewording of an inverted claim slipped through."""
+    assert not _supported_against(
+        f"There was an increase of 15 percent in latency {_KUBE} "
+        "(Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+    assert _supported_against(
+        f"There was a decrease of 15 percent in latency {_KUBE} "
+        "(Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )

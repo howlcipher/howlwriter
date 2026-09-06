@@ -226,13 +226,28 @@ _NEGATION_IDIOM_FOLLOWERS = frozenset({"only", "just", "merely", "solely"})
 _DIRECTION_TOKEN = re.compile(r"[A-Za-z']+")
 
 
-def _direction_of(text: str) -> str | None:
-    """Which way a passage says a quantity moved, if it says at all.
+_SUBJECT_STOPWORDS = frozenset({
+    "a", "an", "the", "of", "in", "on", "at", "by", "to", "for", "with",
+    "and", "or", "but", "that", "this", "these", "those", "it", "its",
+    "was", "were", "is", "are", "be", "been", "being", "has", "have", "had",
+    "did", "does", "do", "we", "our", "they", "their", "percent", "percentage",
+    "points", "point", "observed", "reported", "found", "showed", "study",
+    "results", "result", "analysis", "there", "which", "who", "when",
+})
 
-    Returns "up", "down", or None when the passage carries neither or both.
-    Ambiguous words are left out on purpose: "improved latency" means down
-    while "improved throughput" means up, so treating either as directional
-    would invent a disagreement.
+
+def _clause_direction_and_subject(text: str) -> tuple[str | None, frozenset[str]]:
+    """Which way a clause says a quantity moved, and what it says moved.
+
+    The subject is the content words standing before the direction word. That
+    is what distinguishes "Latency fell by 15%" from "throughput grew by 15%"
+    in one sentence: trailing boilerplate is shared between them, so only the
+    words leading up to the verb identify the metric.
+
+    Direction is "up", "down", or None when the clause carries neither or
+    both. Ambiguous words are left out on purpose: "improved latency" means
+    down while "improved throughput" means up, so treating either as
+    directional would invent a disagreement.
 
     Parentheticals are dropped first. Direction belongs to the prose, and an
     author named Rose in "(Rose, 2024)" otherwise reads as the verb "rose".
@@ -249,6 +264,7 @@ def _direction_of(text: str) -> str | None:
 
     up = False
     down = False
+    first_marker: int | None = None
     for index, token in enumerate(tokens):
         if token in _INCREASE_MARKERS:
             polarity = "up"
@@ -256,6 +272,9 @@ def _direction_of(text: str) -> str | None:
             polarity = "down"
         else:
             continue
+        if first_marker is None:
+            first_marker = index
+
         previous = tokens[index - 1] if index else ""
         negated = previous in _DIRECTION_NEGATORS and not (
             previous == "not"
@@ -264,32 +283,61 @@ def _direction_of(text: str) -> str | None:
         )
         if negated:
             polarity = "down" if polarity == "up" else "up"
+
         if polarity == "up":
             up = True
         else:
             down = True
 
     if up == down:
-        return None
-    return "up" if up else "down"
+        return None, frozenset()
+
+    marker_index = first_marker if first_marker is not None else 0
+
+    def content(words: list[str]) -> frozenset[str]:
+        return frozenset(
+            t
+            for t in words
+            if t not in _SUBJECT_STOPWORDS
+            and t not in _DIRECTION_NEGATORS
+            and len(t) > 2
+        )
+
+    subject = content(tokens[:marker_index])
+    if not subject:
+        # Passive framing puts the metric after the verb -- "there was an
+        # increase of 15% in latency" names nothing before it. Reading only
+        # what precedes the verb left that clause subjectless, and a
+        # subjectless clause falls back to matching on the figure alone, which
+        # let a passive rewording of an inverted claim pass. Trailing words
+        # are used only in this case, because in the ordinary case they are
+        # shared boilerplate that would match every clause.
+        subject = content(tokens[marker_index + 1:])
+    return ("up" if up else "down"), subject
 
 
-def _directed_figures(text: str) -> list[tuple[float, str]]:
-    """Each percentage in the text paired with the way its clause says it moved.
+def _direction_of(text: str) -> str | None:
+    """Direction alone, for callers that do not care what moved."""
+    return _clause_direction_and_subject(text)[0]
 
-    Pairing them per clause is what lets a single sentence report two metrics
-    moving opposite ways. Reading direction from the whole sentence instead
-    returned nothing for "Latency fell by 10% and throughput grew by 20%",
-    because it carries both, which let a claim swapping the two figures pass.
+
+def _directed_figures(text: str) -> list[tuple[float, str, frozenset[str]]]:
+    """Each percentage paired with the way its clause moved and what moved.
+
+    Pairing per clause is what lets a single sentence report two metrics
+    moving opposite ways. Carrying the subject is what keeps them apart: with
+    direction alone, "Latency fell by 15% while throughput grew by 15%" agreed
+    with a claim that latency grew, because the claim's figure found an
+    agreeing clause belonging to the other metric.
     """
-    figures: list[tuple[float, str]] = []
+    figures: list[tuple[float, str, frozenset[str]]] = []
     for sentence in _SENTENCE_SPLIT.split(text):
         for clause in _CLAUSE_SPLIT.split(sentence):
-            direction = _direction_of(clause)
+            direction, subject = _clause_direction_and_subject(clause)
             if direction is None:
                 continue
             for value in _percentages(clause):
-                figures.append((value, direction))
+                figures.append((value, direction, subject))
     return figures
 
 
@@ -314,12 +362,18 @@ def _claim_reverses_source_direction(claim: Claim, source_text: str) -> bool:
     if not source_figures:
         return False
 
-    for value, claim_direction in claimed:
+    for value, claim_direction, claim_subject in claimed:
         agrees = False
         contradicts = False
-        for source_value, source_direction in source_figures:
+        for source_value, source_direction, source_subject in source_figures:
             if not _rounds_to(source_value, f"{value:g}"):
                 continue
+            # Only clauses about the same thing can agree or disagree. Where
+            # neither names a subject, fall back to comparing on the figure
+            # alone rather than losing the check entirely.
+            if claim_subject and source_subject:
+                if not (claim_subject & source_subject):
+                    continue
             if source_direction == claim_direction:
                 agrees = True
             else:
