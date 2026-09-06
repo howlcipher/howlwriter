@@ -116,6 +116,82 @@ def _claim_escalates_evidence(claim: Claim, source_text: str) -> bool:
     return False
 
 
+_PERCENTAGE = re.compile(
+    r"(\d*\.?\d+)\s*(?:%|percent\b|percentage points?\b)", re.IGNORECASE
+)
+_THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}\b)")
+_ANY_NUMBER = re.compile(r"\d*\.?\d+")
+
+
+def _percentages(text: str) -> list[float]:
+    """Every value in the text written as a percentage."""
+    cleaned = _THOUSANDS.sub("", text)
+    values = []
+    for match in _PERCENTAGE.finditer(cleaned):
+        try:
+            values.append(float(match.group(1)))
+        except ValueError:
+            continue
+    return values
+
+
+def _rounds_to(candidate: float, claimed: str) -> bool:
+    """Does the candidate round to the claimed figure at its own precision?
+
+    Papers round: a source reporting 41.2% supports a claim of 41%. Comparing
+    the strings rejected that, so the tolerance is taken from how precisely the
+    claim was stated.
+    """
+    decimals = len(claimed.split(".")[1]) if "." in claimed else 0
+    return abs(candidate - float(claimed)) <= 0.5 * (10 ** -decimals)
+
+
+def _claim_asserts_ungrounded_quantity(claim: Claim, source_text: str) -> bool:
+    """True if the claim states a percentage the source does not report.
+
+    Claims are matched to sources by shared vocabulary, so a sentence about the
+    right subject matter matches a source whether or not the source contains
+    the figure it reports. A fabricated statistic therefore inherited the
+    source's authority: "mTLS cut insider breaches 41 percent (Author, 2026)"
+    was marked SUPPORTED against an abstract holding no such number. A figure
+    is the whole substance of a statistical claim, so if the evidence does not
+    report it, the claim is not supported by it.
+
+    The claimed figure is matched against percentages in the source, or against
+    its decimal equivalent (a source reporting 0.05 supports a claim of 5%).
+    Matching bare numbers instead let a reference marker like "[41]" or a
+    "Section 4.1" heading stand in for a statistic that was never measured.
+
+    Scope: percentages only. Fabricated counts, currencies, durations and
+    multipliers are not covered here -- checking every number would reject
+    claims for years, page counts and sample sizes -- so this narrows the gap
+    rather than closing it.
+    """
+    cleaned_claim = _THOUSANDS.sub("", claim.text)
+    claimed = [m.group(1) for m in _PERCENTAGE.finditer(cleaned_claim)]
+    if not claimed:
+        return False
+
+    source_percentages = _percentages(source_text)
+    # A source stating a rate as a decimal ("0.05") reports the same fact as a
+    # claim stating it as a percentage ("5%").
+    cleaned_source = _THOUSANDS.sub("", source_text)
+    decimal_equivalents = []
+    for token in _ANY_NUMBER.findall(cleaned_source):
+        try:
+            value = float(token)
+        except ValueError:
+            continue
+        if 0 < value < 1:
+            decimal_equivalents.append(value * 100)
+
+    candidates = source_percentages + decimal_equivalents
+    return any(
+        not any(_rounds_to(candidate, value) for candidate in candidates)
+        for value in claimed
+    )
+
+
 def _source_can_support(source: Source) -> bool:
     """A source may support a substantive factual claim only if it is relevant
     and has some real retrieved text (not metadata only)."""
@@ -295,6 +371,9 @@ class AcademicVerifier:
                     and not _claim_escalates_evidence(
                         claim, matched_source.retrieved_text
                     )
+                    and not _claim_asserts_ungrounded_quantity(
+                        claim, matched_source.retrieved_text
+                    )
                 ):
                     freshness_sev, f_finding = evaluate_source_freshness_for_claim(
                         claim, matched_source, spec=spec
@@ -350,6 +429,28 @@ class AcademicVerifier:
                     # provenance graph is truthful.
                     ev_id = f"E{evidence_counter:03d}"
                     evidence_counter += 1
+                    # Naming the specific reason matters: "the source does not
+                    # report this figure" and "the source is metadata-only" ask
+                    # the writer to do completely different things.
+                    if _claim_asserts_ungrounded_quantity(
+                        claim, matched_source.retrieved_text
+                    ):
+                        reason = (
+                            "the source does not report the figure this claim "
+                            "states"
+                        )
+                    elif not _source_can_support(matched_source):
+                        reason = (
+                            "the source is metadata-only, tangential or "
+                            "irrelevant"
+                        )
+                    elif depth_inadequate_for_page:
+                        reason = (
+                            "the claim cites a page but the source was only "
+                            "retrieved at abstract depth"
+                        )
+                    else:
+                        reason = "the claim is stronger than the source supports"
                     ev = Evidence(
                         id=ev_id,
                         source_id=matched_source.id,
@@ -357,9 +458,7 @@ class AcademicVerifier:
                         snippet=matched_snippet or matched_source.retrieved_text[:150],
                         supports=False,
                         notes=(
-                            f"Matched {matched_source.title} but evidence is "
-                            "insufficient (metadata-only, tangential, or "
-                            "escalated beyond the source)."
+                            f"Matched {matched_source.title} but {reason}."
                         ),
                     )
                     graph.add_evidence(ev)

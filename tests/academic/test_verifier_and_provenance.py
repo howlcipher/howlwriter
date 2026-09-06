@@ -139,3 +139,142 @@ def test_identifier_grounded_via_additional_grounding_texts_not_flagged():
     )
 
     assert not any("CVE-2024-31337" in w for w in summary.identifier_warnings)
+
+
+def _latency_source() -> Source:
+    return Source(
+        id="S001",
+        title="Latency Study",
+        authors=["Rose, Scott"],
+        publication_date=date(2024, 1, 1),
+        access_date=date.today(),
+        source_type=SourceType.JOURNAL_ARTICLE,
+        retrieved_text=(
+            "Our controlled deployment of mutual TLS across the service mesh "
+            "reduced observed lateral movement incidents by 41 percent while "
+            "adding 12 milliseconds of median request latency in Kubernetes "
+            "clusters."
+        ),
+        evidence_depth="ABSTRACT",
+        relevance="DIRECT",
+    )
+
+
+def test_statistic_absent_from_the_source_is_not_supported_by_it():
+    """Topical overlap matched a source; the figure must come from it too."""
+    doc = Document.parse(
+        "# Paper\n\nMutual TLS reduced lateral movement incidents by 63 "
+        "percent in Kubernetes clusters (Rose, 2024).\n"
+    )
+
+    _, summary = AcademicVerifier().build_provenance_and_verify(
+        doc, [_latency_source()]
+    )
+
+    assert summary.supported_claims == 0
+    assert summary.unsupported_claims == 1
+
+
+def test_statistic_present_in_the_source_remains_supported():
+    doc = Document.parse(
+        "# Paper\n\nMutual TLS reduced lateral movement incidents by 41 "
+        "percent in Kubernetes clusters (Rose, 2024).\n"
+    )
+
+    _, summary = AcademicVerifier().build_provenance_and_verify(
+        doc, [_latency_source()]
+    )
+
+    assert summary.supported_claims == 1
+    assert summary.unsupported_claims == 0
+
+
+def test_claim_without_a_figure_is_unaffected_by_quantity_grounding():
+    doc = Document.parse(
+        "# Paper\n\nMutual TLS reduced observed lateral movement incidents "
+        "across Kubernetes clusters (Rose, 2024).\n"
+    )
+
+    _, summary = AcademicVerifier().build_provenance_and_verify(
+        doc, [_latency_source()]
+    )
+
+    assert summary.supported_claims == 1
+
+
+def _study_source(text: str) -> Source:
+    return Source(
+        id="S001",
+        title="Study",
+        authors=["Rose, Scott"],
+        publication_date=date(2024, 1, 1),
+        access_date=date.today(),
+        source_type=SourceType.JOURNAL_ARTICLE,
+        retrieved_text=text,
+        evidence_depth="ABSTRACT",
+        relevance="DIRECT",
+    )
+
+
+_SUBJECT = (
+    "insider breaches across enterprise Kubernetes clusters under mutual TLS "
+    "deployment"
+)
+
+
+def _supported(claim: str, source_text: str) -> bool:
+    _, summary = AcademicVerifier().build_provenance_and_verify(
+        Document.parse(f"# P\n\n{claim}\n"), [_study_source(source_text)]
+    )
+    return summary.supported_claims == 1
+
+
+def test_rounded_claim_is_supported_by_a_more_precise_source():
+    """A source reporting 41.2% supports a paper that rounds it to 41%."""
+    assert _supported(
+        f"Roughly 41% of {_SUBJECT} failed authentication (Rose, 2024).",
+        f"In our trial, 41.2% of {_SUBJECT} failed authentication.",
+    )
+
+
+def test_decimal_rate_in_source_supports_a_percentage_claim():
+    assert _supported(
+        f"The model had a 5% false positive rate for {_SUBJECT} (Rose, 2024).",
+        f"The false positive rate was 0.05 for {_SUBJECT}.",
+    )
+
+
+def test_thousands_separator_does_not_break_matching():
+    assert _supported(
+        f"Throughput for {_SUBJECT} scaled by 1200% (Rose, 2024).",
+        f"Throughput for {_SUBJECT} scaled by 1,200%.",
+    )
+
+
+def test_reference_marker_does_not_ground_a_percentage():
+    """"[41]" is a citation marker, not a measurement of 41 percent."""
+    assert not _supported(
+        f"Our analysis revealed a 41 percent drop in {_SUBJECT} (Rose, 2024).",
+        f"Prior threat models for {_SUBJECT} assume perimeter defenses [41].",
+    )
+
+
+def test_section_number_does_not_ground_a_percentage():
+    assert not _supported(
+        f"Failure rates for {_SUBJECT} stabilized at 4.1 percent (Rose, 2024).",
+        f"As detailed in Section 4.1, {_SUBJECT} were distributed evenly.",
+    )
+
+
+def test_same_number_in_a_different_unit_does_not_ground_a_percentage():
+    assert not _supported(
+        f"mTLS produced a 41 percent drop in latency for {_SUBJECT} (Rose, 2024).",
+        f"Average ping time for {_SUBJECT} settled at 41 milliseconds.",
+    )
+
+
+def test_leading_decimal_percentage_is_still_checked():
+    assert not _supported(
+        f"False rejections for {_SUBJECT} dropped by .5% (Rose, 2024).",
+        f"False rejections for {_SUBJECT} decreased slightly.",
+    )
