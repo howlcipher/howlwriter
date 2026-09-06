@@ -569,11 +569,16 @@ def test_same_figure_on_two_metrics_still_supports_agreeing_claims():
     )
 
 
-def test_a_metric_the_source_never_discusses_is_not_contradicted():
-    assert _supported_against(
-        f"Memory use grew by 15 percent {_KUBE} (Alvarez, 2024).",
-        _TWO_METRICS_ONE_FIGURE,
+def test_a_metric_the_source_never_discusses_is_not_supported():
+    source = _study_source(_TWO_METRICS_ONE_FIGURE)
+    _, summary = AcademicVerifier().build_provenance_and_verify(
+        Document.parse(f"# P\n\nMemory use grew by 15 percent {_KUBE} "
+                       "(Alvarez, 2024).\n"),
+        [source],
     )
+    assert summary.supported_claims == 0
+    assert summary.partially_supported_claims == 1
+    assert summary.contradicted_claims == 0
 
 
 def test_subject_binding_falls_back_when_a_clause_names_no_subject():
@@ -619,13 +624,19 @@ def test_plural_metric_still_binds_to_its_singular():
     )
 
 
-def test_a_shared_modifier_does_not_make_two_metrics_contradict():
+def test_a_shared_modifier_does_not_make_an_unrelated_metric_supported():
     """"median request latency" and "median request throughput" share two
     words and are about different things."""
-    assert _supported_against(
-        f"Median request latency fell by 15 percent {_KUBE} (Alvarez, 2024).",
-        f"Median request throughput grew by 15 percent {_KUBE}.",
+    source = _study_source(
+        f"Median request throughput grew by 15 percent {_KUBE}."
     )
+    _, summary = AcademicVerifier().build_provenance_and_verify(
+        Document.parse(f"# P\n\nMedian request latency fell by 15 percent "
+                       f"{_KUBE} (Alvarez, 2024).\n"),
+        [source],
+    )
+    assert summary.supported_claims == 0
+    assert summary.contradicted_claims == 0
 
 
 def test_a_postmodified_metric_still_binds():
