@@ -100,6 +100,103 @@ warnings: []
     assert "Ahmadi, S." in result.final_document.text
 
 
+def test_fabricated_citation_blocks_ready_status(tmp_path, monkeypatch):
+    """A paper citing a work that does not exist must never report READY.
+
+    This is the same run as the READY test above with one sentence added, so a
+    regression here means the readiness gate stopped seeing unresolved
+    citations rather than that something else about the run changed.
+    """
+    monkeypatch.setenv("HOWLWRITER_RUNS_DIR", str(tmp_path / "runs"))
+
+    s1 = Source(
+        id="S001",
+        title="Zero Trust Governance for Autonomous AI Agents",
+        authors=["Oladimeji, Ganiyu"],
+        publication_date=date(2025, 3, 1),
+        publisher="Elsevier BV",
+        doi="10.2139/ssrn.7194038",
+        access_date=date.today(),
+        source_type=SourceType.JOURNAL_ARTICLE,
+        retrieved_text=(
+            "Autonomous AI agents represent an emerging paradigm in distributed computing. "
+            "Dynamic delegated authorization reduces stale token privileges by 42% in multi-agent systems."
+        ),
+    )
+    s2 = Source(
+        id="S002",
+        title="Autonomous Identity-Based Threat Segmentation",
+        authors=["Ahmadi, Sina"],
+        publication_date=date(2025, 2, 1),
+        publisher="Center for Open Science",
+        doi="10.31219/osf.io/hpcq7_v1",
+        access_date=date.today(),
+        source_type=SourceType.JOURNAL_ARTICLE,
+        retrieved_text=(
+            "Identity-based microsegmentation prevents horizontal privilege escalation "
+            "across autonomous agent clusters."
+        ),
+    )
+
+    spec = AssignmentSpec(
+        title="Zero Trust and Autonomous AI Agents",
+        topic=(
+            "Examine how autonomous AI agents complicate identity, "
+            "authorization, and access control in enterprise environments."
+        ),
+        target_words=50,
+        word_tolerance_percent=30.0,
+        outline=["Introduction", "Identity Challenges", "Conclusion"],
+        source_requirements=dict(minimum_sources=2),
+    )
+
+    fake_backend = FakeAgentBackend(
+        agent_id="fake_academic_backend",
+        default_stdout="""```yaml
+body_markdown: |
+  # Zero Trust and Autonomous AI Agents
+
+  ## Introduction
+  Autonomous AI agents represent an emerging paradigm in distributed computing (Oladimeji, 2025).
+
+  ## Identity Challenges
+  Dynamic delegated authorization reduces stale token privileges by 42% (Oladimeji, 2025).
+  Identity-based microsegmentation prevents privilege escalation (Ahmadi, 2025).
+  Earlier surveys reached the same conclusion (Brightwater & Nkemelu, 2019).
+
+  ## Conclusion
+  Cryptographic zero-trust policies ensure verifiable posture.
+claims_made:
+  - claim: "Dynamic delegated authorization reduces stale token privileges by 42%"
+    source_id: "S001"
+  - claim: "Identity-based microsegmentation prevents horizontal privilege escalation"
+    source_id: "S002"
+verdict: "PASS"
+differences: []
+rationale: "Rigorous factual alignment."
+warnings: []
+```""",
+    )
+
+    result = run_academic_pipeline(
+        spec,
+        default_config(),
+        existing_sources=[s1, s2],
+        custom_backend=fake_backend,
+    )
+
+    assert result.citation_analysis.unmatched_in_text_citations == [
+        "Brightwater & Nkemelu, 2019"
+    ]
+    assert result.report.status != "READY"
+    # The invented work must not be dressed up as a reference. The sentence
+    # itself stays in the body: HowlWriter reports what it found rather than
+    # silently editing the author's text.
+    references = result.final_document.text.split("# References", 1)[1]
+    assert "Brightwater" not in references
+    assert "Brightwater" in result.final_document.text
+
+
 def test_known_identifiers_are_grounded_and_not_flagged(tmp_path, monkeypatch):
     # spec.known_identifiers is assignment-level "verified" grounding text --
     # an exact identifier listed there must be accepted even when no
