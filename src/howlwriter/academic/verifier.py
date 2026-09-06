@@ -275,6 +275,35 @@ def _claim_reverses_source_direction(claim: Claim, source_text: str) -> bool:
     return contradicts and not agrees
 
 
+def _best_snippet(claim_text: str, source_text: str) -> str:
+    """The sentence of the source that comes closest to the claim.
+
+    The snippet is the record of what a claim rests on, so handing every claim
+    the opening 200 characters of the abstract made the provenance graph say
+    the same thing about all of them -- and for most, the quoted text did not
+    mention the claim's subject at all. Picking the sentence with the most
+    words in common keeps the evidence pointed at the passage that actually
+    bears on the claim.
+    """
+    if not source_text:
+        return ""
+    sentences = [s.strip() for s in _SENTENCE_SPLIT.split(source_text) if s.strip()]
+    if not sentences:
+        return source_text[:200]
+
+    claim_words = set(re.findall(r"\b\w{4,}\b", claim_text.lower()))
+    if not claim_words:
+        return sentences[0][:200]
+
+    best = max(
+        sentences,
+        key=lambda sentence: len(
+            claim_words & set(re.findall(r"\b\w{4,}\b", sentence.lower()))
+        ),
+    )
+    return best[:300]
+
+
 def _source_can_support(source: Source) -> bool:
     """A source may support a substantive factual claim only if it is relevant
     and has some real retrieved text (not metadata only)."""
@@ -440,7 +469,7 @@ class AcademicVerifier:
                     if overlap > best_overlap and overlap >= 3:
                         best_overlap = overlap
                         matched_source = s
-                        matched_snippet = s.retrieved_text[:200] if s.retrieved_text else ""
+                        matched_snippet = _best_snippet(claim.text, s.retrieved_text or "")
 
             if matched_source and matched_source.retrieved_text:
                 has_page_spec = bool(_PAGE_NUMBER_RE.search(claim.text))
@@ -475,7 +504,10 @@ class AcademicVerifier:
                             id=ev_id,
                             source_id=matched_source.id,
                             claim_id=claim.id,
-                            snippet=matched_snippet or matched_source.retrieved_text[:150],
+                            snippet=matched_snippet
+                            or _best_snippet(
+                                claim.text, matched_source.retrieved_text
+                            ),
                             supports=False,
                             notes=(
                                 f"Version mismatch with {matched_source.title}: "
@@ -500,7 +532,10 @@ class AcademicVerifier:
                             id=ev_id,
                             source_id=matched_source.id,
                             claim_id=claim.id,
-                            snippet=matched_snippet or matched_source.retrieved_text[:150],
+                            snippet=matched_snippet
+                            or _best_snippet(
+                                claim.text, matched_source.retrieved_text
+                            ),
                             supports=True,
                             notes=note,
                         )
@@ -548,7 +583,10 @@ class AcademicVerifier:
                         id=ev_id,
                         source_id=matched_source.id,
                         claim_id=claim.id,
-                        snippet=matched_snippet or matched_source.retrieved_text[:150],
+                        snippet=matched_snippet
+                            or _best_snippet(
+                                claim.text, matched_source.retrieved_text
+                            ),
                         supports=False,
                         notes=(
                             f"Matched {matched_source.title} but {reason}."
