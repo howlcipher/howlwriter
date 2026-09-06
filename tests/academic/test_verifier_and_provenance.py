@@ -422,3 +422,83 @@ def test_each_claim_cites_the_sentence_that_bears_on_it():
         ["Mutual TLS", "SPIFFE", "policy-as-code"],
     ):
         assert expected in snippet
+
+
+_KUBE = "across enterprise Kubernetes clusters under security enforcement"
+
+
+def test_negated_claim_does_not_agree_with_a_reported_increase():
+    """"did not increase" is not a rise, and previously read as one."""
+    assert not _supported_against(
+        f"Deployment velocity did not increase by 15 percent {_KUBE} "
+        "(Alvarez, 2024).",
+        f"Deployment velocity increased by 15 percent {_KUBE}.",
+    )
+
+
+def test_negated_source_does_not_support_a_plain_increase_claim():
+    assert not _supported_against(
+        f"Deployment velocity increased by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"Deployment velocity did not increase by 15 percent {_KUBE}.",
+    )
+
+
+def test_two_metrics_swapped_between_claim_and_source_is_caught():
+    """Direction is read per clause, so a sentence carrying both a rise and a
+    fall no longer abandons the check."""
+    assert not _supported_against(
+        f"Latency fell by 10 percent and throughput grew by 20 percent {_KUBE} "
+        "(Alvarez, 2024).",
+        f"Latency grew by 10 percent and throughput fell by 20 percent {_KUBE}.",
+    )
+
+
+def test_two_metrics_in_agreement_stay_supported():
+    assert _supported_against(
+        f"Latency fell by 10 percent and throughput grew by 20 percent {_KUBE} "
+        "(Alvarez, 2024).",
+        f"Latency fell by 10 percent and throughput grew by 20 percent {_KUBE}.",
+    )
+
+
+def test_a_prevented_increase_is_not_an_increase():
+    assert not _supported_against(
+        f"System downtime increased by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"A 15 percent increase in system downtime was prevented {_KUBE}.",
+    )
+
+
+def test_negation_after_the_direction_word_does_not_flip_it():
+    """"increased ... without additional cost" is still an increase."""
+    assert _supported_against(
+        f"Throughput increased by 15 percent {_KUBE} without additional cost "
+        "(Alvarez, 2024).",
+        f"Throughput increased by 15 percent {_KUBE} without additional cost.",
+    )
+
+
+def test_unrelated_negation_in_another_clause_is_ignored():
+    assert _supported_against(
+        f"Latency fell by 15 percent {_KUBE}, though this was not unexpected "
+        "(Alvarez, 2024).",
+        f"Latency fell by 15 percent {_KUBE}.",
+    )
+
+
+def test_not_only_is_emphasis_not_negation():
+    """"not only fell" reports a fall; reading "not" as negating the verb
+    turned a correct claim into a contradiction."""
+    assert _supported_against(
+        f"Latency not only fell by 15 percent {_KUBE} but also stabilized "
+        "(Alvarez, 2024).",
+        f"Latency fell by 15 percent {_KUBE}.",
+    )
+
+
+def test_prevention_verb_elsewhere_in_the_clause_is_not_directional():
+    assert _supported_against(
+        "The study avoided selection bias and throughput rose by 15 percent "
+        f"{_KUBE} (Alvarez, 2024).",
+        "The study avoided selection bias and throughput rose by 15 percent "
+        f"{_KUBE}.",
+    )
