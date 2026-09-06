@@ -488,14 +488,22 @@ def test_not_only_is_emphasis_not_negation():
     )
 
 
-def test_prevention_verbs_do_not_flip_a_direction():
-    """Prevention framing is deliberately unhandled.
+def test_passively_prevented_increase_does_not_support_increase_claim():
+    assert not _supported_against(
+        f"System downtime increased by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"A 15 percent increase in system downtime was prevented {_KUBE}.",
+    )
 
-    Every rule broad enough to read "a 15% increase was prevented" as no rise
-    also flipped these, which are ordinary prose, so the narrower rule is the
-    honest one. "A 15% increase was prevented" is therefore still read as an
-    increase; that limit is recorded rather than papered over.
-    """
+
+def test_passively_prevented_decrease_does_not_support_decrease_claim():
+    assert not _supported_against(
+        f"Errors decreased by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"A 15 percent decrease in errors was prevented {_KUBE}.",
+    )
+
+
+def test_passive_preventer_rule_does_not_flip_ordinary_directional_prose():
+    """The bounded passive rule must preserve explicit directional verbs."""
     assert _supported_against(
         "The study avoided selection bias and throughput rose by 15 percent "
         f"{_KUBE} (Alvarez, 2024).",
@@ -503,14 +511,28 @@ def test_prevention_verbs_do_not_flip_a_direction():
         f"{_KUBE}.",
     )
     assert _supported_against(
-        f"The protocol avoided deadlock by increasing timeouts by 15 percent "
+        f"Adversaries avoided deadlock by increasing timeouts by 15 percent "
         f"{_KUBE} (Alvarez, 2024).",
-        f"Timeouts were increased by 15 percent {_KUBE}.",
+        f"Timeouts increased by 15 percent {_KUBE}.",
     )
     assert _supported_against(
         f"Throughput increased by 15 percent {_KUBE} because bottlenecks were "
         "eliminated (Alvarez, 2024).",
         f"Throughput increased by 15 percent {_KUBE}.",
+    )
+
+
+def test_observed_direction_noun_is_not_treated_as_prevented():
+    assert _supported_against(
+        f"Latency increased by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"An increase of 15 percent in latency was observed {_KUBE}.",
+    )
+
+
+def test_active_preventer_does_not_trigger_passive_preventer_rule():
+    assert _supported_against(
+        f"Downtime increased {_KUBE} (Alvarez, 2024).",
+        f"The team prevented an increase in downtime {_KUBE}.",
     )
 
 
