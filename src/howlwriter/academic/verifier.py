@@ -204,6 +204,19 @@ _DECREASE_MARKERS = (
     "cut", "fewer", "less", "slowed", "shrank", "down",
     "loss", "losses", "lost", "fall", "falling", "dropping", "reducing",
 )
+# Nouns that name a metric as often as they name a movement: "packet loss
+# increased" is a rise in loss, not a fall. When a clause also carries a verb
+# form, the verb decides and these are treated as part of the metric's name,
+# because a clause carrying both read as self-contradictory and switched the
+# whole check off.
+_AMBIGUOUS_METRIC_NOUNS = frozenset({
+    "loss", "losses", "gain", "gains", "growth", "drop", "cut", "decline",
+    "increase", "decrease", "reduction", "rise", "surge", "fall",
+    # Comparatives are quantifying, not reporting a movement: "no less than a
+    # 15% increase" is a rise. Treating them as strong markers made that
+    # clause read as a fall.
+    "more", "less", "fewer", "greater", "lower", "higher", "up", "down",
+})
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _PARENTHETICAL = re.compile(r"\([^()]*\)")
 # Clauses inside one sentence can report different metrics moving different
@@ -226,13 +239,45 @@ _NEGATION_IDIOM_FOLLOWERS = frozenset({"only", "just", "merely", "solely"})
 _DIRECTION_TOKEN = re.compile(r"[A-Za-z']+")
 
 
-def _direction_of(text: str) -> str | None:
-    """Which way a passage says a quantity moved, if it says at all.
+_SUBJECT_STOPWORDS = frozenset({
+    "a", "an", "the", "of", "in", "on", "at", "by", "to", "for", "with",
+    "and", "or", "but", "that", "this", "these", "those", "it", "its",
+    "was", "were", "is", "are", "be", "been", "being", "has", "have", "had",
+    "did", "does", "do", "we", "our", "they", "their", "percent", "percentage",
+    "points", "point", "observed", "reported", "found", "showed", "study",
+    "results", "result", "analysis", "there", "which", "who", "when",
+    # Reporting verbs are not the metric. Without these the head noun of
+    # "the fund recorded a 15% gain" was "recorded", which matched nothing.
+    "recorded", "suffered", "saw", "experienced", "posted", "measured",
+    "achieved", "exhibited", "produced", "yielded", "registered", "noted",
+})
 
-    Returns "up", "down", or None when the passage carries neither or both.
-    Ambiguous words are left out on purpose: "improved latency" means down
-    while "improved throughput" means up, so treating either as directional
-    would invent a disagreement.
+
+def _stem(word: str) -> str:
+    """Fold a plural onto its singular so "latencies" matches "latency"."""
+    if word.endswith("ies") and len(word) > 4:
+        return word[:-3] + "y"
+    if word.endswith("ses") or word.endswith("xes") or word.endswith("ches"):
+        return word[:-2]
+    if word.endswith("s") and not word.endswith("ss") and len(word) > 3:
+        return word[:-1]
+    return word
+
+
+def _clause_direction_and_subject(
+    text: str,
+) -> tuple[str | None, tuple[str, frozenset[str]]]:
+    """Which way a clause says a quantity moved, and what it says moved.
+
+    The subject is the head noun standing before the direction word -- the
+    last thing named before the verb. That is what distinguishes "Latency fell by 15%" from "throughput grew by 15%"
+    in one sentence: trailing boilerplate is shared between them, so only the
+    words leading up to the verb identify the metric.
+
+    Direction is "up", "down", or None when the clause carries neither or
+    both. Ambiguous words are left out on purpose: "improved latency" means
+    down while "improved throughput" means up, so treating either as
+    directional would invent a disagreement.
 
     Parentheticals are dropped first. Direction belongs to the prose, and an
     author named Rose in "(Rose, 2024)" otherwise reads as the verb "rose".
@@ -247,15 +292,27 @@ def _direction_of(text: str) -> str | None:
     lowered = _PARENTHETICAL.sub(" ", text).lower()
     tokens = [t.replace("'", "") for t in _DIRECTION_TOKEN.findall(lowered)]
 
+    has_verb_form = any(
+        (t in _INCREASE_MARKERS or t in _DECREASE_MARKERS)
+        and t not in _AMBIGUOUS_METRIC_NOUNS
+        for t in tokens
+    )
+
     up = False
     down = False
+    first_marker: int | None = None
     for index, token in enumerate(tokens):
+        if has_verb_form and token in _AMBIGUOUS_METRIC_NOUNS:
+            continue
         if token in _INCREASE_MARKERS:
             polarity = "up"
         elif token in _DECREASE_MARKERS:
             polarity = "down"
         else:
             continue
+        if first_marker is None:
+            first_marker = index
+
         previous = tokens[index - 1] if index else ""
         negated = previous in _DIRECTION_NEGATORS and not (
             previous == "not"
@@ -264,32 +321,75 @@ def _direction_of(text: str) -> str | None:
         )
         if negated:
             polarity = "down" if polarity == "up" else "up"
+
         if polarity == "up":
             up = True
         else:
             down = True
 
     if up == down:
-        return None
-    return "up" if up else "down"
+        return None, ("", frozenset())
+
+    marker_index = first_marker if first_marker is not None else 0
+
+    def content(words: list[str]) -> list[str]:
+        return [
+            t
+            for t in words
+            if t not in _SUBJECT_STOPWORDS
+            and t not in _DIRECTION_NEGATORS
+            and len(t) > 2
+        ]
+
+    # The metric is the head noun: the last thing named before the verb.
+    # Intersecting every leading word instead made unrelated clauses
+    # contradict each other whenever they shared a modifier -- "median request
+    # latency fell" and "median request throughput grew" are about different
+    # metrics.
+    leading = content(tokens[:marker_index])
+    if leading:
+        stems = [_stem(t) for t in leading]
+        subject = (stems[-1], frozenset(stems))
+    else:
+        # Passive framing puts the metric after the verb -- "there was an
+        # increase of 15% in latency" names nothing before it. Reading only
+        # what precedes the verb left that clause subjectless, and a
+        # subjectless clause falls back to matching on the figure alone, which
+        # let a passive rewording of an inverted claim pass. Here the metric
+        # is the first thing named after the verb.
+        trailing = content(tokens[marker_index + 1:])
+        if trailing:
+            stems = [_stem(t) for t in trailing]
+            subject = (stems[0], frozenset(stems[:1]))
+        else:
+            subject = ("", frozenset())
+    return ("up" if up else "down"), subject
 
 
-def _directed_figures(text: str) -> list[tuple[float, str]]:
-    """Each percentage in the text paired with the way its clause says it moved.
+def _direction_of(text: str) -> str | None:
+    """Direction alone, for callers that do not care what moved."""
+    return _clause_direction_and_subject(text)[0]
 
-    Pairing them per clause is what lets a single sentence report two metrics
-    moving opposite ways. Reading direction from the whole sentence instead
-    returned nothing for "Latency fell by 10% and throughput grew by 20%",
-    because it carries both, which let a claim swapping the two figures pass.
+
+def _directed_figures(
+    text: str,
+) -> list[tuple[float, str, tuple[str, frozenset[str]]]]:
+    """Each percentage paired with the way its clause moved and what moved.
+
+    Pairing per clause is what lets a single sentence report two metrics
+    moving opposite ways. Carrying the subject is what keeps them apart: with
+    direction alone, "Latency fell by 15% while throughput grew by 15%" agreed
+    with a claim that latency grew, because the claim's figure found an
+    agreeing clause belonging to the other metric.
     """
-    figures: list[tuple[float, str]] = []
+    figures: list[tuple[float, str, tuple[str, frozenset[str]]]] = []
     for sentence in _SENTENCE_SPLIT.split(text):
         for clause in _CLAUSE_SPLIT.split(sentence):
-            direction = _direction_of(clause)
+            direction, subject = _clause_direction_and_subject(clause)
             if direction is None:
                 continue
             for value in _percentages(clause):
-                figures.append((value, direction))
+                figures.append((value, direction, subject))
     return figures
 
 
@@ -314,12 +414,30 @@ def _claim_reverses_source_direction(claim: Claim, source_text: str) -> bool:
     if not source_figures:
         return False
 
-    for value, claim_direction in claimed:
+    for value, claim_direction, claim_subject in claimed:
         agrees = False
         contradicts = False
-        for source_value, source_direction in source_figures:
+        for source_value, source_direction, source_subject in source_figures:
             if not _rounds_to(source_value, f"{value:g}"):
                 continue
+            # Only clauses about the same thing can agree or disagree. Where
+            # neither names a subject, fall back to comparing on the figure
+            # alone rather than losing the check entirely.
+            claim_head, claim_words = claim_subject
+            source_head, source_words = source_subject
+            if claim_head and source_head:
+                # Head nouns settle it, but a postmodified phrasing moves the
+                # head: "latency for requests" heads on "requests" while
+                # "request latency" heads on "latency". Accepting either head
+                # naming the other clause keeps those together, without the
+                # shared-modifier false positives that matching every word
+                # produced.
+                if not (
+                    claim_head == source_head
+                    or claim_head in source_words
+                    or source_head in claim_words
+                ):
+                    continue
             if source_direction == claim_direction:
                 agrees = True
             else:

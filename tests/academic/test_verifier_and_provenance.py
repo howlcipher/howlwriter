@@ -534,3 +534,121 @@ def test_litotes_and_quantifiers_are_not_read_as_negating_the_verb():
         f"{_KUBE} (Alvarez, 2024).",
         f"Throughput increased by 15 percent {_KUBE}.",
     )
+
+
+_TWO_METRICS_ONE_FIGURE = (
+    "Latency fell by 15 percent while throughput grew by 15 percent "
+    "across enterprise Kubernetes clusters."
+)
+
+
+def test_same_figure_on_two_metrics_binds_to_the_right_one():
+    """A claim inverting either metric must be caught.
+
+    With direction alone, "Latency grew by 15%" found the throughput clause,
+    which also reports 15% and also rises, and was marked supported by it.
+    """
+    assert not _supported_against(
+        f"Latency grew by 15 percent {_KUBE} (Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+    assert not _supported_against(
+        f"Throughput fell by 15 percent {_KUBE} (Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+
+
+def test_same_figure_on_two_metrics_still_supports_agreeing_claims():
+    assert _supported_against(
+        f"Latency fell by 15 percent {_KUBE} (Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+    assert _supported_against(
+        f"Throughput grew by 15 percent {_KUBE} (Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+
+
+def test_a_metric_the_source_never_discusses_is_not_contradicted():
+    assert _supported_against(
+        f"Memory use grew by 15 percent {_KUBE} (Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+
+
+def test_subject_binding_falls_back_when_a_clause_names_no_subject():
+    """Passive framing puts the metric after the verb, leaving no subject.
+
+    Losing the check there would be worse than comparing on the figure alone,
+    so an unnamed subject falls back rather than abstaining.
+    """
+    assert _supported_against(
+        f"Timeouts increased by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"There was an increase of 15 percent in timeouts {_KUBE}.",
+    )
+
+
+def test_differently_worded_subject_does_not_become_a_contradiction():
+    assert _supported_against(
+        f"Response latency fell by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"Latency fell by 15 percent {_KUBE}.",
+    )
+
+
+def test_passive_framing_cannot_evade_subject_binding():
+    """"There was an increase of 15% in latency" names its metric after the
+    verb. Reading only what precedes the verb left the clause subjectless,
+    and a subjectless clause matches on the figure alone -- so a passive
+    rewording of an inverted claim slipped through."""
+    assert not _supported_against(
+        f"There was an increase of 15 percent in latency {_KUBE} "
+        "(Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+    assert _supported_against(
+        f"There was a decrease of 15 percent in latency {_KUBE} "
+        "(Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+
+
+def test_plural_metric_still_binds_to_its_singular():
+    assert not _supported_against(
+        f"Latencies grew by 15 percent {_KUBE} (Alvarez, 2024).",
+        _TWO_METRICS_ONE_FIGURE,
+    )
+
+
+def test_a_shared_modifier_does_not_make_two_metrics_contradict():
+    """"median request latency" and "median request throughput" share two
+    words and are about different things."""
+    assert _supported_against(
+        f"Median request latency fell by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"Median request throughput grew by 15 percent {_KUBE}.",
+    )
+
+
+def test_a_postmodified_metric_still_binds():
+    """"latency for requests" heads on "requests"; "request latency" heads on
+    "latency". Either head naming the other clause keeps them together."""
+    assert not _supported_against(
+        f"Request latency grew by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"Latency for requests fell by 15 percent {_KUBE}.",
+    )
+
+
+def test_a_metric_named_after_a_movement_is_not_self_contradictory():
+    """"Packet loss increased" is a rise in loss.
+
+    Counting "loss" as a fall alongside "increased" as a rise made the clause
+    read as carrying both directions, which switched the check off entirely
+    and let the inversion through.
+    """
+    assert not _supported_against(
+        f"Packet loss increased by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"Packet loss fell by 15 percent {_KUBE}.",
+    )
+    assert not _supported_against(
+        f"Revenue growth fell by 15 percent {_KUBE} (Alvarez, 2024).",
+        f"Revenue growth increased by 15 percent {_KUBE}.",
+    )
