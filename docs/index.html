@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="HowlWriter is a writing control system combining deterministic style linting, authentic voice preservation, claim provenance, and HowlPlane-controlled independent model review.">
+    <meta name="description" content="HowlWriter is an agentic writing control plane featuring deterministic style linting, voice preservation, claim provenance, and adversarial multi-model review.">
     <link rel="canonical" href="https://howlcipher.github.io/howlwriter/">
 
     <!-- Open Graph Metadata -->
@@ -23,6 +23,30 @@
     <meta name="twitter:description" content="AI-assisted writing without giving the AI the final word. Deterministic style linting, voice preservation, meaning invariance, and independent model review.">
     <meta name="twitter:image" content="https://howlcipher.github.io/howlwriter/social-preview.png">
     <meta name="twitter:image:alt" content="HowlWriter architecture and writing control pipeline">
+
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "HowlWriter",
+      "applicationCategory": "AuthoringTool",
+      "operatingSystem": "POSIX, Linux, macOS",
+      "description": "Writing control system and authoring pipeline featuring deterministic style linting, authentic author voice preservation, claim provenance, and adversarial multi-model review.",
+      "url": "https://howlcipher.github.io/howlwriter/",
+      "softwareVersion": "0.1.0-dev",
+      "author": {
+        "@type": "Person",
+        "name": "William Elias",
+        "url": "https://howlcipher.github.io/william_elias/"
+      },
+      "isPartOf": {
+        "@type": "SoftwareApplication",
+        "name": "Howl Autonomous Software Engineering Ecosystem",
+        "url": "https://howlcipher.github.io/howl/"
+      }
+    }
+    </script>
 
     <title>HowlWriter | Writing Control System, Voice Preservation &amp; Review</title>
     <link rel="stylesheet" href="style.css">
@@ -97,9 +121,25 @@
                 </div>
                 <div class="node-card-desc">Writing control system for voice preservation, deterministic style linting, humanization, and review.</div>
             </a>
+
+            <a href="https://howlcipher.github.io/howlrelay/" class="drawer-node-card">
+                <div class="node-card-top">
+                    <span class="node-card-name">HOWLRELAY</span>
+                    <span class="node-card-role" style="color: var(--color-blue);">[CONTINUITY &amp; RELAY]</span>
+                </div>
+                <div class="node-card-desc">Persistent agent work coordination, long-running operation relays, and crash-resilient session journals.</div>
+            </a>
+
+            <a href="https://howlcipher.github.io/howlcreate/" class="drawer-node-card">
+                <div class="node-card-top">
+                    <span class="node-card-name">HOWLCREATE</span>
+                    <span class="node-card-role" style="color: var(--color-green);">[EXPLORATION]</span>
+                </div>
+                <div class="node-card-desc">Speculative agent prototyping sandbox with branching hypothesis trees and safe isolation.</div>
+            </a>
         </div>
         <div class="drawer-footer">
-            <span>● 6 PRODUCTION NODES</span>
+            <span>● 9 PRODUCTION NODES</span>
             <span>AUTH // HOWL 2026</span>
         </div>
     </aside>
@@ -132,6 +172,7 @@
                 <a href="#pipeline">02_Pipeline</a>
                 <a href="#deterministic">03_DeterministicVsModel</a>
                 <a href="#humanize">04_Humanization</a>
+                <a href="#style-enforcement-qa">04B_VoiceFAQ</a>
                 <a href="#voice">05_VoiceProfile</a>
                 <a href="#meaning">06_MeaningReview</a>
                 <a href="#howlplane">07_HowlPlane</a>
@@ -154,7 +195,7 @@
                         <p class="hero-kicker">// writing control system / voice preservation &amp; adversarial review</p>
                         <h1 id="main-title" class="hero-title">HowlWriter <span class="jp-sub">ハウルライター // 2026</span></h1>
                         <p class="hero-lead">
-                            HowlWriter brings HowlPlane's control-plane philosophy to writing. It combines deterministic style linting, authentic author voice preservation, claim provenance, and adversarial multi-model review to use AI for writing without letting the AI quietly erase the author's voice, alter meaning, or determine quality by itself.
+                            Designed and engineered by <a href="https://howlcipher.github.io/william_elias/" style="color: var(--color-blue); text-decoration: underline;">William Elias</a> as part of the <a href="https://howlcipher.github.io/howl/" style="color: var(--color-blue); text-decoration: underline;">Howl Ecosystem</a>, HowlWriter brings HowlPlane's control-plane philosophy to writing. It combines deterministic style linting, authentic author voice preservation, claim provenance, and adversarial multi-model review to use AI for writing without letting the AI quietly erase the author's voice, alter meaning, or determine quality by itself.
                         </p>
                     </div>
 
@@ -441,6 +482,42 @@
                     <p>
                         <strong>Findings-First Architecture:</strong> By default, HowlWriter is <em>findings-only</em>. It reports locations and explanations without silently modifying text. Safe literal substitutions (e.g. replacing <code>delve</code> with <code>explore</code>) require the explicit <code>--apply</code> flag or a configured <code>HUMANIZER</code> model pass.
                     </p>
+                </div>
+            </section>
+
+            <!-- 04B Voice Preservation & Style Enforcement in AI-Assisted Writing Q&A -->
+            <section id="style-enforcement-qa" class="tech-panel">
+                <div class="tech-header">
+                    <h2><span class="sec-id">SECTION // 04B</span> Technical Q&amp;A: Voice Preservation &amp; Style Enforcement</h2>
+                    <span class="subsystem-tag">HWR-MOD-VOICE-QA</span>
+                </div>
+                <div class="tech-body">
+                    <div class="faq-group">
+                        <div class="faq-item" style="margin-bottom: 1.5rem; padding: 1rem; border-left: 3px solid var(--color-blue); background: var(--color-surface);">
+                            <h3 style="margin-top: 0; font-size: 1.1rem; color: var(--color-blue);">How do you preserve authentic author voice when collaborating with AI models?</h3>
+                            <p>
+                                Most AI writing tools replace the author's distinctive tone with generic corporate homogeny. HowlWriter solves this by encoding the author's authentic cadence, structural preferences, and acceptable idiosyncrasies into an explicit, version-controlled voice profile. Rather than giving generative models unconstrained editorial power, HowlWriter treats the author's voice as an immutable constraint, checking proposed revisions against measured sentence length variance, stylistic markers, and banned cliché patterns.
+                            </p>
+                        </div>
+                        <div class="faq-item" style="margin-bottom: 1.5rem; padding: 1rem; border-left: 3px solid var(--color-magenta); background: var(--color-surface);">
+                            <h3 style="margin-top: 0; font-size: 1.1rem; color: var(--color-magenta);">How does deterministic style linting differ from probabilistic LLM rewriting?</h3>
+                            <p>
+                                LLM-based "improvers" are non-deterministic: their suggestions shift unpredictably across runs and frequently inject subtle hallucinations or stylistic drift. In contrast, HowlWriter uses deterministic, AST- and regex-level linting across 10 configurable rule families (such as <code>AI_STYLE_BANNED_WORD</code>, <code>AI_STYLE_NOT_X_BUT_Y</code>, and <code>AI_STYLE_EMPTY_TRANSITION</code>). Deterministic linting guarantees identical, reproducible evaluations on every invocation without token cost or latency.
+                            </p>
+                        </div>
+                        <div class="faq-item" style="margin-bottom: 1.5rem; padding: 1rem; border-left: 3px solid var(--color-green); background: var(--color-surface);">
+                            <h3 style="margin-top: 0; font-size: 1.1rem; color: var(--color-green);">What is claim provenance and citation verification in agentic drafting?</h3>
+                            <p>
+                                When autonomous agents draft technical prose, every empirical claim, numeric statistic, or citation reference must link directly to an authoritative source in the repository or citation corpus. HowlWriter's provenance engine extracts entity assertions and numeric quantities from generated text and verifies them against ground-truth source artifacts. Any unverified or mutated assertion is immediately flagged as a potential hallucination before publication.
+                            </p>
+                        </div>
+                        <div class="faq-item" style="margin-bottom: 1.5rem; padding: 1rem; border-left: 3px solid var(--color-red); background: var(--color-surface);">
+                            <h3 style="margin-top: 0; font-size: 1.1rem; color: var(--color-red);">How does multi-model red-pen review falsify hallucinations and meaning drift?</h3>
+                            <p>
+                                Relying on the generating model to review its own output suffers from self-preference bias. HowlWriter implements independent multi-model critique ("Red Pen") where secondary reviewer models are tasked strictly with adversarial falsification—identifying factual discrepancies, unsupported logical jumps, and meaning shifts between the original draft and edited revisions. If meaning invariance checks fail, the mutation is rejected.
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -835,6 +912,32 @@ STATUS: READY</code></pre>
                                 <a href="https://github.com/howlcipher/howlboard" class="btn-tech" target="_blank" rel="noreferrer">[ GITHUB ]</a>
                             </div>
                         </div>
+
+                        <!-- HowlRelay -->
+                        <div class="dir-card" style="border-top: 3px solid var(--color-blue);">
+                            <div class="dir-card-header">
+                                <span class="dir-card-title">HowlRelay</span>
+                                <span class="chip chip-blue">TIER 1 // RELAY</span>
+                            </div>
+                            <p class="dir-card-desc">Persistent asynchronous work coordination, long-running agent relays, and crash-resilient session journals.</p>
+                            <div class="dir-card-links">
+                                <a href="https://howlcipher.github.io/howlrelay/" class="btn-tech btn-tech-primary">[ LIVE SITE ]</a>
+                                <a href="https://github.com/howlcipher/howlrelay" class="btn-tech" target="_blank" rel="noreferrer">[ GITHUB ]</a>
+                            </div>
+                        </div>
+
+                        <!-- HowlCreate -->
+                        <div class="dir-card" style="border-top: 3px solid var(--color-green);">
+                            <div class="dir-card-header">
+                                <span class="dir-card-title">HowlCreate</span>
+                                <span class="chip chip-green">TIER 2 // EXPLORATION</span>
+                            </div>
+                            <p class="dir-card-desc">Speculative agent prototyping sandbox with branching hypothesis trees and safe isolation.</p>
+                            <div class="dir-card-links">
+                                <a href="https://howlcipher.github.io/howlcreate/" class="btn-tech btn-tech-primary">[ LIVE SITE ]</a>
+                                <a href="https://github.com/howlcipher/howlcreate" class="btn-tech" target="_blank" rel="noreferrer">[ GITHUB ]</a>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -851,12 +954,15 @@ STATUS: READY</code></pre>
             </div>
             <div class="footer-links">
                 <nav class="footer-nav" aria-label="Ecosystem Links">
+                    <a href="https://howlcipher.github.io/william_elias/">William Elias Portfolio</a>
                     <a href="https://howlcipher.github.io/howl/">Howl Hub</a>
                     <a href="https://howlcipher.github.io/howlframe/">HowlFrame</a>
                     <a href="https://howlcipher.github.io/howlplane/">HowlPlane</a>
-                    <a href="https://howlcipher.github.io/howlnotes/">HowlNotes</a>
                     <a href="https://howlcipher.github.io/howlchangeops/">HowlChangeOps</a>
+                    <a href="https://howlcipher.github.io/howlrelay/">HowlRelay</a>
+                    <a href="https://howlcipher.github.io/howlnotes/">HowlNotes</a>
                     <a href="https://howlcipher.github.io/howlboard/">HowlBoard</a>
+                    <a href="https://howlcipher.github.io/howlcreate/">HowlCreate</a>
                     <a href="https://howlcipher.github.io/howlwriter/">HowlWriter</a>
                 </nav>
                 <a href="#main-content">[ BACK TO TOP ]</a>
