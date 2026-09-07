@@ -50,6 +50,9 @@ jobs:
       - name: Run core test suite
         run: pytest -q --ignore=tests/docs
 
+      - name: Verify SEO Metadata & Artifacts
+        run: python3 scripts/test_seo.py
+
   responsive:
     name: Responsive Browser QA (Playwright Chromium)
     runs-on: ubuntu-latest
