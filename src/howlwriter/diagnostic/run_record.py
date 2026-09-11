@@ -32,9 +32,10 @@ def get_default_runs_dir() -> Path:
     return Path.home() / ".howlwriter" / "runs"
 
 
-def compute_sha256(text: str) -> str:
-    """Computes SHA-256 hash of text without storing the text itself."""
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+def compute_sha256(text: str | bytes) -> str:
+    """Computes SHA-256 hash of text or bytes without storing the text itself."""
+    raw = text if isinstance(text, bytes) else text.encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 
 def classify_failure(error: Exception | str) -> str:
@@ -189,6 +190,18 @@ class RunRecord(DataClassSerializationMixin):
     output_path: str | None = None
     output_chars: int | None = None
     output_sha256: str | None = None
+
+    # Local deliverable rendering & provenance
+    authorized_artifact_hash: str | None = None
+    local_outputs: list[dict[str, Any]] = field(default_factory=list)
+
+    # Cloud Publication records (NO SECRETS OR TOKENS PERSISTED)
+    publication_records: list[dict[str, Any]] = field(default_factory=list)
+
+    # Source integrity metrics
+    source_integrity_status: str | None = None
+    source_integrity_findings_count: int | None = None
+    sources_verified_count: int | None = None
 
     # Error & Failure evidence
     failure_category: str | None = None

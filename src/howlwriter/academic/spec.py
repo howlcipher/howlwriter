@@ -39,6 +39,44 @@ class LengthConstraints(DataClassSerializationMixin):
 
 
 @dataclass
+class SectionSpec(DataClassSerializationMixin):
+    id: str
+    title: str
+    prompt: str = ""
+    target_words: int | None = None
+    requirements: list[str] = field(default_factory=list)
+
+
+@dataclass
+class OutputLocalSpec(DataClassSerializationMixin):
+    directory: str = "output"
+    formats: list[str] = field(default_factory=list)
+    overwrite: bool = False
+
+
+@dataclass
+class OutputPublishSpec(DataClassSerializationMixin):
+    type: str = "google_docs"
+    title: str = ""
+    folder: str | None = None
+    update_doc_id: str | None = None
+    update_mode: str = "create"  # create | replace | append
+
+
+@dataclass
+class OutputSpec(DataClassSerializationMixin):
+    local: OutputLocalSpec = field(default_factory=OutputLocalSpec)
+    publish: OutputPublishSpec | None = None
+    sections: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.local, dict):
+            self.local = OutputLocalSpec.from_dict(self.local)
+        if isinstance(self.publish, dict):
+            self.publish = OutputPublishSpec.from_dict(self.publish)
+
+
+@dataclass
 class AssignmentSpec(DataClassSerializationMixin):
     title: str = ""
     topic: str = ""
@@ -56,6 +94,8 @@ class AssignmentSpec(DataClassSerializationMixin):
     known_identifiers: list[str] = field(default_factory=list)
     outline: list[str] = field(default_factory=list)
     voice_profile: str | None = None
+    output: OutputSpec = field(default_factory=OutputSpec)
+    sections: list[SectionSpec] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -63,6 +103,12 @@ class AssignmentSpec(DataClassSerializationMixin):
             self.source_requirements = SourceRequirements.from_dict(self.source_requirements)
         if isinstance(self.length_constraints, dict):
             self.length_constraints = LengthConstraints.from_dict(self.length_constraints)
+        if isinstance(self.output, dict):
+            self.output = OutputSpec.from_dict(self.output)
+        elif self.output is None:
+            self.output = OutputSpec()
+        if self.sections and isinstance(self.sections[0], dict):
+            self.sections = [SectionSpec.from_dict(s) for s in self.sections]
         if not self.title and self.topic:
             # Use first line or up to 60 chars of topic as default title
             clean_topic = self.topic.strip().split("\n")[0]
@@ -138,6 +184,27 @@ def validate_assignment_spec(spec: AssignmentSpec) -> list[str]:
                 f"({bounds.min_words} words) exceeds the resolved maximum ({bounds.max_words} words)."
             )
 
+    # Validate output specification if provided
+    if spec.output and spec.output.local:
+        supported_formats = {"md", "markdown", "docx", "pdf"}
+        for fmt in spec.output.local.formats:
+            if fmt.lower().lstrip(".") not in supported_formats:
+                errors.append(
+                    f"Unsupported output format '{fmt}'. Supported formats: {', '.join(sorted(supported_formats))}."
+                )
+
+    if spec.output and spec.output.publish:
+        pub = spec.output.publish
+        supported_types = {"google_docs", "gdocs", "google", "local"}
+        if pub.type.lower() not in supported_types:
+            errors.append(
+                f"Unsupported publish destination '{pub.type}'. Supported types: {', '.join(sorted(supported_types))}."
+            )
+        if pub.update_mode.lower() not in ("create", "replace", "append"):
+            errors.append(
+                f"Invalid publish update_mode '{pub.update_mode}'. Supported modes: create, replace, append."
+            )
+
     return errors
 
 
@@ -182,6 +249,13 @@ def load_assignment_spec(source: str | Path | dict[str, Any]) -> AssignmentSpec:
         raw_data["length_constraints"] = LengthConstraints.from_dict(lc_data)
     elif lc_data is None:
         raw_data["length_constraints"] = LengthConstraints()
+
+    # Parse output nested dict
+    out_data = raw_data.get("output")
+    if isinstance(out_data, dict):
+        raw_data["output"] = OutputSpec.from_dict(out_data)
+    elif out_data is None:
+        raw_data["output"] = OutputSpec()
 
     spec = AssignmentSpec.from_dict(raw_data)
     errors = validate_assignment_spec(spec)

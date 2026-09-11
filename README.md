@@ -66,19 +66,23 @@ HowlPlane's own `ai project validate`.
 ```
 src/howlwriter/
 ├── domain/       Document, Claim, Source/Evidence, ProvenanceGraph,
-│                 VoiceProfile, WritingReport
+│                 VoiceProfile, WritingReport, SourceAuthority
 ├── config/       Layered config: defaults -> mode -> user -> project -> request
 ├── linting/      Deterministic, configurable style-rule engine
 ├── humanize/     Humanization detection + model-backed Humanizer contract
 ├── editing/      Whitespace/heading normalization + model-backed editing seam
 ├── redpen/       Criticism, not rewriting
 ├── facts/        Heuristic claim extraction + verification
-├── research/     Crossref / arXiv scholarly retrieval
+├── research/     Crossref / arXiv scholarly retrieval, source integrity,
+│                 SSRF defense, and semantic authority classification
 ├── citations/    APA 7 formatter (MLA/Chicago/IEEE/Harvard reserved)
 ├── voice/        Voice corpus profiling: build a private personal voice
 │                 from a corpus of your own writing (voice/corpus/), plus
 │                 the original deterministic corpus-stats learner
 ├── review/       Meaning-preservation review
+├── output/       Safe local deliverable management and collision protection
+├── rendering/    Multi-format rendering (Markdown, APA 7 DOCX, PDF, combined)
+├── publishing/   Destination-neutral publishing & native Google Docs adapter
 ├── integration/  The shared model-backed-role seam
 ├── pipeline/     The `howl` end-to-end pipeline
 ├── academic/     Researched academic paper pipeline
@@ -113,7 +117,12 @@ See [docs/architecture.md](docs/architecture.md) for the full walkthrough.
   registry under `~/.howlwriter/voices/`
 - Meaning-preservation review (number/attribution/hedge diffing)
 - The full `howl` pipeline and every CLI subcommand
-- Local web application (FastAPI + React) with source/claim/verification UI
+- Local web application (FastAPI + React) with source/claim/verification and publishing UI
+- Deterministic local output management under `output/` with path-traversal prevention, collision safety, and `publication-manifest.json`
+- Multi-format deliverable renderers: Markdown with frontmatter, APA 7 DOCX (running head, hanging indents, tables, hyperlinks), PDF (Playwright headless Chromium with ReportLab fallback), and `CombinedDocument` for multi-section assignments
+- Source and citation integrity verification (`howlwriter sources verify`) with strict SSRF defense (blocking private/loopback/cloud-metadata IPs and non-HTTP schemes), reachability inspection, and Crossref DOI metadata matching
+- Semantic source authority classification (`PRIMARY_LAW`, `STANDARD`, `GOVERNMENT`, `SCHOLARLY`, `VENDOR_PRIMARY`, etc.) and context-sensitive topic prioritization
+- Destination-neutral artifact publishing architecture with human authority gating, and native Google Docs publishing (`howlwriter google auth/status/logout`, `howlwriter publish`) with narrow scopes and atomic replace/append modes
 
 **Explicit typed interfaces, unconfigured by default (never faked):**
 
@@ -136,6 +145,9 @@ pip install -e ".[dev]"
 
 # With local web application dependencies
 pip install -e ".[dev,web]"
+
+# With full publishing and export dependencies (DOCX, PDF, Google Docs)
+pip install -e ".[dev,web,publish]"
 ```
 
 ## Using the CLI
@@ -182,6 +194,22 @@ howlwriter finalize original.md revised.md
 # Academic paper / assignment writing from a typed specification
 howlwriter paper assignment.yaml --out paper.md
 howlwriter paper assignment.yaml --out paper.md --deterministic
+
+# Multi-format academic production (Markdown, APA 7 DOCX, PDF)
+howlwriter paper assignment.yaml --format md docx pdf --output-dir output/ --verify-sources
+
+# Verify source operational reachability, SSRF protection, and DOI metadata
+howlwriter sources verify sources.json
+
+# Google Docs authentication, status, and logout
+howlwriter google status
+howlwriter google auth
+howlwriter google logout
+
+# Publish verified deliverables to Google Docs or cloud storage
+howlwriter publish draft.md --destination google_docs --title "Research Analysis" --folder-id <folder-id>
+howlwriter publish draft.md --destination google_docs --update-doc-id <doc-id> --update-mode replace
+howlwriter paper assignment.yaml --format md docx pdf --publish google_docs
 
 # Outline-guided authorship: write from your ideas, claims, structure and
 # sentences. The more you supply, the less the model is free to invent.

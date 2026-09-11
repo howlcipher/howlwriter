@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-import re
 import sys
 
 from howlwriter.academic.length import resolve_length_bounds
 from howlwriter.academic.pipeline import run_academic_pipeline
 from howlwriter.academic.research import load_sources_file, save_sources_file
 from howlwriter.academic.spec import AssignmentSpec, load_assignment_spec
-from howlwriter.domain.outline import load_outline
-from howlwriter.provenance.assemble import write_artifacts
 from howlwriter.config.loader import ConfigLoader
 from howlwriter.domain.io import atomic_write_text
+from howlwriter.domain.outline import load_outline
+from howlwriter.output.naming import OutputCollisionError, safe_filename
+from howlwriter.provenance.assemble import write_artifacts
 from howlwriter.voice.corpus.resolve import resolve_voice_option
 
 
@@ -43,7 +43,66 @@ def add_subparser(
     parser.add_argument(
         "--out",
         default=None,
-        help="Output markdown file path (default: <assignment_slug>.md).",
+        help="Explicit output markdown file path (default: output/<safe_title>.md).",
+    )
+    parser.add_argument(
+        "--format",
+        dest="formats",
+        action="append",
+        default=None,
+        help="Deliverable format to generate (md, docx, pdf). May be specified multiple times or comma-separated.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        dest="output_dir",
+        default="output",
+        help="Directory for local generated deliverables (default: output/).",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing output files if they already exist.",
+    )
+    parser.add_argument(
+        "--publish",
+        dest="publish_destination",
+        default=None,
+        help="Destination to publish authorized paper (e.g. 'google-docs').",
+    )
+    parser.add_argument(
+        "--publish-title",
+        dest="publish_title",
+        default=None,
+        help="Title of document in destination (default: assignment title).",
+    )
+    parser.add_argument(
+        "--publish-folder",
+        dest="publish_folder",
+        default=None,
+        help="Destination folder name or ID (e.g. cloud folder or drive ID).",
+    )
+    parser.add_argument(
+        "--update-doc",
+        dest="publish_update_doc_id",
+        default=None,
+        help="Existing document ID to update rather than creating a new one.",
+    )
+    parser.add_argument(
+        "--update-mode",
+        dest="publish_update_mode",
+        choices=["replace", "append"],
+        default="replace",
+        help="Mode for updating existing document ('replace' or 'append').",
+    )
+    parser.add_argument(
+        "--allow-unverified",
+        action="store_true",
+        help="Allow publication even if artifact verification status is not READY.",
+    )
+    parser.add_argument(
+        "--verify-sources",
+        action="store_true",
+        help="Run operational source integrity verification on all retrieved sources.",
     )
     parser.add_argument(
         "--config",
@@ -101,11 +160,7 @@ def add_subparser(
 
 
 def _source_dir(args: argparse.Namespace) -> Path | None:
-    """Directory a provider should run in.
-
-    An outline-only run has no assignment file, so the outline's own directory
-    stands in rather than passing a path that does not exist.
-    """
+    """Directory a provider should run in."""
     for candidate in (getattr(args, "assignment", None), getattr(args, "outline", None)):
         if candidate and Path(candidate).exists():
             return Path(candidate).parent
@@ -136,14 +191,10 @@ def run(args: argparse.Namespace) -> int:
             print(f"error: invalid assignment spec '{args.assignment}': {exc}", file=sys.stderr)
             return 1
     else:
-        # The outline carries the title, topic, length and requirements; the
-        # bridge fills the spec from it inside the pipeline.
         spec = AssignmentSpec(title=outline.title or outline.topic, topic=outline.topic)
 
     config = ConfigLoader().load(project_config_path=args.project_config_path)
 
-    # The assignment spec may name a profile; an explicit flag wins over it,
-    # and both are subordinate to the spec's own requirements and limits.
     resolved_voice = resolve_voice_option(
         voice=getattr(args, "voice", None),
         voice_profile=getattr(args, "voice_profile", None),
@@ -158,13 +209,24 @@ def run(args: argparse.Namespace) -> int:
             print(f"error: failed to load sources from '{args.sources}': {exc}", file=sys.stderr)
             return 1
 
-    # Derive default output path if not specified
+    # Resolve output formats
+    raw_formats: list[str] = []
+    if args.formats:
+        for f in args.formats:
+            raw_formats.extend(part.strip() for part in f.split(","))
+    elif spec.output and spec.output.local and spec.output.local.formats:
+        raw_formats = spec.output.local.formats
+    elif not args.out:
+        raw_formats = ["md"]
+
+    output_formats = [f.lower().lstrip(".") for f in raw_formats if f.strip()]
+
+    # Output directory and safe paths
+    out_dir = Path(args.output_dir)
     if args.out:
         out_path = Path(args.out)
     else:
-        slug = re.sub(r"[^\w\s-]", "", spec.title.lower()).strip()
-        slug = re.sub(r"[\s_-]+", "_", slug)[:40] or "academic_paper"
-        out_path = Path(f"{slug}.md")
+        out_path = out_dir / safe_filename(spec.title, "md")
 
     bounds = resolve_length_bounds(spec)
     lc = spec.length_constraints
@@ -178,6 +240,7 @@ def run(args: argparse.Namespace) -> int:
     if spec.requirements:
         print(f"  Required Criteria: {len(spec.requirements)}")
     print(f"  Style:         {spec.citation_style.upper()}")
+    print(f"  Formats:       {', '.join(output_formats)}")
     print("  Running research and evidence collection...")
 
     try:
@@ -189,14 +252,50 @@ def run(args: argparse.Namespace) -> int:
             deterministic_only=args.deterministic,
             cwd=_source_dir(args),
             seed=args.seed,
+            verify_sources=args.verify_sources,
+            output_dir=out_dir,
+            output_formats=output_formats,
+            publish_destination=args.publish_destination,
+            publish_title=args.publish_title,
+            publish_folder=args.publish_folder,
+            publish_update_doc_id=args.publish_update_doc_id,
+            publish_update_mode=args.publish_update_mode,
+            overwrite=args.overwrite,
+            allow_unverified_publish=args.allow_unverified,
         )
+    except OutputCollisionError as coll_exc:
+        print(f"error: {coll_exc}", file=sys.stderr)
+        return 1
     except Exception as exc:
         print(f"error: academic paper generation failed: {exc}", file=sys.stderr)
         return 1
 
-    # Atomic write of final paper
-    atomic_write_text(out_path, result.final_document.text)
-    print(f"Wrote {out_path}")
+    # Atomic write of final paper to explicit --out if supplied and not already in deliverables
+    if args.out:
+        atomic_write_text(out_path, result.final_document.text)
+        print(f"Wrote {out_path}")
+
+    # Report generated local deliverables
+    if result.local_deliverables:
+        print("\nLOCAL DELIVERABLES")
+        for deliv in result.local_deliverables:
+            print(f"  [{deliv.format.upper()}] {deliv.path} (SHA256: {deliv.sha256[:12]}...)")
+
+    # Report publication result
+    if result.publish_result:
+        print("\nPUBLICATION")
+        pub = result.publish_result
+        if pub.is_success:
+            print(f"  Destination: {pub.destination_type}")
+            print(f"  Title:       {pub.artifact_title}")
+            if pub.artifact_id:
+                print(f"  Document ID: {pub.artifact_id}")
+            if pub.url:
+                print(f"  URL:         {pub.url}")
+        else:
+            print(f"  Status: FAILED")
+            for diag in pub.diagnostics:
+                print(f"  - {diag}")
 
     if getattr(result, "authorship_coverage", None) is not None:
         coverage = result.authorship_coverage
@@ -238,9 +337,6 @@ def run(args: argparse.Namespace) -> int:
         sources_path = out_path.with_suffix(".sources.json")
         save_sources_file(sources_path, result.sources)
         print(f"Wrote {sources_path}")
-        # The machine-readable form of the report. Without it the only way to
-        # see which checks failed is to read the rendered text, which makes
-        # every failure mode unusable from a script.
         report_path = out_path.with_suffix(".report.json")
         atomic_write_text(report_path, result.report.to_json() + "\n")
         print(f"Wrote {report_path}")

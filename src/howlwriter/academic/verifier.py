@@ -47,6 +47,8 @@ class VerificationSummary(DataClassSerializationMixin):
     identifier_warnings: list[str] = field(default_factory=list)
     freshness_findings: list[FreshnessFinding] = field(default_factory=list)
     freshness_warnings: list[str] = field(default_factory=list)
+    source_integrity_findings: list[Any] = field(default_factory=list)
+    source_integrity_warnings: list[str] = field(default_factory=list)
     status: str = "PASS"  # "PASS" | "NEEDS_REVIEW" | "BLOCKED" | "REJECTED"
 
     @classmethod

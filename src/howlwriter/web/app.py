@@ -19,6 +19,7 @@ from howlwriter.web.routes.providers import router as providers_router
 from howlwriter.web.routes.redpen import router as redpen_router
 from howlwriter.web.routes.runs import router as runs_router
 from howlwriter.web.routes.provenance import router as provenance_router
+from howlwriter.web.routes.publishing import router as publishing_router
 from howlwriter.web.routes.voices import router as voices_router
 
 
@@ -49,6 +50,7 @@ def create_app(static_dir: Path | str | None = None) -> FastAPI:
     app.include_router(academic_router)
     app.include_router(jobs_router)
     app.include_router(runs_router)
+    app.include_router(publishing_router)
     app.include_router(providers_router)
     app.include_router(voices_router)
     app.include_router(provenance_router)

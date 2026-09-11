@@ -120,6 +120,16 @@ def start_generate_paper(req: GeneratePaperRequest) -> JobResponse:
             run_id=j.run_id,
             cwd=cwd_path,
             stage_callback=_on_stage,
+            output_formats=req.output_formats,
+            output_dir=req.output_dir,
+            overwrite=req.overwrite,
+            publish=req.publish,
+            publish_title=req.publish_title,
+            publish_folder=req.publish_folder,
+            update_doc_id=req.update_doc_id,
+            update_mode=req.update_mode,
+            verify_sources=req.verify_sources,
+            allow_unverified=req.allow_unverified,
         )
 
         # Build Sources DTOs
@@ -369,6 +379,30 @@ def start_generate_paper(req: GeneratePaperRequest) -> JobResponse:
                 )
             )
 
+        # 7. Source Operational Integrity
+        si_status = res.report.source_integrity_status or "PASS"
+        if si_status in ("FAIL", "BLOCKED"):
+            review_reasons_list.append(
+                ReviewReasonDto(
+                    category="SOURCE_INTEGRITY",
+                    severity="critical",
+                    title=f"Source Operational Integrity ({si_status})",
+                    explanation=(
+                        f"Operational integrity checks detected issues with {len(res.report.source_integrity_findings)} source(s). "
+                        "Check reachability, DOI validity, and metadata matching."
+                    ),
+                )
+            )
+        elif si_status == "PASS_WITH_WARNINGS":
+            review_reasons_list.append(
+                ReviewReasonDto(
+                    category="SOURCE_INTEGRITY",
+                    severity="warning",
+                    title=f"Source Integrity Warnings ({len(res.report.source_integrity_warnings)} notices)",
+                    explanation="Some source URLs or metadata had operational warnings (e.g. redirected or slow response).",
+                )
+            )
+
         result_dto = AcademicResultDto(
             paper_text=res.final_document.text,
             title=res.spec.title,
@@ -411,6 +445,14 @@ def start_generate_paper(req: GeneratePaperRequest) -> JobResponse:
             references_text=refs_text,
             warnings=all_warnings,
             review_reasons=review_reasons_list,
+            source_integrity_status=si_status,
+            source_integrity_warnings=res.report.source_integrity_warnings or 0,
+            source_integrity_findings=[
+                f.to_dict() if hasattr(f, "to_dict") else dict(f)
+                for f in (res.report.source_integrity_findings or [])
+            ],
+            local_outputs=res.report.local_outputs or [],
+            publication_results=res.report.publication_results or [],
         )
 
         j.complete(result_dto)

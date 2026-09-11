@@ -198,6 +198,16 @@ class GeneratePaperRequest(BaseModel):
     spec: AssignmentSpecDto
     deterministic_only: bool = False
     cwd: Optional[str] = None
+    output_formats: list[str] = Field(default_factory=list)
+    output_dir: Optional[str] = None
+    overwrite: bool = False
+    verify_sources: bool = True
+    publish: Optional[str] = None
+    publish_title: Optional[str] = None
+    publish_folder: Optional[str] = None
+    update_doc_id: Optional[str] = None
+    update_mode: str = "replace"
+    allow_unverified: bool = False
 
 
 # Provenance, Verification, and Source Models
@@ -294,6 +304,41 @@ class AcademicResultDto(BaseModel):
     references_text: str = ""
     warnings: list[str] = Field(default_factory=list)
     review_reasons: list[ReviewReasonDto] = Field(default_factory=list)
+    source_integrity_status: str = "PASS"
+    source_integrity_warnings: int = 0
+    source_integrity_findings: list[dict[str, Any]] = Field(default_factory=list)
+    local_outputs: list[dict[str, Any]] = Field(default_factory=list)
+    publication_results: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# Publishing Models
+class PublishRequest(BaseModel):
+    file_path: str
+    destination: str = "google-docs"
+    title: Optional[str] = None
+    folder: Optional[str] = None
+    update_doc_id: Optional[str] = None
+    update_mode: str = "replace"
+    allow_unverified: bool = False
+
+
+class PublishResponse(BaseModel):
+    success: bool
+    destination: str
+    document_id: Optional[str] = None
+    document_url: Optional[str] = None
+    version_or_revision: Optional[str] = None
+    published_at: str
+    error_message: Optional[str] = None
+
+
+class GoogleAuthStatusResponse(BaseModel):
+    authenticated: bool
+    token_path: str
+    scopes: list[str] = Field(default_factory=list)
+    client_secrets_found: bool
+    client_secrets_path: Optional[str] = None
+    error: Optional[str] = None
 
 
 # Job Models

@@ -26,6 +26,19 @@ class SourceType(enum.Enum):
     OTHER = "other"
 
 
+class SourceAuthority(str, enum.Enum):
+    PRIMARY_LAW = "PRIMARY_LAW"          # Statutes, regulations, treaties (EUR-Lex, Congress.gov)
+    GOVERNMENT = "GOVERNMENT"            # Regulatory agencies, official guidance (FTC, CISA, ENISA)
+    STANDARD = "STANDARD"                # Standards bodies (NIST, ISO, IEEE, RFC)
+    SCHOLARLY = "SCHOLARLY"              # Peer-reviewed papers, DOI records, arXiv
+    VENDOR_PRIMARY = "VENDOR_PRIMARY"    # Official vendor documentation, CVEs, vendor advisories
+    INDUSTRY = "INDUSTRY"                # Industry whitepapers, trade reports
+    NEWS = "NEWS"                        # Reputable news organizations
+    SECONDARY = "SECONDARY"              # Analysis, commentaries, reputable blogs
+    COMMUNITY = "COMMUNITY"              # Forums, unofficial blogs
+    UNKNOWN = "UNKNOWN"
+
+
 # Source relevance to the assignment topic / query / outline.
 RELEVANCE_DIRECT = "DIRECT"
 RELEVANCE_SUPPORTING = "SUPPORTING"
@@ -90,6 +103,7 @@ class Source(DataClassSerializationMixin):
     # Explicit evidence depth, independent of the free-text field.
     evidence_depth: str = DEPTH_OTHER
     freshness: SourceFreshness = field(default_factory=SourceFreshness)
+    authority: SourceAuthority = SourceAuthority.UNKNOWN
 
     @property
     def was_accessed(self) -> bool:
@@ -105,6 +119,17 @@ class Source(DataClassSerializationMixin):
         support only metadata facts, not arbitrary technical claims.
         """
         return self.relevance in (RELEVANCE_DIRECT, RELEVANCE_SUPPORTING)
+
+    @property
+    def is_primary_authority(self) -> bool:
+        """True if the source is from a primary legal, standard, scholarly, or vendor authority."""
+        return self.authority in (
+            SourceAuthority.PRIMARY_LAW,
+            SourceAuthority.GOVERNMENT,
+            SourceAuthority.STANDARD,
+            SourceAuthority.SCHOLARLY,
+            SourceAuthority.VENDOR_PRIMARY,
+        )
 
     @property
     def is_substantive_evidence(self) -> bool:
@@ -142,4 +167,10 @@ def source_from_dict(entry: dict) -> Source:
     if entry.get("freshness") and isinstance(entry["freshness"], dict):
         f_data = dict(entry["freshness"])
         entry["freshness"] = SourceFreshness.from_dict(f_data)
+    if entry.get("authority"):
+        if isinstance(entry["authority"], str):
+            try:
+                entry["authority"] = SourceAuthority(entry["authority"])
+            except ValueError:
+                entry["authority"] = SourceAuthority.UNKNOWN
     return Source.from_dict(entry)

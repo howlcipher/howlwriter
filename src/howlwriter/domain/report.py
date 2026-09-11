@@ -98,6 +98,11 @@ class WritingReport(DataClassSerializationMixin):
     changes: list[ChangeRecord] = field(default_factory=list)
     change_count: int | None = None
     sources: list[Source] = field(default_factory=list)
+    source_integrity_status: str | None = None
+    source_integrity_warnings: int | None = None
+    source_integrity_findings: list[Any] = field(default_factory=list)
+    local_outputs: list[dict[str, Any]] = field(default_factory=list)
+    publication_results: list[dict[str, Any]] = field(default_factory=list)
 
     def render_text(self) -> str:
         report_title = (
@@ -387,6 +392,37 @@ class WritingReport(DataClassSerializationMixin):
             lines.append("Sources:")
             for index, source in enumerate(self.sources, start=1):
                 lines.append(f"[{index}] {source.title}")
+
+        if self.source_integrity_status is not None or self.source_integrity_warnings is not None:
+            lines.append("")
+            lines.append("Source Integrity:")
+            if self.source_integrity_status is not None:
+                lines.append(f"  Status:              {self.source_integrity_status}")
+            if self.source_integrity_warnings is not None:
+                lines.append(f"  Warnings:            {self.source_integrity_warnings}")
+            for finding in self.source_integrity_findings[:5]:
+                if isinstance(finding, dict):
+                    lines.append(
+                        f"  - [{finding.get('source_id')}] {finding.get('source_title', '')[:50]}: "
+                        f"Access {finding.get('access_status')}, Meta {finding.get('metadata_status')}"
+                    )
+
+        if self.local_outputs:
+            lines.append("")
+            lines.append("Local Deliverables:")
+            for out in self.local_outputs:
+                lines.append(f"  - [{out.get('format', '').upper()}] {out.get('path')}")
+
+        if self.publication_results:
+            lines.append("")
+            lines.append("Publications:")
+            for pub in self.publication_results:
+                status_symbol = "✓" if pub.get("status") == "SUCCESS" else "✗"
+                lines.append(f"  {status_symbol} Destination: {pub.get('destination_type')} ({pub.get('status')})")
+                if pub.get("url"):
+                    lines.append(f"    URL: {pub.get('url')}")
+                if pub.get("artifact_id"):
+                    lines.append(f"    ID:  {pub.get('artifact_id')}")
 
         lines.append("")
         lines.append(f"STATUS: {self.status}")

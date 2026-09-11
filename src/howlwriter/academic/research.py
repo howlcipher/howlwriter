@@ -24,6 +24,7 @@ from howlwriter.domain.source import (
     SourceType,
     source_from_dict,
 )
+from howlwriter.research.authority import classify_source_authority
 
 # Keep distinctive technical tokens (e.g. C++, C#, Rust/C++) intact while
 # stripping decorative punctuation.
@@ -377,6 +378,8 @@ class AcademicResearcher:
             seen_identifiers.add(key)
             # Reassign deterministic ID S001, S002, ...
             s.id = f"S{len(collected)+1:03d}"
+            if not getattr(s, "authority", None) or s.authority == "UNKNOWN":
+                s.authority = classify_source_authority(s)
             collected.append(s)
             return True
 

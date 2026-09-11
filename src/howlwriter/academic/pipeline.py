@@ -6,7 +6,7 @@ CONSISTENCY REVIEW -> REFERENCES -> REPORT.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 import re
@@ -188,6 +188,9 @@ class AcademicPipelineResult:
     authorship_coverage: Any | None = None
     provenance: Any | None = None
     ai_use_statement: Any | None = None
+    local_deliverables: list[Any] = field(default_factory=list)
+    publish_result: Any | None = None
+    source_integrity_report: Any | None = None
 
 
 def run_academic_pipeline(
@@ -224,6 +227,20 @@ def _run_academic_pipeline(
     stage_callback: Callable[[str, str, dict[str, Any]], None] | None = None,
     outline: Any | None = None,
     seed: int | None = None,
+    verify_sources: bool = False,
+    output_dir: Path | str | None = None,
+    output_formats: list[str] | None = None,
+    publish_destination: str | None = None,
+    publish: str | None = None,
+    publish_title: str | None = None,
+    publish_folder: str | None = None,
+    publish_update_doc_id: str | None = None,
+    update_doc_id: str | None = None,
+    publish_update_mode: str = "create",
+    update_mode: str | None = None,
+    overwrite: bool = False,
+    allow_unverified_publish: bool = False,
+    allow_unverified: bool = False,
 ) -> AcademicPipelineResult:
     """Executes the full researched academic paper pipeline.
 
@@ -518,12 +535,32 @@ def _run_academic_pipeline(
     )
     provenance.review["model_additions"] = claim_review.to_dict()
     provenance.warnings.extend(claim_review.notes)
+    source_integrity_report = None
+    if verify_sources:
+        from howlwriter.research.integrity import SourceIntegrityVerifier
+
+        _notify("source_integrity", "RUNNING", "Source Integrity Verification")
+        verifier_int = SourceIntegrityVerifier()
+        source_integrity_report = verifier_int.verify_all(sources)
+        verif_summary.source_integrity_findings = [
+            f.to_dict() for f in source_integrity_report.findings
+        ]
+        for f in source_integrity_report.findings:
+            if f.severity in ("BLOCKING", "WARNING"):
+                verif_summary.source_integrity_warnings.extend(f.diagnostics)
+        _notify("source_integrity", "DONE", "Source Integrity Verification", {
+            "status": source_integrity_report.status,
+            "blocking": source_integrity_report.blocking_count,
+            "warnings": source_integrity_report.warning_count,
+        })
+
     _notify("claim_verification", "DONE", "Claim & Provenance Verification", {
         "supported": verif_summary.supported_claims,
         "partially_supported": verif_summary.partially_supported_claims,
         "unsupported": verif_summary.unsupported_claims,
         "contradicted": verif_summary.contradicted_claims,
         "freshness_warnings": len(verif_summary.freshness_warnings),
+        "source_integrity_warnings": len(verif_summary.source_integrity_warnings),
         "total_claims": len(provenance_graph.claims),
     })
 
@@ -763,10 +800,19 @@ def _run_academic_pipeline(
             f.severity in ("NEEDS_REVIEW", "WARNING", "BLOCKED")
             for f in verif_summary.freshness_findings
         )
+        or any(
+            (isinstance(f, dict) and f.get("severity") in ("BLOCKING", "WARNING"))
+            or getattr(f, "severity", None) in ("BLOCKING", "WARNING")
+            for f in verif_summary.source_integrity_findings
+        )
     )
     has_blocking_deficiency = any(
         f.severity == "BLOCKED" or getattr(f.severity, "value", "") == "BLOCKED"
         for f in verif_summary.freshness_findings
+    ) or any(
+        (isinstance(f, dict) and f.get("severity") == "BLOCKING")
+        or getattr(f, "severity", None) == "BLOCKING"
+        for f in verif_summary.source_integrity_findings
     )
     has_length_deficiency = wc_status in ("TOO_SHORT", "HARD_LIMIT_FAILURE")
 
@@ -905,6 +951,9 @@ def _run_academic_pipeline(
         meaning_reviewer_duration_seconds=meaning_review_duration,
         total_duration_seconds=total_duration,
         sources=citation_analysis.used_sources or sources,
+        source_integrity_status=source_integrity_report.status if source_integrity_report else None,
+        source_integrity_warnings=len(verif_summary.source_integrity_warnings) if verif_summary.source_integrity_warnings else None,
+        source_integrity_findings=verif_summary.source_integrity_findings,
     )
 
     # 11. RECORD DOGFOOD DIAGNOSTIC ARTIFACT
@@ -1001,6 +1050,137 @@ def _run_academic_pipeline(
     save_provenance(provenance)
     ai_statement = build_ai_use_statement(provenance)
 
+    # 12. LOCAL DELIVERABLE RENDERING & MANIFEST GENERATION
+    local_deliverables = []
+    resolved_formats = output_formats or (
+        spec.output.local.formats if getattr(spec, "output", None) and spec.output.local else None
+    )
+    if resolved_formats:
+        from howlwriter.output.manager import LocalOutputManager
+        from howlwriter.rendering.base import RenderContext
+        from howlwriter.rendering.docx import DocxRenderer
+        from howlwriter.rendering.markdown import MarkdownRenderer
+        from howlwriter.rendering.pdf import PdfRenderer
+
+        target_dir = output_dir or (
+            spec.output.local.directory if getattr(spec, "output", None) and spec.output.local else "output"
+        )
+        should_overwrite = overwrite or (
+            spec.output.local.overwrite if getattr(spec, "output", None) and spec.output.local else False
+        )
+        out_mgr = LocalOutputManager(output_dir=target_dir, overwrite=should_overwrite)
+
+        render_ctx = RenderContext(
+            title=spec.title,
+            citation_style=spec.citation_style,
+            include_ai_disclosure=ai_statement is not None,
+            ai_disclosure_text=ai_statement.render() if ai_statement else None,
+            run_id=active_run_id,
+        )
+
+        for fmt in resolved_formats:
+            fmt_clean = fmt.lower().lstrip(".")
+            if fmt_clean in ("md", "markdown"):
+                rendered = MarkdownRenderer().render(final_document, render_ctx)
+            elif fmt_clean == "docx":
+                rendered = DocxRenderer().render(final_document, render_ctx)
+            elif fmt_clean == "pdf":
+                rendered = PdfRenderer().render(final_document, render_ctx)
+            else:
+                continue
+
+            deliv = out_mgr.write_deliverable(
+                rendered.content,
+                format_extension=rendered.filename_extension,
+                title_or_slug=spec.title,
+                overwrite=should_overwrite,
+            )
+            local_deliverables.append(deliv)
+
+        if local_deliverables:
+            out_mgr.write_manifest(
+                run_id=active_run_id,
+                title=spec.title,
+                authorized_artifact_hash=compute_sha256(final_document.text),
+                deliverables=local_deliverables,
+            )
+
+    # 13. OPTIONAL PUBLICATION
+    publish_result = None
+    pub_type = (
+        publish
+        or publish_destination
+        or (spec.output.publish.type if getattr(spec, "output", None) and spec.output.publish else None)
+    )
+    if pub_type:
+        from howlwriter.publishing.base import (
+            PublicationArtifact,
+            PublishContext,
+            PublishDestination,
+        )
+        from howlwriter.publishing.registry import get_publisher
+
+        pub_title = (
+            publish_title
+            or (spec.output.publish.title if getattr(spec, "output", None) and spec.output.publish else None)
+            or spec.title
+        )
+        pub_folder = publish_folder or (
+            spec.output.publish.folder if getattr(spec, "output", None) and spec.output.publish else None
+        )
+        pub_update_doc_id = (
+            update_doc_id
+            or publish_update_doc_id
+            or (spec.output.publish.update_doc_id if getattr(spec, "output", None) and spec.output.publish else None)
+        )
+        pub_update_mode = (
+            update_mode
+            or publish_update_mode
+            or (spec.output.publish.update_mode if getattr(spec, "output", None) and spec.output.publish else "create")
+        )
+        pub_allow_unverified = allow_unverified or allow_unverified_publish
+
+        pub = get_publisher(pub_type)
+        pub_art = PublicationArtifact(
+            title=pub_title,
+            content=final_document.text,
+            format="md",
+            source_run_id=active_run_id,
+            authorized_sha256=compute_sha256(final_document.text),
+            metadata={"status": final_status},
+        )
+        pub_dest = PublishDestination(
+            destination_type=pub_type,
+            target=pub_folder or pub_title,
+            folder=pub_folder,
+            update_doc_id=pub_update_doc_id,
+            update_mode=pub_update_mode,
+        )
+        pub_ctx = PublishContext(
+            run_id=active_run_id,
+            allow_unverified=pub_allow_unverified,
+        )
+        publish_result = pub.publish(pub_art, pub_dest, pub_ctx)
+
+    # Update report and record with local deliverables & publication results
+    report.local_outputs = [d.to_dict() for d in local_deliverables]
+    if publish_result is not None:
+        report.publication_results = [publish_result.to_dict()]
+
+    record.authorized_artifact_hash = compute_sha256(final_document.text)
+    record.local_outputs = [d.to_dict() for d in local_deliverables]
+    if publish_result is not None:
+        record.publication_records = [publish_result.to_dict()]
+    if source_integrity_report is not None:
+        record.source_integrity_status = source_integrity_report.status
+        record.source_integrity_findings_count = len(source_integrity_report.findings)
+        record.sources_verified_count = source_integrity_report.total_sources
+
+    try:
+        record.save()
+    except Exception:
+        pass
+
     return AcademicPipelineResult(
         authorship_coverage=authorship_coverage,
         provenance=provenance,
@@ -1019,4 +1199,7 @@ def _run_academic_pipeline(
         semantic_meaning_result=semantic_res,
         consistency_review_result=consistency_res,
         report=report,
+        local_deliverables=local_deliverables,
+        publish_result=publish_result,
+        source_integrity_report=source_integrity_report,
     )

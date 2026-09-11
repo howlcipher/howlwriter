@@ -16,11 +16,13 @@ from howlwriter.cli.commands import (
     editor,
     factcheck,
     finalize,
+    google,
     howl,
     humanize,
     lint,
     outline,
     paper,
+    publish,
     redpen,
     references,
     research,
@@ -34,6 +36,8 @@ from howlwriter.integration.model_role import ModelRoleNotConfiguredError
 
 _COMMAND_MODULES = (
     paper,
+    publish,
+    google,
     writer,
     editor,
     humanize,
@@ -67,6 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     for module in _COMMAND_MODULES:
         module.add_subparser(subparsers)
+    sources.add_verify_subparser(subparsers)
     return parser
 
 

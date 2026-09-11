@@ -32,3 +32,11 @@ dogfood/*.json
 *.manifest.txt
 *.outline.yaml
 !tests/**/*.outline.yaml
+
+# HowlWriter generated deliverables
+output/*
+!output/.gitkeep
+
+# External agents / tooling
+.agents/
+.devin/

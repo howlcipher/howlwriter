@@ -1,0 +1,45 @@
+title: "Cybersecurity Regulations and Governance Frameworks"
+topic: "Comparative analysis of EU GDPR cross-border transfer restrictions, NIST CSF 2.0 governance mandates, and CISA Binding Operational Directive 22-01."
+type: "academic"
+target_words: 1200
+word_tolerance_percent: 15.0
+citation_style: "apa7"
+source_requirements:
+  minimum_sources: 4
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+sections:
+  - id: "main_post"
+    title: "Main Discussion Post: Comparative Regulatory Analysis"
+    target_words: 600
+    requirements:
+      - "Analyze EU GDPR Chapter V international transfer restrictions under Articles 44 through 49."
+      - "Evaluate NIST CSF 2.0 Governance Category (GV.OC) organizational context requirements."
+      - "Examine CISA Binding Operational Directive 22-01 remediation timelines for Known Exploited Vulnerabilities."
+  - id: "peer_resp_1"
+    title: "Peer Response 1: Cloud Hyperscalers and Standard Contractual Clauses"
+    target_words: 300
+    requirements:
+      - "Critique multinational enterprise reliance on Standard Contractual Clauses (SCCs) and supplementary measures."
+  - id: "peer_resp_2"
+    title: "Peer Response 2: SME Feasibility under CISA BOD 22-01 Timelines"
+    target_words: 300
+    requirements:
+      - "Evaluate small-and-medium enterprise resource constraints when attempting 14-day vulnerability remediation."
+outline:
+  - "Introduction to Regulatory and Governance Frameworks"
+  - "GDPR International Data Transfer Mandates and Standard Contractual Clauses"
+  - "NIST CSF 2.0 Organizational Context and Cybersecurity Governance"
+  - "CISA Binding Operational Directive 22-01 and Federal Vulnerability Remediation"
+  - "Synthesis and Multi-Tier Compliance Feasibility"
+output:
+  local:
+    directory: "output"
+    formats:
+      - "md"
+      - "docx"
+      - "pdf"
+    overwrite: true
+  publish:
+    type: "google_docs"
+    title: "Cybersecurity Regulations and Governance Frameworks"

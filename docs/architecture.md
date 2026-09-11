@@ -5,14 +5,16 @@
 ```
 src/howlwriter/
 ├── domain/       Document/Paragraph/Sentence, Claim, Source/Evidence,
-│                 ProvenanceGraph, VoiceProfile, WritingReport, WritingMode
+│                 ProvenanceGraph, VoiceProfile, WritingReport, WritingMode,
+│                 SourceAuthority
 ├── config/       HowlWriterConfig schema, built-in defaults, the layered loader
 ├── linting/      LintEngine + builtin_rules/ (one module per rule family)
 ├── humanize/     detector (reuses LintEngine) + SafeRewriter + ModelHumanizer
 ├── editing/      PassthroughEditor + the model-backed Editor seam
 ├── redpen/       RedPenEngine (criticism, not rewriting)
 ├── facts/        HeuristicClaimExtractor + ClaimVerifier
-├── research/     the Researcher Protocol & query model
+├── research/     the Researcher Protocol, query model, SourceIntegrityVerifier,
+│                 SSRF defense, and SourceAuthority classifier
 ├── academic/     Researched academic paper pipeline: Crossref/arXiv retrieval,
 │                 structured drafting, length remediation, outline conformance,
 │                 identifier grounding, requirements classification, and verifier
@@ -23,6 +25,9 @@ src/howlwriter/
 │                 CorpusStatsLearner and the VoiceAnalyzer Protocol.
 │                 See docs/voice-corpus.md
 ├── review/       MeaningPreservationReviewer + WritingRole registry
+├── output/       LocalOutputManager, safe naming, collision protection, manifests
+├── rendering/    Multi-format renderers (Markdown, APA 7 DOCX, PDF, CombinedDocument)
+├── publishing/   ArtifactPublisher protocol, registry, Google Docs adapter
 ├── diagnostic/   Run records (run_record.py) for durable local telemetry
 ├── web/          FastAPI backend + React SPA local web application
 ├── integration/  HowlPlaneWritingBridge / ModelRoleNotConfiguredError --
@@ -97,6 +102,72 @@ imports the same filler-phrase constants from
   sequence `INPUT -> EDIT -> HUMANIZE -> LINT -> RED PEN -> FINAL REVIEW -> OUTPUT`.
 - **The `paper` pipeline (`academic/pipeline.py`):** Runs the researched
   academic workflow `SPEC -> RETRIEVAL -> DRAFTING -> LENGTH REMEDIATION -> OUTLINE CHECK -> VERIFICATION -> CITATIONS -> REVIEW -> OUTPUT`.
+
+## Standard Local Output Management
+
+`output/manager.py::LocalOutputManager` provides deterministic local deliverable
+management. It writes finished artifacts to a dedicated output directory
+(defaulting to `output/` with a tracked `output/.gitkeep` and gitignored files).
+
+Key principles:
+- **Safe Filename Generation (`naming.py`):** Derived deterministically from document
+  titles or specifications. Path separators (`/`, `\`) and directory traversal
+  sequences (`..`) are strictly rejected (`PathTraversalError`).
+- **Collision Safety:** Existing files will never be silently overwritten. When a
+  collision occurs without an explicit overwrite flag, `OutputCollisionError` is
+  raised.
+- **Publication Manifest (`publication-manifest.json`):** Records all generated
+  files, their formats, byte lengths, SHA-256 digests, and links them directly to the
+  diagnostic `run_id`.
+
+## Multi-Format Rendering Engine
+
+`rendering/base.py` defines the `DocumentRenderer` protocol returning a deterministic
+`RenderedArtifact`. Concrete implementations:
+- **`MarkdownRenderer` (`rendering/markdown.py`):** Emits structured Markdown with
+  optional YAML frontmatter (title, author, date, style, word count, run ID).
+- **`DocxRenderer` (`rendering/docx.py`):** Produces APA 7 compliant Word documents
+  using `python-docx`. Includes 1-inch margins, running heads, page numbering, APA 7
+  heading hierarchy (Levels 1-5), hanging indents (0.5 in) for References, native tables
+  with standard APA 3-line borders, and clickable hyperlinks.
+- **`PdfRenderer` (`rendering/pdf.py`):** Generates publication-grade PDFs via Playwright
+  headless Chromium with clean CSS print styling (`@page` rules, page counters, serif
+  typography), falling back to ReportLab when Chromium is unavailable.
+- **`CombinedDocument` (`rendering/combined.py`):** Aggregates multi-section assignments
+  (e.g., Main Discussion Post + Peer Responses) into a single cohesive deliverable with
+  section headers, word counts, and an integrated references page.
+
+## Artifact Publishing & Human Authority Gating
+
+`publishing/base.py` defines a destination-neutral `ArtifactPublisher` protocol.
+Publishers register with `PublisherRegistry` (`publishing/registry.py`).
+- **Google Docs Publisher (`publishing/google/`):** Native Google Docs adapter using
+  OAuth2 (`google-auth-oauthlib`), requesting only narrow scopes (`documents` and
+  `drive.file`), and saving tokens to `~/.howlwriter/credentials/google_token.json`
+  with strict `0600` permissions. Supports creating documents in designated folders
+  and updating existing documents via atomic `replace` (clearing existing body content
+  via `deleteContentRange` before inserting) or `append` modes.
+- **Human Authority Boundary:** HowlWriter enforces an uncompromising human gate:
+  automated publishing is rejected with an error if verification status is not `READY`
+  or `PASS`, unless the user explicitly passes `--allow-unverified`.
+
+## Source & Citation Integrity Verification
+
+`research/integrity.py::SourceIntegrityVerifier` verifies the operational health of
+sources, orthogonal to the semantic relevance of claim evidence:
+- **SSRF Defenses (`validate_url_security`):** Validates all URLs against Server-Side
+  Request Forgery. Strictly blocks IPv4/IPv6 loopback (`127.0.0.1`, `::1`), link-local,
+  RFC 1918 private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), cloud
+  metadata endpoints (`169.254.169.254`), and non-HTTP schemes (`file://`, `ftp://`).
+- **Reachability & Resolution:** Executes lightweight HTTP HEAD/GET probes checking
+  HTTP status codes, redirects, and content types.
+- **Crossref DOI Resolution:** Queries the Crossref API (`api.crossref.org/works/{doi}`)
+  to verify DOI existence and compares registered metadata against source title using
+  Levenshtein similarity.
+- **Source Authority Model (`research/authority.py`):** Classifies sources into semantic
+  authority tiers (`PRIMARY_LAW`, `STANDARD`, `GOVERNMENT`, `SCHOLARLY`, `VENDOR_PRIMARY`,
+  `INDUSTRY`, `NEWS`, `SECONDARY`, `COMMUNITY`, `UNKNOWN`) and detects preferred
+  authorities based on assignment topics.
 
 ## The CLI
 
