@@ -12,6 +12,7 @@ import sys
 
 from howlwriter import __version__
 from howlwriter.cli.commands import (
+    benchmark,
     cite,
     editor,
     factcheck,
@@ -35,6 +36,7 @@ from howlwriter.cli.commands import (
 from howlwriter.integration.model_role import ModelRoleNotConfiguredError
 
 _COMMAND_MODULES = (
+    benchmark,
     paper,
     publish,
     google,
