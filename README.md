@@ -120,7 +120,7 @@ See [docs/architecture.md](docs/architecture.md) for the full walkthrough.
 - Local web application (FastAPI + React) with source/claim/verification and publishing UI
 - Deterministic local output management under `output/` with path-traversal prevention, collision safety, and `publication-manifest.json`
 - Multi-format deliverable renderers: Markdown with frontmatter, APA 7 DOCX (running head, hanging indents, tables, hyperlinks), PDF (Playwright headless Chromium with ReportLab fallback), and `CombinedDocument` for multi-section assignments
-- Source and citation integrity verification (`howlwriter sources verify`) with strict SSRF defense (blocking private/loopback/cloud-metadata IPs and non-HTTP schemes), reachability inspection, and Crossref DOI metadata matching
+- Source and citation integrity verification (`howlwriter sources verify`) with per-hop redirect SSRF defense (blocking private/loopback/cloud-metadata IPs, loop detection, hop limits), socket peer IP verification against DNS rebinding, bounded streaming retrieval (capped at 1 MiB for HTML, uninspected for binaries), and Crossref DOI metadata matching with hybrid title similarity
 - Semantic source authority classification (`PRIMARY_LAW`, `STANDARD`, `GOVERNMENT`, `SCHOLARLY`, `VENDOR_PRIMARY`, etc.) and context-sensitive topic prioritization
 - Destination-neutral artifact publishing architecture with human authority gating, and native Google Docs publishing (`howlwriter google auth/status/logout`, `howlwriter publish`) with narrow scopes and atomic replace/append modes
 
