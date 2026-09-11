@@ -158,12 +158,16 @@ sources, orthogonal to the semantic relevance of claim evidence:
 - **SSRF Defenses (`validate_url_security`):** Validates all URLs against Server-Side
   Request Forgery. Strictly blocks IPv4/IPv6 loopback (`127.0.0.1`, `::1`), link-local,
   RFC 1918 private subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), cloud
-  metadata endpoints (`169.254.169.254`), and non-HTTP schemes (`file://`, `ftp://`).
-- **Reachability & Resolution:** Executes lightweight HTTP HEAD/GET probes checking
-  HTTP status codes, redirects, and content types.
+  metadata endpoints (`169.254.169.254`, `metadata.google.internal`), and non-HTTP schemes
+  (`file://`, `ftp://`). Enforces per-hop redirect validation with hop limits and cycle detection.
+- **DNS Rebinding Defense:** Multi-address resolution checking plus transport-level post-connect
+  socket peer IP verification (`SSRFSafeSyncBackend`) before TLS or HTTP payload transfer.
+- **Reachability & Bounded Retrieval:** Executes lightweight HTTP HEAD/GET probes checking
+  HTTP status codes, redirects, and content types. HTML body reads are strictly capped at 1 MiB
+  with early stream termination, while binary formats (PDF, archives) skip body downloads.
 - **Crossref DOI Resolution:** Queries the Crossref API (`api.crossref.org/works/{doi}`)
-  to verify DOI existence and compares registered metadata against source title using
-  Levenshtein similarity.
+  to verify DOI existence and compares registered metadata against source title using a normalized
+  hybrid metric (`difflib.SequenceMatcher` + token Jaccard + subtitle/publisher handling).
 - **Source Authority Model (`research/authority.py`):** Classifies sources into semantic
   authority tiers (`PRIMARY_LAW`, `STANDARD`, `GOVERNMENT`, `SCHOLARLY`, `VENDOR_PRIMARY`,
   `INDUSTRY`, `NEWS`, `SECONDARY`, `COMMUNITY`, `UNKNOWN`) and detects preferred

@@ -125,7 +125,15 @@ def classify_source_authority(source: Source) -> SourceAuthority:
     pub = (source.publisher or "").lower()
     if any(k in pub for k in ("nist", "national institute of standards", "iso", "ieee standard")):
         return SourceAuthority.STANDARD
-    if any(k in pub for k in ("european parliament", "european commission", "council of the european union", "us congress")):
+    if any(
+        k in pub
+        for k in (
+            "european parliament",
+            "european commission",
+            "council of the european union",
+            "us congress",
+        )
+    ):
         return SourceAuthority.PRIMARY_LAW
     if any(k in pub for k in ("department of", "ministry of", "agency", "federal trade commission", "cisa")):
         return SourceAuthority.GOVERNMENT
@@ -147,7 +155,8 @@ def classify_source_authority(source: Source) -> SourceAuthority:
 
 # Keywords suggesting required primary legal or regulatory grounding
 _LAW_KEYWORDS = re.compile(
-    r"\b(gdpr|ccpa|cpra|hipaa|ferpa|dora|nis2|cyber resilience act|statute|regulation|directive|fine|penalt|compliance mandate)\b",
+    r"\b(gdpr|ccpa|cpra|hipaa|ferpa|dora|nis2|cyber resilience act|"
+    r"statute|regulation|directive|fine|penalt|compliance mandate)\b",
     re.IGNORECASE,
 )
 

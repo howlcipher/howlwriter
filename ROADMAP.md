@@ -31,6 +31,7 @@ The following capabilities are implemented, tested, and active on `main`:
 | 23 | Source Freshness Gating v1 | Done -- verification of authority currency against claim temporal context, explicit historical justification support, version-mismatch blocking, replacement diagnostics, and independent evaluation from evidence depth |
 | 24 | CI & Repository Portability v1 | Done -- machine-independent environment discovery, elimination of workstation-specific paths, hermetic test doubles, Playwright responsive testing, and automated GitHub Actions CI matrix |
 | 25 | Artifact Publishing, Source Integrity & Output Management | Done -- Destination-neutral publishing protocol, native Google Docs publisher (OAuth2, narrow scopes, replace/append modes, human authority gate), deterministic local output management (`output/`, collision safety, manifests), multi-format rendering engine (Markdown, APA 7 DOCX, headless Chromium / ReportLab PDF, multi-section CombinedDocument), source reachability and citation integrity verification with strict SSRF defenses and Crossref DOI validation, semantic source authority classification (`PRIMARY_LAW`, `STANDARD`, `GOVERNMENT`, etc.) with context-sensitive topic prioritization, web UI publish rail, and CLI commands (`howlwriter publish`, `howlwriter google`, `howlwriter sources verify`) |
+| 25.1 | Source Integrity Hardening & Verification Accuracy | Done -- Per-hop redirect SSRF validation with cycle detection and hop limits, dual-layer DNS rebinding mitigation (multi-address check + post-connect socket peer validation), bounded streaming reads (capped at 1 MiB for HTML, uninspected for binaries), hybrid normalized title similarity (SequenceMatcher + Token Jaccard + Subtitle/platform noise handling), robust DOI normalization, registrar status discrimination, and documentation consistency |
 
 ## Explicitly Deferred (Named, Not Half-Built)
 
@@ -39,7 +40,7 @@ The following capabilities are implemented, tested, and active on `main`:
 - **Real "Voice Match %" Similarity Metric.** `WritingReport.voice_match` stays `None` and is omitted from rendered reports rather than approximated with a fake percentage.
 - **Multi-file / Project-wide Batch Rewriting.** Every CLI command operates on one file or assignment spec at a time to ensure reviewability and human authority gating.
 
-## Known Limitations Surfaced by Milestone 19-22
+## Known Limitations Surfaced by Milestone 19-22 and 25.1
 
 - **Structural convergence is not solved.** The diversity checker now runs
   against generated batches instead of being dead code, and on a fresh
@@ -56,6 +57,13 @@ The following capabilities are implemented, tested, and active on `main`:
 - **No APA reference entry can be generated for most runs.** HowlPlane's
   providers routinely report no model name, and APA's template requires a tool
   and version.
+- **Residual DNS Rebinding & Forward Proxy Boundaries:** Socket-level peer IP
+  validation directly inspects the OS-connected socket before TLS/HTTP transfer
+  for direct connections. If a forward HTTP proxy is explicitly configured, the
+  socket connects to the proxy rather than the origin server, verifying the
+  proxy's IP rather than the remote host. External OS resolver cache poisoning
+  outside the process boundary cannot be cryptographically verified without
+  OS-level DNSSEC.
 
 ## Growth Path
 
