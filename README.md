@@ -86,6 +86,7 @@ src/howlwriter/
 ├── integration/  The shared model-backed-role seam
 ├── pipeline/     The `howl` end-to-end pipeline
 ├── academic/     Researched academic paper pipeline
+├── evaluation/   Empirical benchmarking, fairness baselines, and judging
 ├── web/          FastAPI + React local web application
 └── cli/          argparse CLI, one subcommand per capability
 ```
@@ -227,6 +228,27 @@ of every model call including the exact prompt HowlWriter sent. See
 [docs/provenance.md](docs/provenance.md).
 
 `howlwriter writer <prompt>` drafts prose from notes using the configured Writer role, and `howlwriter research <query>` retrieves scholarly sources. When no model providers are wired in, model-only roles exit with a clear `ModelRoleNotConfiguredError` message rather than doing nothing silently. See [docs/academic-paper.md](docs/academic-paper.md) for details on academic workflows.
+
+### Empirical Benchmarking & Evaluation
+
+```bash
+# List all 36 evaluation cases across 11 categories
+howlwriter benchmark list
+
+# Run the core evaluation suite (deterministic, zero-cost CI mode)
+howlwriter benchmark run --suite core --deterministic-only --mock-models
+
+# Run full evaluation against real providers
+howlwriter benchmark run --suite core --baseline raw_model,strong_prompt,howlwriter_full --repeat 3
+
+# View Markdown summary of the last benchmark run
+howlwriter benchmark report
+
+# Compare a current run against a reference run to detect regressions
+howlwriter benchmark compare --current output/evaluation/benchmark-results.json --reference reference.json
+```
+
+See [docs/evaluation.md](docs/evaluation.md) for details on metric calculations, baseline fairness, and judging independence.
 
 ## Using the local web UI
 

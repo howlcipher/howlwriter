@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from howlwriter import __version__
 from howlwriter.web.routes.academic import router as academic_router
 from howlwriter.web.routes.documents import router as documents_router
+from howlwriter.web.routes.evaluation import router as evaluation_router
 from howlwriter.web.routes.howl import router as howl_router
 from howlwriter.web.routes.humanize import router as humanize_router
 from howlwriter.web.routes.jobs import router as jobs_router
@@ -54,6 +55,7 @@ def create_app(static_dir: Path | str | None = None) -> FastAPI:
     app.include_router(providers_router)
     app.include_router(voices_router)
     app.include_router(provenance_router)
+    app.include_router(evaluation_router)
 
     # Static assets directory
     resolved_static_dir = (
