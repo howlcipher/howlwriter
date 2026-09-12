@@ -245,6 +245,7 @@ backend reports them.
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev,web]"
+.venv/bin/playwright install chromium
 .venv/bin/pytest tests/
 .venv/bin/flake8 src/
 cd frontend && npm install && npm run build
