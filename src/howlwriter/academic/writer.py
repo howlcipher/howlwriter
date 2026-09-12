@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from howlwriter.academic.length import calculate_word_tolerance, count_body_words
-from howlwriter.academic.spec import AssignmentSpec
+from howlwriter.academic.spec import AssignmentSpec, extract_constraints
 from howlwriter.citations.apa7 import APA7Formatter
 from howlwriter.config.schema import HowlWriterConfig
+from howlwriter.constraints.specs import ConstraintSet
 from howlwriter.domain.document import Document
 from howlwriter.domain.modes import WritingMode
 from howlwriter.domain.serialization import DataClassSerializationMixin
@@ -35,6 +36,35 @@ class ModelAcademicWriter:
     """Wired executor for WritingRole.WRITER via HowlPlane."""
 
     role: WritingRole = WritingRole.WRITER
+
+    @staticmethod
+    def _constraint_block(spec: AssignmentSpec) -> str:
+        constraints = extract_constraints(spec)
+        target = constraints.effective_target_words()
+        hard = constraints.effective_max_words()
+        lines: list[str] = ["CONSTRAINTS (highest priority after factual integrity):"]
+        if target is not None:
+            lines.append(f"- Target body words: ~{target}")
+        if hard is not None:
+            lines.append(f"- Hard maximum body words: {hard}")
+            lines.append("- Do not casually consume the full maximum; aim below it unless told otherwise.")
+        if constraints.max_pages is not None:
+            lines.append(f"- Hard maximum pages: {constraints.max_pages}")
+        if constraints.required_sections:
+            lines.append(f"- Required outline sections: {', '.join(constraints.required_sections)}")
+        if constraints.required_items:
+            lines.append("- Required rubric items (preserve one clear instance of each):")
+            for item in constraints.required_items:
+                lines.append(f"    * {item}")
+        if constraints.prohibited_content:
+            lines.append("- Prohibited / unsupported content:")
+            for p in constraints.prohibited_content:
+                lines.append(f"    * {p}")
+        if constraints.compression_notes:
+            lines.append(f"- Compression guidance: {constraints.compression_notes}")
+        lines.append("- Stop elaborating once all required criteria are demonstrated and length is met.")
+        lines.append("- Prefer concise grounded statements over impressive-looking specificity.")
+        return "\n".join(lines)
 
     def draft_paper(
         self,
@@ -98,12 +128,14 @@ EXPLICIT ASSIGNMENT REQUIREMENTS:
 RETRIEVED SOURCE EVIDENCE (ONLY USE THESE SOURCES):
 {sources_block}
 
+{self._constraint_block(spec)}
+
 CRITICAL ACADEMIC WRITING RULES:
 1. Ground all factual assertions in the retrieved sources above.
 2. Insert APA 7 in-text citations using the exact author/year format provided for each source
    (e.g. (Smith, 2024) or Smith (2024)).
 3. DO NOT invent external sources, authors, or DOIs not provided in the source evidence list.
-4. DO NOT invent or fabricate statistics, dates, or study findings.
+4. DO NOT invent or fabricate statistics, dates, study findings, or exact technical identifiers.
 5. If evidence is insufficient for a claim, qualify the statement (e.g. "Research suggests...") or omit it.
 6. Address every section in the required outline. Use clear markdown headings for major outline sections.
 7. Write substantive, rigorous academic prose aiming for the body target of {spec.target_words} words.
@@ -209,12 +241,25 @@ warnings: []
                 f"strictly preserving all outline sections, factual points, and citations."
             )
 
+        constraints = extract_constraints(spec)
+        target = constraints.effective_target_words()
+        hard = constraints.effective_max_words()
+        length_guidance = f"Target body words: ~{target or spec.target_words}"
+        if hard is not None:
+            length_guidance += f"; hard maximum: {hard}"
+            if max_words > hard:
+                max_words = hard
+
         prompt = f"""You are executing a LENGTH CORRECTION pass for the academic paper: "{spec.title}".
 
 INSTRUCTION:
 {instruction}
 
-TARGET BODY WORDS: {spec.target_words} (Allowed range: {min_words} to {max_words} words)
+{length_guidance}
+
+Allowed range: {min_words} to {max_words} words.
+
+{self._constraint_block(spec)}
 
 CURRENT DRAFT:
 ```markdown

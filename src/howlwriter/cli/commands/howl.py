@@ -43,6 +43,34 @@ def add_subparser(
         help="Force deterministic-only execution without model calls.",
     )
     parser.add_argument(
+        "--target-words", type=int, default=None, dest="target_words",
+        help="Target body-word count.",
+    )
+    parser.add_argument(
+        "--max-words", type=int, default=None, dest="max_words",
+        help="Hard maximum body-word count.",
+    )
+    parser.add_argument(
+        "--target-pages", type=int, default=None, dest="target_pages",
+        help="Target page count (approx. 275 words/page).",
+    )
+    parser.add_argument(
+        "--max-pages", type=int, default=None, dest="max_pages",
+        help="Hard maximum page count (approx. 275 words/page).",
+    )
+    parser.add_argument(
+        "--require", action="append", default=[], dest="required_items",
+        help="A required rubric item to preserve (can be repeated).",
+    )
+    parser.add_argument(
+        "--prohibit", action="append", default=[], dest="prohibited_content",
+        help="A prohibited content/identifier type (can be repeated).",
+    )
+    parser.add_argument(
+        "--compression-note", default=None, dest="compression_note",
+        help="Free-form guidance such as 'do not overdo this'.",
+    )
+    parser.add_argument(
         "--out",
         default=None,
         help="Output path (default: <path>.howled.md).",
@@ -58,6 +86,20 @@ def run(args: argparse.Namespace) -> int:
     )
     if args.voice_profile:
         config.voice_profile = args.voice_profile
+    if args.target_words is not None:
+        config.target_words = args.target_words
+    if args.max_words is not None:
+        config.max_words = args.max_words
+    if args.target_pages is not None:
+        config.target_pages = args.target_pages
+    if args.max_pages is not None:
+        config.max_pages = args.max_pages
+    if args.required_items:
+        config.required_items = list(args.required_items)
+    if args.prohibited_content:
+        config.prohibited_content = list(args.prohibited_content)
+    if args.compression_note:
+        config.compression_notes = args.compression_note
     result = run_howl_pipeline(
         args.path,
         config,

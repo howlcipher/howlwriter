@@ -293,6 +293,9 @@ class ModelHumanizerRewriter:
             "7. PREFER CONCRETE LANGUAGE: keep specific numbers, examples, and details "
             "that are already present. Never invent personal experience, statistics, "
             "or anecdotes.",
+            "8. RESPECT EXPLICIT CONSTRAINTS: if a target length, scope, rubric, or "
+            "prohibited-content instruction is supplied, honor it. Do not expand the text "
+            "to meet a target, add extra examples, or re-prove points that are already clear.",
             "",
             mode_instructions,
             "",

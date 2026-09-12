@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from howlwriter.constraints.specs import ConstraintSet
 from howlwriter.domain.serialization import DataClassSerializationMixin
 
 
@@ -26,12 +27,19 @@ class AssignmentSpec(DataClassSerializationMixin):
     topic: str = ""
     type: str = "academic"
     target_words: int = 2000
+    max_words: int | None = None
+    target_pages: int | None = None
+    max_pages: int | None = None
     word_tolerance_percent: float = 10.0
     citation_style: str = "apa7"
     source_requirements: SourceRequirements = field(default_factory=SourceRequirements)
     requirements: list[str] = field(default_factory=list)
+    required_evidence: list[str] = field(default_factory=list)
+    prohibited_content: list[str] = field(default_factory=list)
     outline: list[str] = field(default_factory=list)
     voice_profile: str | None = None
+    source_fidelity: str = "grounded"
+    compression_notes: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -55,6 +63,21 @@ def validate_assignment_spec(spec: AssignmentSpec) -> list[str]:
     if spec.target_words <= 0:
         errors.append(
             f"target_words must be a positive integer, got {spec.target_words}."
+        )
+
+    if spec.max_words is not None and spec.max_words <= 0:
+        errors.append(
+            f"max_words must be a positive integer, got {spec.max_words}."
+        )
+
+    if spec.target_pages is not None and spec.target_pages <= 0:
+        errors.append(
+            f"target_pages must be a positive integer, got {spec.target_pages}."
+        )
+
+    if spec.max_pages is not None and spec.max_pages <= 0:
+        errors.append(
+            f"max_pages must be a positive integer, got {spec.max_pages}."
         )
 
     if spec.word_tolerance_percent < 0 or spec.word_tolerance_percent > 100:
@@ -113,3 +136,32 @@ def load_assignment_spec(source: str | Path | dict[str, Any]) -> AssignmentSpec:
         raise ValueError(f"Invalid assignment spec: {'; '.join(errors)}")
 
     return spec
+
+
+def _cast_str_list(value: Any) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    return [str(value)]
+
+
+def extract_constraints(spec: AssignmentSpec) -> ConstraintSet:
+    """Build a ConstraintSet from an academic assignment specification."""
+    return ConstraintSet(
+        target_words=spec.target_words,
+        max_words=spec.max_words,
+        target_pages=spec.target_pages,
+        max_pages=spec.max_pages,
+        required_sections=list(spec.outline),
+        required_items=list(spec.requirements),
+        required_evidence=list(spec.required_evidence),
+        prohibited_content=list(spec.prohibited_content),
+        source_fidelity=spec.source_fidelity or "grounded",
+        output_only_requirements=_cast_str_list(
+            spec.metadata.get("output_only_requirements")
+        ),
+        compression_notes=spec.compression_notes or "",
+    )

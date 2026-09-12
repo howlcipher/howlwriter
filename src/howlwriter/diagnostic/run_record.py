@@ -176,6 +176,9 @@ class RunRecord(DataClassSerializationMixin):
     error_message: str | None = None
     exit_code: int = 0
 
+    # Constraint-aware pass observability
+    constraint_summary: dict[str, Any] = field(default_factory=dict)
+
     # Correlation
     howlplane_task_ids: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)

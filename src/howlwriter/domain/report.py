@@ -72,6 +72,8 @@ class WritingReport(DataClassSerializationMixin):
     changes: list[ChangeRecord] = field(default_factory=list)
     change_count: int | None = None
     sources: list[Source] = field(default_factory=list)
+    # Constraint-aware pass observability
+    constraint_summary: dict[str, Any] = field(default_factory=dict)
 
     def render_text(self) -> str:
         report_title = (
@@ -241,6 +243,12 @@ class WritingReport(DataClassSerializationMixin):
                     lines.append(f"- [{change.reason}] {change.description}")
                 else:
                     lines.append(f"- {change.description}")
+
+        if self.constraint_summary:
+            lines.append("")
+            lines.append("Constraint-Aware Pass:")
+            for key, value in self.constraint_summary.items():
+                lines.append(f"  {key}: {value}")
 
         if self.sources and self.sources_retrieved is None:
             lines.append("")

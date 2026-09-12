@@ -17,6 +17,7 @@ STANDARD_ACADEMIC_STAGES = [
     ("validate", "Assignment Validated"),
     ("research", "Research & Source Discovery"),
     ("drafting", "Drafting Paper"),
+    ("constraints", "Constraint-Aware Editing"),
     ("length_check", "Word Count & Length Check"),
     ("outline_check", "Outline Conformance"),
     ("claim_verification", "Claim & Provenance Verification"),

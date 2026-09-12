@@ -21,6 +21,8 @@ from howlwriter.academic.research import AcademicResearcher
 from howlwriter.academic.spec import AssignmentSpec, load_assignment_spec
 from howlwriter.academic.verifier import AcademicVerifier, VerificationSummary
 from howlwriter.academic.writer import ModelAcademicWriter
+from howlwriter.constraints.enforcer import ConstraintEnforcer, ConstraintEnforcementResult
+from howlwriter.academic.spec import extract_constraints
 from howlwriter.config.defaults import default_config
 from howlwriter.config.schema import HowlWriterConfig
 from howlwriter.diagnostic.run_record import (
@@ -172,15 +174,56 @@ def run_academic_pipeline(
         "duration": writer_duration,
     })
 
-    # 3. WORD COUNT & BOUNDED LENGTH CORRECTION
+    # 3. CONSTRAINT-AWARE EDITING PASS
+    _notify("constraints", "RUNNING", "Constraint-Aware Editing")
+    t_constraints_start = time.time()
+    constraints = extract_constraints(spec)
+    enforcer_result: ConstraintEnforcementResult | None = None
+    if can_use_models and (
+        constraints.has_length_constraint()
+        or constraints.has_rubric_constraint()
+        or constraints.prohibited_content
+    ):
+        try:
+            enforcer_result = ConstraintEnforcer().enforce(
+                draft_doc,
+                constraints,
+                sources=sources,
+                config=cfg,
+                cwd=cwd,
+                custom_backend=custom_backend,
+                run_id=active_run_id,
+            )
+            draft_doc = enforcer_result.document
+        except Exception as exc:
+            _notify("constraints", "DONE", "Constraint-Aware Editing", {
+                "warning": f"Enforcer skipped: {exc}",
+            })
+    constraints_duration = round(time.time() - t_constraints_start, 2)
+    _notify("constraints", "DONE", "Constraint-Aware Editing", {
+        "words": count_body_words(draft_doc.text),
+        "duration": constraints_duration,
+        "provider": enforcer_result.provider if enforcer_result else None,
+    })
+
+    # 4. WORD COUNT & BOUNDED LENGTH CORRECTION
     _notify("length_check", "RUNNING", "Word Count & Length Check")
     actual_words = count_body_words(draft_doc.text)
     min_words, max_words = calculate_word_tolerance(
         spec.target_words, spec.word_tolerance_percent
     )
+    hard_max = constraints.effective_max_words()
+    if hard_max is not None:
+        max_words = min(max_words, hard_max)
     wc_status, wc_reason = evaluate_word_count(
         actual_words, spec.target_words, spec.word_tolerance_percent
     )
+    if wc_status == "PASS" and hard_max is not None and actual_words > hard_max:
+        wc_status = "TOO_LONG"
+        wc_reason = (
+            f"Body word count ({actual_words}) exceeds explicit hard maximum "
+            f"({hard_max} words)."
+        )
 
     if can_use_models and wc_status != "PASS" and max_length_retries > 0:
         retries = 0
@@ -356,6 +399,30 @@ def run_academic_pipeline(
         "total_duration": total_duration,
     })
 
+    constraint_summary: dict[str, Any] = {
+        "target_length_detected": constraints.effective_target_words(),
+        "hard_length_limit_detected": constraints.effective_max_words(),
+        "approximate_output_length_words": count_body_words(final_document.text),
+        "approximate_output_length_pages": round(
+            count_body_words(final_document.text) / 275, 1
+        ),
+        "rubric_items_detected": len(constraints.required_items)
+        + len(constraints.required_evidence),
+        "rubric_items_preserved": enforcer_result.rubric_items_preserved
+        if enforcer_result
+        else None,
+        "redundancy_removed": enforcer_result.redundancy_removed
+        if enforcer_result
+        else None,
+        "unsupported_specificity_generalized": enforcer_result.unsupported_specificity_generalized
+        if enforcer_result
+        else None,
+        "sequence_repairs": enforcer_result.sequence_repairs
+        if enforcer_result
+        else None,
+        "source_fidelity": constraints.source_fidelity,
+    }
+
     report = WritingReport(
         status=final_status,
         run_id=active_run_id,
@@ -396,6 +463,7 @@ def run_academic_pipeline(
         meaning_reviewer_duration_seconds=meaning_review_duration,
         total_duration_seconds=total_duration,
         sources=citation_analysis.used_sources or sources,
+        constraint_summary=constraint_summary,
     )
 
     # 11. RECORD DOGFOOD DIAGNOSTIC ARTIFACT
@@ -423,6 +491,7 @@ def run_academic_pipeline(
         output_chars=len(final_document.text),
         output_sha256=compute_sha256(final_document.text),
         exit_code=0,
+        constraint_summary=constraint_summary,
     )
     try:
         record.save()

@@ -10,10 +10,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import time
 from typing import Any
 
 from howlwriter.config.schema import HowlWriterConfig
+from howlwriter.constraints.enforcer import ConstraintEnforcer, ConstraintEnforcementResult
+from howlwriter.constraints.specs import extract_constraints_from_config
 from howlwriter.diagnostic.run_record import (
     RunRecord,
     classify_failure,
@@ -107,7 +110,34 @@ def run_howl_pipeline(
             final_document = safe_rewrite.document
             changes.extend(safe_rewrite.changes)
 
-        # 3. LINT: deterministic style rule check on transformed document
+        # 3. CONSTRAINT-AWARE EDITING PASS
+        constraints = extract_constraints_from_config(config)
+        enforcer_result: ConstraintEnforcementResult | None = None
+        if (
+            not deterministic_only
+            and (
+                constraints.has_length_constraint()
+                or constraints.has_rubric_constraint()
+            )
+            and (
+                bridge.is_role_configured(WritingRole.WRITER)
+                or custom_backend is not None
+            )
+        ):
+            try:
+                enforcer_result = ConstraintEnforcer().enforce(
+                    final_document,
+                    constraints,
+                    config=config,
+                    cwd=Path(path).parent,
+                    custom_backend=custom_backend,
+                    run_id=active_run_id,
+                )
+                final_document = enforcer_result.document
+            except Exception:
+                pass
+
+        # 4. LINT: deterministic style rule check on transformed document
         lint_matches = LintEngine().run(final_document, config)
 
         # 4. RED PEN: deterministic critique, cross-referencing extracted claims
@@ -172,6 +202,24 @@ def run_howl_pipeline(
             status = "READY"
 
         total_duration = round(time.time() - start_time, 2)
+        constraint_summary: dict[str, Any] = {
+            "target_length_detected": constraints.effective_target_words(),
+            "hard_length_limit_detected": constraints.effective_max_words(),
+            "approximate_output_length_words": len(re.findall(r"\b[\w'-]+\b", final_document.text)),
+            "rubric_items_detected": len(constraints.required_items),
+            "rubric_items_preserved": enforcer_result.rubric_items_preserved
+            if enforcer_result
+            else None,
+            "redundancy_removed": enforcer_result.redundancy_removed
+            if enforcer_result
+            else None,
+            "unsupported_specificity_generalized": enforcer_result.unsupported_specificity_generalized
+            if enforcer_result
+            else None,
+            "sequence_repairs": enforcer_result.sequence_repairs
+            if enforcer_result
+            else None,
+        }
         report = WritingReport(
             status=status,
             run_id=active_run_id,
@@ -202,6 +250,7 @@ def run_howl_pipeline(
             total_duration_seconds=total_duration,
             changes=changes,
             change_count=len(changes),
+            constraint_summary=constraint_summary,
         )
 
         record = RunRecord(
@@ -249,6 +298,7 @@ def run_howl_pipeline(
             output_chars=len(final_document.text),
             output_sha256=compute_sha256(final_document.text),
             exit_code=0,
+            constraint_summary=constraint_summary,
         )
         try:
             record.save()

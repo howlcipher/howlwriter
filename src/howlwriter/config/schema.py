@@ -45,3 +45,12 @@ class HowlWriterConfig(DataClassSerializationMixin):
     provider_preferences: dict[str, list[str]] = field(default_factory=dict)
     review_requirements: list[str] = field(default_factory=list)
     apply_safe_rewrites: bool = False
+    # Optional explicit constraints surfaced by CLI or project config
+    target_words: int | None = None
+    max_words: int | None = None
+    target_pages: int | None = None
+    max_pages: int | None = None
+    required_items: list[str] = field(default_factory=list)
+    prohibited_content: list[str] = field(default_factory=list)
+    source_fidelity: str = "grounded"
+    compression_notes: str = ""
