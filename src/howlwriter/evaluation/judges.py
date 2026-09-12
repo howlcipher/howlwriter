@@ -9,6 +9,7 @@ Implements:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import random
 import re
@@ -308,4 +309,87 @@ class ScriptedJudge:
             judge_model="mock_v1",
             independence_status=IndependenceStatus.INDEPENDENT.value,
             position_order=[cand_1.system_id, cand_2.system_id],
+        )
+
+
+@dataclass
+class JudgeCalibrationResult:
+    total_checks: int
+    symmetric_verdicts: int
+    identical_tie_verdicts: int
+    control_correct_verdicts: int
+    symmetry_rate: float
+    identical_tie_rate: float
+    control_accuracy: float
+    position_bias_detected: bool
+    status: str
+
+    def is_healthy(self) -> bool:
+        return not self.position_bias_detected and self.control_accuracy >= 0.8 and self.identical_tie_rate >= 0.8
+
+
+class JudgeCalibrationChecker:
+    """Audits a pairwise judge for position-swap symmetry, identical input TIEs, and control accuracy."""
+
+    def calibrate(self, judge: BenchmarkJudge) -> JudgeCalibrationResult:
+        case = BenchmarkCase(
+            id="judge_cal_1",
+            task="Explain the architecture of zero trust security in cloud environments.",
+            requirements={
+                "required_points": ["micro-segmentation", "continuous authentication", "least privilege"],
+                "min_words": 20,
+            },
+        )
+        cand_high = CandidateOutput(
+            candidate_id="high",
+            system_id="high_quality",
+            text=(
+                "Zero trust architecture replaces perimeter-based security with continuous authentication "
+                "and granular micro-segmentation. Under least privilege access principles, every request "
+                "is strictly verified regardless of network origin."
+            ),
+        )
+        cand_degraded = CandidateOutput(
+            candidate_id="degraded",
+            system_id="degraded_quality",
+            text="In today's fast-paced digital world, cybersecurity is a paramount testament to delving into games.",
+        )
+
+        # 1. Identical check: comparing high to high must tie
+        res_identical = judge.judge(case, cand_high, cand_high, seed=42)
+        identical_tied = res_identical.winning_system == "TIE" or res_identical.winner == "TIE"
+
+        # 2. Control check forward: high vs degraded
+        res_fwd = judge.judge(case, cand_high, cand_degraded, seed=100)
+        fwd_correct = res_fwd.winning_system == "high_quality"
+
+        # 3. Control check reverse: degraded vs high (position swap)
+        res_rev = judge.judge(case, cand_degraded, cand_high, seed=200)
+        rev_correct = res_rev.winning_system == "high_quality"
+
+        # Symmetry: both forward and reverse must pick the same system (high_quality)
+        is_symmetric = res_fwd.winning_system == res_rev.winning_system
+
+        # Position bias: if forward picked A and reverse picked A (i.e. first candidate always won)
+        bias_detected = (res_fwd.winner == "A" and res_rev.winner == "A") or (res_fwd.winner == "B" and res_rev.winner == "B")
+        if not is_symmetric:
+            bias_detected = True
+
+        correct_controls = (1 if fwd_correct else 0) + (1 if rev_correct else 0)
+        control_acc = correct_controls / 2.0
+        identical_rate = 1.0 if identical_tied else 0.0
+        sym_rate = 1.0 if is_symmetric else 0.0
+
+        status = "HEALTHY" if (not bias_detected and control_acc >= 0.8 and identical_rate >= 0.8) else "BIAS_OR_ERROR"
+
+        return JudgeCalibrationResult(
+            total_checks=3,
+            symmetric_verdicts=1 if is_symmetric else 0,
+            identical_tie_verdicts=1 if identical_tied else 0,
+            control_correct_verdicts=correct_controls,
+            symmetry_rate=sym_rate,
+            identical_tie_rate=identical_rate,
+            control_accuracy=control_acc,
+            position_bias_detected=bias_detected,
+            status=status,
         )

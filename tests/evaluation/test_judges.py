@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from howlwriter.evaluation.judges import (
     DeterministicJudge,
-    ModelJudge,
     ScriptedJudge,
 )
 from howlwriter.evaluation.models import (
@@ -69,3 +68,42 @@ def test_scripted_judge():
     judge_tie = ScriptedJudge(winner_choice="TIE")
     comp_tie = judge_tie.judge(case, c1, c2)
     assert comp_tie.winning_system == "TIE"
+
+
+def test_judge_calibration_checker_deterministic():
+    from howlwriter.evaluation.judges import JudgeCalibrationChecker
+
+    checker = JudgeCalibrationChecker()
+    res = checker.calibrate(DeterministicJudge())
+
+    assert res.is_healthy() is True
+    assert res.position_bias_detected is False
+    assert res.identical_tie_rate == 1.0
+    assert res.symmetry_rate == 1.0
+    assert res.control_accuracy == 1.0
+
+
+def test_judge_calibration_checker_detects_position_bias():
+    from howlwriter.evaluation.judges import JudgeCalibrationChecker
+
+    class BiasedJudge:
+        """Flawed judge that always picks Candidate A regardless of quality."""
+
+        def judge(self, case, cand_1, cand_2, seed=None):
+            from howlwriter.evaluation.models import PairwiseComparison
+            return PairwiseComparison(
+                case_id=case.id,
+                candidate_a_system=cand_1.system_id,
+                candidate_b_system=cand_2.system_id,
+                winner="A",
+                winning_system=cand_1.system_id,
+                dimension_scores={},
+                rationale="Biased towards candidate A.",
+            )
+
+    checker = JudgeCalibrationChecker()
+    res = checker.calibrate(BiasedJudge())
+
+    assert res.position_bias_detected is True
+    assert res.is_healthy() is False
+

@@ -33,7 +33,64 @@ class AblationConfiguration(DataClassSerializationMixin):
             overrides["humanization_strength"] = "none"
         if self.disable_red_pen:
             overrides["editing_strength"] = "none"
+        if self.disable_source_verification:
+            overrides["fact_checking_strength"] = "none"
+        if self.disable_source_authority:
+            overrides["minimum_source_quality"] = "none"
         return overrides
+
+    def to_pipeline_flags(self) -> dict[str, bool]:
+        """Returns feature-flag boolean map of which pipeline stages are enabled."""
+        return {
+            "source_verification": not self.disable_source_verification,
+            "source_authority": not self.disable_source_authority,
+            "voice": not self.disable_voice,
+            "independent_review": not self.disable_independent_review,
+            "red_pen": not self.disable_red_pen,
+            "meaning_preservation": not self.disable_meaning_preservation,
+            "provenance_constraints": not self.disable_provenance_constraints,
+            "humanizer": not self.disable_humanizer,
+            "outline_enforcement": not self.disable_outline_enforcement,
+        }
+
+    def to_execution_manifest(self, system_id: str = "") -> Any:
+        """Constructs an ExecutionManifest proving which stages ran and which were bypassed."""
+        from howlwriter.evaluation.models import ExecutionManifest
+
+        bypassed = []
+        if self.disable_source_verification:
+            bypassed.append("source_integrity")
+        if self.disable_source_authority:
+            bypassed.append("source_authority")
+        if self.disable_voice:
+            bypassed.append("voice")
+        if self.disable_independent_review:
+            bypassed.append("independent_review")
+        if self.disable_red_pen:
+            bypassed.append("red_pen")
+        if self.disable_meaning_preservation:
+            bypassed.append("meaning_review")
+        if self.disable_humanizer:
+            bypassed.append("humanizer")
+        if self.disable_outline_enforcement:
+            bypassed.append("outline_enforcement")
+        if self.disable_provenance_constraints:
+            bypassed.append("provenance")
+
+        return ExecutionManifest(
+            system_id=system_id or f"ablation_{self.name}",
+            writer=True,
+            outline_enforcement=not self.disable_outline_enforcement,
+            source_integrity=not self.disable_source_verification,
+            source_authority=not self.disable_source_authority,
+            voice=not self.disable_voice,
+            red_pen=not self.disable_red_pen,
+            meaning_review=not self.disable_meaning_preservation,
+            independent_review=not self.disable_independent_review,
+            humanizer=not self.disable_humanizer,
+            provenance=not self.disable_provenance_constraints,
+            bypassed_stages=bypassed,
+        )
 
 
 # Canonical predefined ablations

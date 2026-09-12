@@ -4,14 +4,10 @@ from __future__ import annotations
 
 import json
 from howlwriter.evaluation.models import (
-    BaselineType,
     BenchmarkCase,
     BenchmarkRun,
-    BenchmarkSuite,
     CandidateOutput,
-    CaseEvaluationResult,
     IndependenceStatus,
-    MetricScore,
     PairwiseComparison,
 )
 

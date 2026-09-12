@@ -29,7 +29,7 @@ Saves reproducible results to output/evaluation/ and prints summary report.
 
 from __future__ import annotations
 
-import json
+import argparse
 import os
 from pathlib import Path
 import sys
@@ -39,8 +39,7 @@ DOGFOOD_DIR = Path(__file__).resolve().parent
 REPO_ROOT = DOGFOOD_DIR.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from howlwriter.evaluation.ablation import PREDEFINED_ABLATIONS
-from howlwriter.evaluation.fixtures import get_benchmark_suite, load_all_cases
+from howlwriter.evaluation.fixtures import get_benchmark_suite
 from howlwriter.evaluation.judges import DeterministicJudge, ModelJudge
 from howlwriter.evaluation.reports import (
     generate_markdown_report,
@@ -50,16 +49,23 @@ from howlwriter.evaluation.runner import BenchmarkRunner
 
 
 def main() -> int:
-    out_dir = REPO_ROOT / "output" / "evaluation"
+    parser = argparse.ArgumentParser(description="Run HowlWriter empirical benchmark evaluation.")
+    parser.add_argument("--suite", default=os.environ.get("HOWLWRITER_BENCH_SUITE", "core"), help="Suite name (core, all, academic, technical).")
+    parser.add_argument("--repeat", type=int, default=int(os.environ.get("HOWLWRITER_BENCH_REPEAT", "1")), help="Number of repetitions.")
+    parser.add_argument("--deterministic-only", action="store_true", default=os.environ.get("HOWLWRITER_BENCH_DETERMINISTIC", "0") == "1", help="Deterministic rule-based judge.")
+    parser.add_argument("--output", default=str(REPO_ROOT / "output" / "evaluation"), help="Output directory.")
+    args = parser.parse_args()
+
+    out_dir = Path(args.output)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    suite_name = os.environ.get("HOWLWRITER_BENCH_SUITE", "core")
-    repeat = int(os.environ.get("HOWLWRITER_BENCH_REPEAT", "1"))
-    deterministic_only = os.environ.get("HOWLWRITER_BENCH_DETERMINISTIC", "0") == "1"
+    suite_name = args.suite
+    repeat = args.repeat
+    deterministic_only = args.deterministic_only
 
     suite = get_benchmark_suite(suite_name)
     print("=" * 80)
-    print(f"HOWLWRITER MILESTONE 26 — EMPIRICAL BENCHMARK EXECUTION")
+    print("HOWLWRITER MILESTONE 26.1 — CALIBRATED BENCHMARK EVALUATION")
     print(f"Suite: '{suite.name}' ({len(suite.cases)} cases, {repeat} repetitions)")
     print(f"Output Directory: {out_dir}")
     print("=" * 80)

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import io
 from pathlib import Path
-from unittest.mock import patch
 
 from howlwriter.cli.main import main
 
@@ -54,3 +52,24 @@ def test_cli_benchmark_report(tmp_path: Path, capsys):
     assert exit_code == 0
     captured = capsys.readouterr()
     assert "Executive Summary & Verdicts" in captured.out
+
+
+def test_cli_benchmark_validate(capsys):
+    exit_code = main(["benchmark", "validate"])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "Evaluator Calibration & Sensitivity Audit" in captured.out
+    assert "ALL EVALUATORS AND JUDGES CALIBRATED & HEALTHY" in captured.out
+
+
+def test_cli_benchmark_validate_json(capsys):
+    import json
+    exit_code = main(["benchmark", "validate", "--json"])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert "evaluator_health" in data
+    assert "judge_calibration" in data
+    assert data["judge_calibration"]["status"] == "HEALTHY"
+    assert data["evaluator_health"]["factuality"]["health"] == "CALIBRATED"
+

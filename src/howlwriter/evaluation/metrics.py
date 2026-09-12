@@ -13,7 +13,6 @@ Measures:
 
 from __future__ import annotations
 
-import math
 import re
 import statistics
 from typing import Any, Sequence
@@ -21,6 +20,11 @@ from typing import Any, Sequence
 from howlwriter.academic.redundancy import detect_redundancy
 from howlwriter.domain.document import Document
 from howlwriter.domain.source import Source, SourceAuthority
+from howlwriter.evaluation.entailment import (
+    DeterministicEntailmentEvaluator,
+    EntailmentEvaluator,
+    EntailmentVerdict,
+)
 from howlwriter.evaluation.models import BenchmarkCase, CandidateOutput, MetricScore
 from howlwriter.facts.extraction import HeuristicClaimExtractor
 from howlwriter.linting.engine import LintEngine
@@ -29,9 +33,7 @@ from howlwriter.redpen.critic import RedPenEngine
 from howlwriter.research.authority import classify_source_authority
 from howlwriter.review.meaning import MeaningPreservationReviewer
 from howlwriter.voice.corpus.diversity import (
-    CONVERGENCE_RATIO,
     FAIL,
-    MIN_CORPUS_VARIATION,
     NOT_EVALUATED,
     PASS,
     WARNING,
@@ -40,12 +42,11 @@ from howlwriter.voice.corpus.diversity import (
 from howlwriter.voice.corpus.features import (
     DocumentFeatures,
     extract_features,
-    percentile,
 )
 
 _HEADING_RE = re.compile(r"^[ \t]*#{1,6}[ \t]+(.*)$", re.MULTILINE)
-_CITATION_PAREN_RE = re.compile(r"\(([A-Z][A-Za-z\-]+(?: et al\.)?(?:, [12]\d{3})?)\)")
-_CITATION_INLINE_RE = re.compile(r"\b([A-Z][A-Za-z\-]+(?: et al\.)?)\s+\(([12]\d{3})\)")
+_CITATION_PAREN_RE = re.compile(r"\(([A-Z][A-Za-z\s&–-]+?(?: et al\.)?(?:,\s*[12]\d{3})?)\)")
+_CITATION_INLINE_RE = re.compile(r"\b([A-Z][A-Za-z\s&–-]+?(?: et al\.)?)\s+\(([12]\d{3})\)")
 _DOI_RE = re.compile(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]+")
 _URL_RE = re.compile(r"https?://[^\s)\]>]+")
 _NUMBER_RE = re.compile(r"\b\d[\d,]*(?:\.\d+)?%?\b")
@@ -219,12 +220,16 @@ class RequirementSatisfactionEvaluator:
         )
 
 
-# --- 2. Factuality & Grounding Evaluator ------------------------------------
+# --- 2. Factuality & Grounding Evaluator (v2-semantic) -----------------------
 
 class FactualityEvaluator:
-    """Evaluates unsupported claims, invented numbers/statistics, and fabricated citations."""
+    """Evaluates factual grounding via deterministic checks and semantic entailment."""
 
     metric_name = "factuality"
+    metric_version = "factuality/v2-semantic"
+
+    def __init__(self, entailment_evaluator: EntailmentEvaluator | None = None) -> None:
+        self.entailment_evaluator = entailment_evaluator or DeterministicEntailmentEvaluator()
 
     def evaluate(self, case: BenchmarkCase, candidate: CandidateOutput) -> MetricScore:
         text = candidate.text or ""
@@ -237,12 +242,22 @@ class FactualityEvaluator:
             for src in case.source_corpus
         ])
         known_context_text = " ".join([str(v) for v in case.context.values()]) + " " + (case.input_text or "")
-        ground_truth = (known_corpus_text + " " + known_context_text).lower()
+        ground_truth = (known_corpus_text + " " + known_context_text + " " + case.task).strip()
+        ground_truth_lower = ground_truth.lower()
 
-        # Numbers check: numbers appearing in output that are not in task/context/sources
+        # Deterministic checks: numbers, dates, citations
         candidate_numbers = set(_NUMBER_RE.findall(text))
-        ground_numbers = set(_NUMBER_RE.findall(case.task + " " + ground_truth))
-        unsupported_numbers = [n for n in candidate_numbers if n not in ground_numbers and not n.startswith("202") and not n.startswith("199")]
+        ground_numbers = set(_NUMBER_RE.findall(ground_truth))
+
+        # Check for numeric contradictions: numbers in text that directly contradict numbers in evidence
+        contradicted_numbers = []
+        for n in candidate_numbers:
+            if n not in ground_numbers and not n.startswith("202") and not n.startswith("199"):
+                # If ground truth has numbers of similar length or percentage
+                if "%" in n and any("%" in gn for gn in ground_numbers):
+                    contradicted_numbers.append(n)
+                elif any(gn.isdigit() and len(gn) == len(n) and gn != n for gn in ground_numbers):
+                    contradicted_numbers.append(n)
 
         # Citation grounding check
         valid_authors = set()
@@ -265,47 +280,76 @@ class FactualityEvaluator:
                 if first_name and first_name not in valid_authors:
                     fabricated_citations.append(cite)
 
-        # Claim grounding heuristic
-        supported_claims = 0
-        unsupported_claims = 0
-        for claim in claims:
-            claim_words = [w for w in re.findall(r"[a-z0-9]+", claim.text.lower()) if len(w) > 3]
-            if not claim_words:
-                continue
-            matched_words = sum(1 for w in claim_words if w in ground_truth)
-            if matched_words >= max(1, int(len(claim_words) * 0.4)):
-                supported_claims += 1
-            else:
-                unsupported_claims += 1
+        # Semantic entailment evaluation across extracted claims
+        entailed_count = 0
+        partially_entailed_count = 0
+        not_entailed_count = 0
+        contradicted_count = 0
+        entailment_records = []
 
-        total_claims = max(1, supported_claims + unsupported_claims)
-        claim_grounding_rate = supported_claims / total_claims
+        if not claims:
+            # Fallback if no specific atomic claims extracted: evaluate text paragraphs directly
+            paragraphs = [p.strip() for p in text.split("\n\n") if len(p.strip().split()) >= 8]
+            for p in paragraphs[:5]:
+                res = self.entailment_evaluator.evaluate(p, ground_truth)
+                if res.verdict == EntailmentVerdict.ENTAILED:
+                    entailed_count += 1
+                elif res.verdict == EntailmentVerdict.PARTIALLY_ENTAILED:
+                    partially_entailed_count += 1
+                elif res.verdict == EntailmentVerdict.CONTRADICTED:
+                    contradicted_count += 1
+                else:
+                    not_entailed_count += 1
+                entailment_records.append({"text": p[:60], "verdict": res.verdict.value, "rationale": res.rationale})
+        else:
+            for claim in claims:
+                res = self.entailment_evaluator.evaluate(claim.text, ground_truth)
+                if res.verdict == EntailmentVerdict.ENTAILED:
+                    entailed_count += 1
+                elif res.verdict == EntailmentVerdict.PARTIALLY_ENTAILED:
+                    partially_entailed_count += 1
+                elif res.verdict == EntailmentVerdict.CONTRADICTED:
+                    contradicted_count += 1
+                else:
+                    not_entailed_count += 1
+                entailment_records.append({"claim": claim.text[:80], "verdict": res.verdict.value, "rationale": res.rationale})
 
-        # Penalties for unsupported numbers and fabricated citations
-        penalty = (len(unsupported_numbers) * 0.05) + (len(fabricated_citations) * 0.15)
-        score = max(0.0, min(1.0, claim_grounding_rate - penalty))
+        total_evaluated = max(1, entailed_count + partially_entailed_count + not_entailed_count + contradicted_count)
+        base_support_rate = ((entailed_count * 1.0) + (partially_entailed_count * 0.6)) / total_evaluated
+
+        unsupported_numbers = [n for n in candidate_numbers if n not in ground_numbers and not n.startswith("202") and not n.startswith("199")]
+
+        # Penalties: severe for contradiction or fabricated citations, moderate for contradicted numbers
+        penalties = (contradicted_count * 0.20) + (len(contradicted_numbers) * 0.10) + (len(fabricated_citations) * 0.15)
+        score = max(0.0, min(1.0, base_support_rate - penalties))
 
         return MetricScore(
             metric_name=self.metric_name,
             score=round(score, 4),
             details={
-                "total_claims": len(claims),
-                "supported_claims": supported_claims,
-                "unsupported_claims": unsupported_claims,
+                "total_claims": total_evaluated,
+                "entailed_claims": entailed_count,
+                "partially_entailed_claims": partially_entailed_count,
+                "not_entailed_claims": not_entailed_count,
+                "contradicted_claims": contradicted_count,
                 "unsupported_numbers": unsupported_numbers[:10],
+                "contradicted_numbers": contradicted_numbers[:5],
                 "fabricated_citations": fabricated_citations,
-                "claim_grounding_rate": round(claim_grounding_rate, 4),
+                "base_support_rate": round(base_support_rate, 4),
+                "sample_entailments": entailment_records[:5],
             },
             deterministic=True,
+            metric_version=self.metric_version,
         )
 
 
-# --- 3. Citation Integrity Evaluator ---------------------------------------
+# --- 3. Citation Integrity Evaluator (v2) -----------------------------------
 
 class CitationIntegrityEvaluator:
-    """Evaluates citation resolution, metadata matching, DOI validity, and source support."""
+    """Evaluates citation resolution, metadata matching, DOI validity, and source support against the case corpus."""
 
     metric_name = "citation_integrity"
+    metric_version = "citation-integrity/v2"
 
     def evaluate(self, case: BenchmarkCase, candidate: CandidateOutput) -> MetricScore:
         text = candidate.text or ""
@@ -316,17 +360,22 @@ class CitationIntegrityEvaluator:
                 score=1.0,
                 details={"citations_prohibited": True},
                 deterministic=True,
+                metric_version=self.metric_version,
             )
 
         paren_cites = _CITATION_PAREN_RE.findall(text)
-        dois = _DOI_RE.findall(text)
-        urls = _URL_RE.findall(text)
+        dois = [d.rstrip(".,;:!?)>]") for d in _DOI_RE.findall(text)]
+        urls = [u.rstrip(".,;:!?)>]") for u in _URL_RE.findall(text)]
 
-        corpus_urls = {src.get("url") for src in case.source_corpus if src.get("url")}
-        corpus_dois = {src.get("doi") for src in case.source_corpus if src.get("doi")}
+        corpus_urls = {src.get("url").strip() for src in case.source_corpus if src.get("url")}
+        corpus_dois = {src.get("doi").strip().lower() for src in case.source_corpus if src.get("doi")}
 
-        resolvable_urls = [u for u in urls if u in corpus_urls or "doi.org" in u or "gov" in u or "org" in u]
-        resolvable_dois = [d for d in dois if d in corpus_dois or d.startswith("10.")]
+        if case.source_corpus and (corpus_urls or corpus_dois):
+            resolvable_urls = [u for u in urls if u in corpus_urls]
+            resolvable_dois = [d for d in dois if d.lower() in corpus_dois]
+        else:
+            resolvable_urls = [u for u in urls if u in corpus_urls or "doi.org" in u or "gov" in u]
+            resolvable_dois = [d for d in dois if d.lower() in corpus_dois or (d.startswith("10.") and len(d) > 8)]
 
         total_sources_cited = len(paren_cites) + len(dois) + len(urls)
         if total_sources_cited == 0:
@@ -336,9 +385,11 @@ class CitationIntegrityEvaluator:
                 score=score,
                 details={"total_citations": 0, "status": "NO_CITATIONS"},
                 deterministic=True,
+                metric_version=self.metric_version,
             )
 
-        resolution_rate = (len(resolvable_urls) + len(resolvable_dois)) / max(1, len(urls) + len(dois)) if (urls or dois) else 0.8
+        resolution_rate = (len(resolvable_urls) + len(resolvable_dois)) / max(1, len(urls) + len(dois)) if (urls or dois) else 1.0
+
         metadata_match_rate = 1.0
         if paren_cites and case.source_corpus:
             matches = 0
@@ -352,7 +403,13 @@ class CitationIntegrityEvaluator:
                         break
             metadata_match_rate = matches / len(paren_cites)
 
-        score = (resolution_rate * 0.5) + (metadata_match_rate * 0.5)
+        if (urls or dois) and paren_cites:
+            score = (resolution_rate * 0.5) + (metadata_match_rate * 0.5)
+        elif (urls or dois):
+            score = resolution_rate
+        else:
+            score = metadata_match_rate
+
         return MetricScore(
             metric_name=self.metric_name,
             score=round(score, 4),
@@ -360,10 +417,13 @@ class CitationIntegrityEvaluator:
                 "citations_count": len(paren_cites),
                 "urls_count": len(urls),
                 "dois_count": len(dois),
+                "resolvable_urls_count": len(resolvable_urls),
+                "resolvable_dois_count": len(resolvable_dois),
                 "resolution_rate": round(resolution_rate, 4),
                 "metadata_match_rate": round(metadata_match_rate, 4),
             },
             deterministic=True,
+            metric_version=self.metric_version,
         )
 
 
@@ -487,12 +547,13 @@ class MeaningPreservationEvaluator:
         )
 
 
-# --- 6. Multidimensional Voice Fidelity Evaluator --------------------------
+# --- 6. Multidimensional Voice Fidelity Evaluator (v2-distance) ------------
 
 class VoiceFidelityEvaluator:
-    """Measures stylistic distribution vectors against reference author writing without fabricating a single percentage."""
+    """Measures stylistic distribution distances against reference author writing without fabricating a single percentage."""
 
     metric_name = "voice_fidelity"
+    metric_version = "voice-fidelity/v2-distance"
 
     def evaluate(
         self,
@@ -504,27 +565,36 @@ class VoiceFidelityEvaluator:
         features = extract_features(text)
 
         if reference_features is None:
-            # Report descriptive multidimensional features of candidate directly
+            ref_text = case.input_text or case.context.get("reference_text") or case.context.get("voice_reference")
+            if ref_text and len(str(ref_text).split()) >= 8:
+                reference_features = extract_features(str(ref_text))
+
+        cand_profile = {
+            "sentence_length_mean": round(features.sentence_length_mean, 2),
+            "sentence_length_stdev": round(features.sentence_length_stdev, 2),
+            "paragraph_words_mean": round(features.paragraph_words_mean, 2),
+            "first_person_rate": round(features.first_person_rate, 4),
+            "lexical_diversity": round(features.lexical_diversity, 4),
+            "transition_rate": round(features.transition_rate, 4),
+            "passive_rate": round(features.passive_rate, 4),
+            "parenthetical_rate": round(features.parenthetical_rate, 4),
+        }
+
+        if reference_features is None:
             return MetricScore(
                 metric_name=self.metric_name,
-                score=1.0,
+                score=0.5,
                 details={
-                    "multidimensional_profile": {
-                        "sentence_length_mean": round(features.sentence_length_mean, 2),
-                        "sentence_length_stdev": round(features.sentence_length_stdev, 2),
-                        "paragraph_words_mean": round(features.paragraph_words_mean, 2),
-                        "first_person_rate": round(features.first_person_rate, 4),
-                        "lexical_diversity": round(features.lexical_diversity, 4),
-                        "transition_rate": round(features.transition_rate, 4),
-                        "passive_rate": round(features.passive_rate, 4),
-                        "parenthetical_rate": round(features.parenthetical_rate, 4),
-                    },
+                    "verdict": "NO_DEMONSTRATED_VOICE_EFFECT",
+                    "reason": "No reference author writing or profile provided for this case.",
                     "reference_available": False,
+                    "multidimensional_profile": cand_profile,
                 },
                 deterministic=True,
+                metric_version=self.metric_version,
             )
 
-        # Multidimensional comparison against reference
+        # Multidimensional distance comparison against reference distribution
         dims = (
             ("sentence_length_mean", 10.0),
             ("sentence_length_stdev", 6.0),
@@ -534,6 +604,7 @@ class VoiceFidelityEvaluator:
             ("transition_rate", 0.1),
             ("passive_rate", 0.1),
             ("parenthetical_rate", 0.05),
+            ("contraction_rate", 0.05),
         )
 
         dimension_deltas = {}
@@ -553,25 +624,30 @@ class VoiceFidelityEvaluator:
 
         mean_err = statistics.mean(normalized_errors) if normalized_errors else 0.0
         bounded_score = max(0.0, 1.0 - (mean_err * 0.5))
+        verdict = "MATCHED_VOICE" if bounded_score >= 0.70 else ("DEVIATED_VOICE" if bounded_score >= 0.45 else "MISMATCHED_VOICE")
 
         return MetricScore(
             metric_name=self.metric_name,
             score=round(bounded_score, 4),
             details={
+                "verdict": verdict,
                 "multidimensional_dimensions": dimension_deltas,
+                "multidimensional_profile": cand_profile,
                 "mean_normalized_error": round(mean_err, 4),
                 "reference_available": True,
             },
             deterministic=True,
+            metric_version=self.metric_version,
         )
 
 
-# --- 7. Structural Diversity Evaluator -------------------------------------
+# --- 7. Structural Diversity Evaluator (v2) ---------------------------------
 
 class StructuralDiversityEvaluator:
-    """Measures structural variation across repeated runs or outputs to detect template convergence."""
+    """Measures structural variation across repeated runs to detect template convergence without conflating raw CV with normalized score."""
 
     metric_name = "structural_diversity"
+    metric_version = "structural-diversity/v2"
 
     def evaluate_batch(self, outputs: Sequence[CandidateOutput]) -> MetricScore:
         valid_texts = [c.text for c in outputs if c.text and len(c.text.split()) >= 6]
@@ -581,6 +657,7 @@ class StructuralDiversityEvaluator:
                 score=0.5,
                 details={"verdict": NOT_EVALUATED, "samples": len(valid_texts), "reason": "Insufficient samples (< 3)."},
                 deterministic=True,
+                metric_version=self.metric_version,
             )
 
         feature_vectors = [extract_features(t) for t in valid_texts]
@@ -609,9 +686,16 @@ class StructuralDiversityEvaluator:
         elif len(converged_dims) >= 2:
             verdict = WARNING
 
-        # Higher score = more structural diversity / less rigid convergence
-        mean_cv = statistics.mean(cv_metrics.values()) if cv_metrics else 0.0
-        score = max(0.0, min(1.0, mean_cv * 2.5))
+        mean_raw_cv = statistics.mean(cv_metrics.values()) if cv_metrics else 0.0
+
+        # Calibrated normalized score: penalizes both rigid collapse (< 0.15) and extreme structural chaos (> 1.20)
+        if mean_raw_cv < 0.15:
+            score = max(0.1, (mean_raw_cv / 0.15) * 0.5)
+        elif mean_raw_cv <= 0.85:
+            score = 0.85 + (0.15 * max(0.0, 1.0 - (abs(mean_raw_cv - 0.40) / 0.45)))
+        else:
+            # Penalize excessive structural instability (> 0.85 CV)
+            score = max(0.40, 1.0 - ((mean_raw_cv - 0.85) * 0.5))
 
         return MetricScore(
             metric_name=self.metric_name,
@@ -619,11 +703,12 @@ class StructuralDiversityEvaluator:
             details={
                 "verdict": verdict,
                 "samples": len(valid_texts),
-                "coefficients_of_variation": cv_metrics,
+                "raw_cv": cv_metrics,
+                "mean_raw_cv": round(mean_raw_cv, 4),
                 "converged_dimensions": converged_dims,
-                "mean_cv": round(mean_cv, 4),
             },
             deterministic=True,
+            metric_version=self.metric_version,
         )
 
 

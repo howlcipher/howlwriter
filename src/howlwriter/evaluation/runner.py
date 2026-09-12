@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import random
-import time
 from typing import Any, Callable, Sequence
 
 from howlwriter.diagnostic.run_record import (
-    compute_sha256,
     generate_run_id,
     get_git_revision,
     get_howlwriter_version,
@@ -26,22 +23,18 @@ from howlwriter.evaluation.metrics import (
     get_evaluator,
 )
 from howlwriter.evaluation.models import (
-    BaselineType,
     BenchmarkCase,
     BenchmarkRun,
     BenchmarkSuite,
     CandidateOutput,
     CaseEvaluationResult,
+    CostProvenance,
     MetricScore,
     PairwiseComparison,
 )
 from howlwriter.evaluation.statistics import (
-    bootstrap_mean_diff_ci,
-    cliffs_delta,
-    cohens_d,
     compute_descriptive_stats,
     determine_verdict,
-    wilson_score_interval,
 )
 
 
@@ -155,6 +148,7 @@ class BenchmarkRunner:
             systems=all_systems,
             diversity_scores=structural_diversity_scores,
             outputs_by_system=outputs_by_system,
+            suite=suite,
         )
 
         return BenchmarkRun(
@@ -193,9 +187,11 @@ class BenchmarkRunner:
         systems: list[str],
         diversity_scores: dict[str, MetricScore],
         outputs_by_system: dict[str, list[CandidateOutput]],
+        suite: BenchmarkSuite | None = None,
     ) -> dict[str, Any]:
         """Aggregates win/loss/tie outcomes, statistics, cost/latency tradeoffs."""
         total_cases = len(case_results)
+        suite_total_cases = len(suite.cases) if suite is not None else total_cases
 
         # Metric averages per system
         metric_values_by_sys: dict[str, dict[str, list[float]]] = {s: {} for s in systems}
@@ -209,8 +205,23 @@ class BenchmarkRunner:
             for m_name, vals in metric_values_by_sys[s].items():
                 metric_stats_by_sys[s][m_name] = compute_descriptive_stats(vals)
 
+        QUALITY_METRIC_NAMES = {
+            "factuality",
+            "voice_fidelity",
+            "meaning_preservation",
+            "structural_diversity",
+            "requirement_satisfaction",
+            "length_compliance",
+        }
+        ASSURANCE_METRIC_NAMES = {
+            "citation_integrity",
+            "source_quality",
+            "red_pen",
+            "style_lint",
+        }
+
         # Pairwise win/loss/tie aggregation (Full HW vs Strong Prompt)
-        pairwise_outcomes: dict[str, dict[str, int]] = {}
+        pairwise_outcomes: dict[str, dict[str, Any]] = {}
         for res in case_results:
             for comp in res.pairwise_comparisons:
                 pair_key = f"{comp.candidate_a_system}_vs_{comp.candidate_b_system}"
@@ -221,7 +232,18 @@ class BenchmarkRunner:
                 else:
                     canonical_key = pair_key
 
-                stats_bucket = pairwise_outcomes.setdefault(canonical_key, {"hw_wins": 0, "baseline_wins": 0, "ties": 0, "inconclusive": 0})
+                stats_bucket = pairwise_outcomes.setdefault(
+                    canonical_key,
+                    {
+                        "hw_wins": 0,
+                        "baseline_wins": 0,
+                        "ties": 0,
+                        "inconclusive": 0,
+                        "total_comparisons": 0,
+                        "eligible_cases": total_cases,
+                    },
+                )
+                stats_bucket["total_comparisons"] += 1
                 if comp.winning_system == "howlwriter_full":
                     stats_bucket["hw_wins"] += 1
                 elif comp.winning_system == "TIE":
@@ -240,6 +262,24 @@ class BenchmarkRunner:
                 ties=counts["ties"],
             )
 
+        # Track failures & provenance across all outputs
+        failures_list: list[dict[str, Any]] = []
+        for s, outputs in outputs_by_system.items():
+            for o in outputs:
+                if not o.success:
+                    failures_list.append({
+                        "system": s,
+                        "candidate_id": o.candidate_id,
+                        "classification": o.failure_classification,
+                    })
+
+        denominators = {
+            "suite_total_cases": suite_total_cases,
+            "evaluated_cases": total_cases,
+            "failed_evaluations_count": len(failures_list),
+            "failures": failures_list,
+        }
+
         # Latency & Cost Multipliers
         telemetry_by_sys: dict[str, dict[str, Any]] = {}
         for s, outputs in outputs_by_system.items():
@@ -247,11 +287,33 @@ class BenchmarkRunner:
             tokens = [o.token_usage.get("total_tokens", 0) for o in outputs if o.success]
             failures = sum(1 for o in outputs if not o.success)
 
+            provenance_vals = {o.cost_provenance for o in outputs if o.cost_provenance}
+            if CostProvenance.MEASURED.value in provenance_vals:
+                prov = CostProvenance.MEASURED.value
+            elif CostProvenance.ESTIMATED.value in provenance_vals:
+                prov = CostProvenance.ESTIMATED.value
+            else:
+                prov = CostProvenance.UNAVAILABLE.value
+
+            # Stage timings breakdown
+            stage_acc: dict[str, list[float]] = {}
+            for o in outputs:
+                if o.success and o.stage_timings:
+                    for stg, dur in o.stage_timings.items():
+                        stage_acc.setdefault(stg, []).append(dur)
+            stage_timings_avg = {
+                stg: round(sum(durs) / len(durs), 3)
+                for stg, durs in stage_acc.items()
+                if durs
+            }
+
             telemetry_by_sys[s] = {
                 "latency": compute_descriptive_stats(latencies),
                 "total_tokens": compute_descriptive_stats(tokens),
                 "failures_count": failures,
                 "success_rate": round(len(latencies) / len(outputs), 4) if outputs else 0.0,
+                "cost_provenance": prov,
+                "stage_timings": stage_timings_avg,
             }
 
         # Calculate multipliers relative to strong_prompt
@@ -273,6 +335,9 @@ class BenchmarkRunner:
         return {
             "total_cases_evaluated": total_cases,
             "systems_evaluated": systems,
+            "denominators": denominators,
+            "quality_metrics": {s: {m: v for m, v in metric_stats_by_sys[s].items() if m in QUALITY_METRIC_NAMES} for s in systems},
+            "assurance_metrics": {s: {m: v for m, v in metric_stats_by_sys[s].items() if m in ASSURANCE_METRIC_NAMES} for s in systems},
             "metric_statistics": metric_stats_by_sys,
             "pairwise_outcomes": pairwise_outcomes,
             "verdicts": verdicts,

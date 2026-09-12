@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +10,21 @@ from howlwriter.domain.io import atomic_write_text
 from howlwriter.evaluation.models import BenchmarkRun
 
 DEFAULT_EVAL_OUTPUT_DIR = Path("output/evaluation")
+
+QUALITY_METRIC_NAMES = {
+    "factuality",
+    "voice_fidelity",
+    "meaning_preservation",
+    "structural_diversity",
+    "requirement_satisfaction",
+    "length_compliance",
+}
+ASSURANCE_METRIC_NAMES = {
+    "citation_integrity",
+    "source_quality",
+    "red_pen",
+    "style_lint",
+}
 
 
 def generate_markdown_report(run: BenchmarkRun) -> str:
@@ -22,6 +36,11 @@ def generate_markdown_report(run: BenchmarkRun) -> str:
     verdicts = summary.get("verdicts", {})
     diversity = summary.get("structural_diversity", {})
     stats = summary.get("metric_statistics", {})
+    denominators = summary.get("denominators", {})
+
+    suite_total = denominators.get("suite_total_cases", summary.get("total_cases_evaluated", 0))
+    evaluated_cases = summary.get("total_cases_evaluated", 0)
+    failed_evals = denominators.get("failed_evaluations_count", 0)
 
     lines = [
         f"# HowlWriter Benchmark Report: {run.suite_name.upper()}",
@@ -29,7 +48,7 @@ def generate_markdown_report(run: BenchmarkRun) -> str:
         f"**Timestamp:** `{run.timestamp}`  ",
         f"**Git Commit:** `{run.git_commit or 'unknown'}`  ",
         f"**HowlWriter Version:** `{run.howlwriter_version}`  ",
-        f"**Total Cases Evaluated:** {summary.get('total_cases_evaluated', 0)}  ",
+        f"**Total Cases Evaluated:** {evaluated_cases} (suite total: {suite_total}, failures: {failed_evals})  ",
         f"**Repetitions:** {run.repeat}  ",
         f"**Mode:** {'Deterministic Only (CI Hermetic)' if run.deterministic_only else 'Model-Judged & Multi-Provider'}  \n",
         "---",
@@ -46,67 +65,116 @@ def generate_markdown_report(run: BenchmarkRun) -> str:
         lines.append(f"> {reason}\n")
 
     lines.append("\n## 2. Pairwise Blinded Comparison Outcomes\n")
-    lines.append("| Baseline Comparison | HW Wins | Baseline Wins | Ties | Inconclusive | HW Win Rate |")
-    lines.append("| :--- | :---: | :---: | :---: | :---: | :---: |")
+    lines.append("| Baseline Comparison | HW Wins | Baseline Wins | Ties | Inconclusive | Total (n) | HW Win Rate |")
+    lines.append("| :--- | :---: | :---: | :---: | :---: | :---: | :---: |")
 
     for pair_key, counts in pairwise.items():
-        total = counts["hw_wins"] + counts["baseline_wins"] + counts["ties"] + counts.get("inconclusive", 0)
+        total = counts.get("total_comparisons") or (counts["hw_wins"] + counts["baseline_wins"] + counts["ties"] + counts.get("inconclusive", 0))
         hw_rate = (counts["hw_wins"] / total * 100) if total else 0.0
         lines.append(
-            f"| `{pair_key}` | {counts['hw_wins']} | {counts['baseline_wins']} | {counts['ties']} | {counts.get('inconclusive', 0)} | {hw_rate:.1f}% |"
+            f"| `{pair_key}` | {counts['hw_wins']} | {counts['baseline_wins']} | {counts['ties']} | {counts.get('inconclusive', 0)} | {total} | {hw_rate:.1f}% |"
         )
 
-    lines.append("\n## 3. Dimensional Metric Comparison (Mean Scores [0.0 - 1.0])\n")
+    lines.append("\n## 3. Dimensional Metric Comparison\n")
     systems = summary.get("systems_evaluated", [])
-    metric_names = set()
+    all_metrics = set()
     for s in systems:
-        metric_names.update(stats.get(s, {}).keys())
-    sorted_metrics = sorted(metric_names)
+        all_metrics.update(stats.get(s, {}).keys())
 
-    header = "| Metric Family | " + " | ".join(f"`{s}`" for s in systems) + " |"
-    sep = "| :--- | " + " | ".join(":---:" for _ in systems) + " |"
-    lines.append(header)
-    lines.append(sep)
+    quality_metrics = sorted([m for m in all_metrics if m in QUALITY_METRIC_NAMES])
+    assurance_metrics = sorted([m for m in all_metrics if m in ASSURANCE_METRIC_NAMES])
+    other_metrics = sorted([m for m in all_metrics if m not in QUALITY_METRIC_NAMES and m not in ASSURANCE_METRIC_NAMES])
 
-    for m in sorted_metrics:
-        row_vals = []
-        for s in systems:
-            mean_val = stats.get(s, {}).get(m, {}).get("mean")
-            if mean_val is not None:
-                row_vals.append(f"{mean_val:.3f}")
-            else:
-                row_vals.append("N/A")
-        lines.append(f"| **{m}** | " + " | ".join(row_vals) + " |")
+    if quality_metrics or not all_metrics:
+        lines.append("### 3.1 Final Output Quality (Mean Scores [0.0 - 1.0])\n")
+        lines.append("*Measures intrinsic quality of produced prose: factual accuracy, voice fidelity, meaning preservation, and requirement compliance.*\n")
+        header = "| Quality Metric | " + " | ".join(f"`{s}`" for s in systems) + " |"
+        sep = "| :--- | " + " | ".join(":---:" for _ in systems) + " |"
+        lines.append(header)
+        lines.append(sep)
+        for m in (quality_metrics if quality_metrics else sorted(all_metrics)):
+            row_vals = []
+            for s in systems:
+                mean_val = stats.get(s, {}).get(m, {}).get("mean")
+                row_vals.append(f"{mean_val:.3f}" if mean_val is not None else "N/A")
+            lines.append(f"| **{m}** | " + " | ".join(row_vals) + " |")
+        lines.append("")
 
-    lines.append("\n## 4. Cost, Latency & Reliability Tradeoffs\n")
-    lines.append("| System | Median Latency | Median Tokens | Failures | Success Rate |")
-    lines.append("| :--- | :---: | :---: | :---: | :---: |")
+    if assurance_metrics:
+        lines.append("### 3.2 Assurance & Verification Coverage (Mean Scores [0.0 - 1.0])\n")
+        lines.append("*Measures verification depth, citation integrity, Red Pen enforcement, and style lint compliance.*\n")
+        header = "| Assurance Metric | " + " | ".join(f"`{s}`" for s in systems) + " |"
+        sep = "| :--- | " + " | ".join(":---:" for _ in systems) + " |"
+        lines.append(header)
+        lines.append(sep)
+        for m in assurance_metrics:
+            row_vals = []
+            for s in systems:
+                mean_val = stats.get(s, {}).get(m, {}).get("mean")
+                row_vals.append(f"{mean_val:.3f}" if mean_val is not None else "N/A")
+            lines.append(f"| **{m}** | " + " | ".join(row_vals) + " |")
+        lines.append("")
+
+    if other_metrics:
+        lines.append("### 3.3 Other Diagnostic Metrics\n")
+        header = "| Metric | " + " | ".join(f"`{s}`" for s in systems) + " |"
+        sep = "| :--- | " + " | ".join(":---:" for _ in systems) + " |"
+        lines.append(header)
+        lines.append(sep)
+        for m in other_metrics:
+            row_vals = []
+            for s in systems:
+                mean_val = stats.get(s, {}).get(m, {}).get("mean")
+                row_vals.append(f"{mean_val:.3f}" if mean_val is not None else "N/A")
+            lines.append(f"| **{m}** | " + " | ".join(row_vals) + " |")
+        lines.append("")
+
+    lines.append("## 4. Cost, Latency & Reliability Tradeoffs\n")
+    lines.append("| System | Provenance | Median Latency | Median Tokens | Failures | Success Rate |")
+    lines.append("| :--- | :---: | :---: | :---: | :---: | :---: |")
 
     for s in systems:
         t_info = telemetry.get(s, {})
+        prov = (t_info.get("cost_provenance") or "N/A").upper()
         lat = t_info.get("latency", {}).get("median")
         tok = t_info.get("total_tokens", {}).get("median")
         fail = t_info.get("failures_count", 0)
         succ = t_info.get("success_rate", 1.0) * 100
         lat_str = f"{lat:.2f}s" if lat is not None else "N/A"
         tok_str = f"{int(tok)}" if tok is not None else "N/A"
-        lines.append(f"| `{s}` | {lat_str} | {tok_str} | {fail} | {succ:.1f}% |")
+        lines.append(f"| `{s}` | {prov} | {lat_str} | {tok_str} | {fail} | {succ:.1f}% |")
+
+    # Stage timing breakdown if present
+    has_stage_timings = any(bool(telemetry.get(s, {}).get("stage_timings")) for s in systems)
+    if has_stage_timings:
+        lines.append("\n**Stage Latency Breakdown (Mean Seconds):**\n")
+        all_stages = sorted({stage for s in systems for stage in telemetry.get(s, {}).get("stage_timings", {}).keys()})
+        stg_header = "| System | " + " | ".join(f"`{stg}`" for stg in all_stages) + " |"
+        stg_sep = "| :--- | " + " | ".join(":---:" for _ in all_stages) + " |"
+        lines.append(stg_header)
+        lines.append(stg_sep)
+        for s in systems:
+            stg_map = telemetry.get(s, {}).get("stage_timings", {})
+            stg_vals = [f"{stg_map[stg]:.2f}s" if stg in stg_map else "-" for stg in all_stages]
+            lines.append(f"| `{s}` | " + " | ".join(stg_vals) + " |")
 
     lines.append("\n**Architecture Tradeoff Multipliers (vs Strong Prompt):**")
     lines.append(f"- **Latency Multiplier:** `{multipliers.get('latency_multiplier', 1.0)}x`")
     lines.append(f"- **Token Multiplier:** `{multipliers.get('token_multiplier', 1.0)}x`")
 
-    lines.append("\n## 5. Structural Diversity & Template Convergence\n")
-    lines.append("| System | Verdict | Mean CV | Converged Dimensions |")
-    lines.append("| :--- | :---: | :---: | :--- |")
+    lines.append("\n## 5. Structural Diversity & Reference Distribution Distance\n")
+    lines.append("| System | Verdict | Score [0-1] | Mean Raw CV | Converged Dimensions |")
+    lines.append("| :--- | :---: | :---: | :---: | :--- |")
 
     for s in systems:
         d_info = diversity.get(s, {}).get("details", {})
+        score_val = diversity.get(s, {}).get("score")
+        score_str = f"{score_val:.3f}" if score_val is not None else "N/A"
         verd = d_info.get("verdict", "N/A")
-        m_cv = d_info.get("mean_cv")
-        cv_str = f"{m_cv:.3f}" if m_cv is not None else "N/A"
+        raw_cv = d_info.get("mean_raw_cv", d_info.get("mean_cv"))
+        cv_str = f"{raw_cv:.3f}" if raw_cv is not None else "N/A"
         conv_dims = ", ".join(d_info.get("converged_dimensions", [])) or "None"
-        lines.append(f"| `{s}` | **{verd}** | {cv_str} | {conv_dims} |")
+        lines.append(f"| `{s}` | **{verd}** | {score_str} | {cv_str} | {conv_dims} |")
 
     lines.append("\n## 6. Empirical Findings & Limitations\n")
     lines.append("1. **Citation & Source Authority:** HowlWriter achieves near-perfect citation integrity and grounding by design, resolving DOIs and validating primary source authorities.")
