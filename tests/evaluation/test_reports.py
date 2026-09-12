@@ -100,3 +100,61 @@ def test_compare_runs_detects_regressions():
     assert comp["status"] == "REGRESSION_DETECTED"
     assert len(comp["regressions"]) == 1
     assert comp["regressions"][0]["metric"] == "citation_integrity"
+
+
+def test_generate_markdown_report_separated_quality_assurance_and_denominators():
+    run = BenchmarkRun(
+        run_id="bench-cal-1",
+        suite_name="core",
+        timestamp="2026-09-11T12:00:00Z",
+        summary={
+            "total_cases_evaluated": 11,
+            "systems_evaluated": ["strong_prompt", "howlwriter_full"],
+            "denominators": {
+                "suite_total_cases": 36,
+                "evaluated_cases": 11,
+                "failed_evaluations_count": 0,
+            },
+            "metric_statistics": {
+                "howlwriter_full": {
+                    "factuality": {"mean": 0.88},
+                    "voice_fidelity": {"mean": 0.79},
+                    "citation_integrity": {"mean": 0.98},
+                    "red_pen": {"mean": 0.95},
+                },
+                "strong_prompt": {
+                    "factuality": {"mean": 0.85},
+                    "voice_fidelity": {"mean": 0.52},
+                    "citation_integrity": {"mean": 0.60},
+                    "red_pen": {"mean": 0.70},
+                },
+            },
+            "telemetry": {
+                "howlwriter_full": {
+                    "latency": {"median": 4.5},
+                    "total_tokens": {"median": 1200},
+                    "cost_provenance": "measured",
+                    "stage_timings": {"draft": 1.8, "verification": 0.9, "red_pen": 0.9},
+                },
+                "strong_prompt": {
+                    "latency": {"median": 1.5},
+                    "total_tokens": {"median": 500},
+                    "cost_provenance": "estimated",
+                    "stage_timings": {"writer": 1.5},
+                },
+            },
+        },
+    )
+
+    md = generate_markdown_report(run)
+    # Check denominator disclosure
+    assert "suite total: 36" in md
+    assert "11 (suite total: 36, failures: 0)" in md
+
+    # Check separation of quality vs assurance
+    assert "3.1 Final Output Quality" in md
+    assert "3.2 Assurance & Verification Coverage" in md
+    assert "MEASURED" in md
+    assert "ESTIMATED" in md
+    assert "Stage Latency Breakdown" in md
+

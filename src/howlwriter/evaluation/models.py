@@ -40,6 +40,109 @@ class IndependenceStatus(str, enum.Enum):
     INDEPENDENCE_NOT_VERIFIABLE = "INDEPENDENCE_NOT_VERIFIABLE"
 
 
+class EvaluatorHealth(str, enum.Enum):
+    """Health classification for evaluation metrics based on calibration tests."""
+
+    CALIBRATED = "CALIBRATED"
+    PARTIALLY_CALIBRATED = "PARTIALLY_CALIBRATED"
+    UNRELIABLE = "UNRELIABLE"
+
+
+class EntailmentVerdict(str, enum.Enum):
+    """Verdicts for semantic entailment and claim-evidence grounding."""
+
+    ENTAILED = "ENTAILED"
+    PARTIALLY_ENTAILED = "PARTIALLY_ENTAILED"
+    NOT_ENTAILED = "NOT_ENTAILED"
+    CONTRADICTED = "CONTRADICTED"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class CostProvenance(str, enum.Enum):
+    """Provenance category for cost and token telemetry."""
+
+    MEASURED = "MEASURED"
+    ESTIMATED = "ESTIMATED"
+    PROVIDER_REPORTED = "PROVIDER_REPORTED"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+@dataclass
+class ExecutionManifest(DataClassSerializationMixin):
+    """Record proving which pipeline stages ran and which were genuinely bypassed."""
+
+    system_id: str = ""
+    writer: bool = True
+    outline_enforcement: bool = True
+    source_integrity: bool = True
+    source_authority: bool = True
+    voice: bool = True
+    red_pen: bool = True
+    meaning_review: bool = True
+    independent_review: bool = True
+    humanizer: bool = True
+    provenance: bool = True
+    bypassed_stages: list[str] = field(default_factory=list)
+
+
+@dataclass
+class EntailmentResult(DataClassSerializationMixin):
+    """Detailed result of semantic entailment evaluation for a single claim."""
+
+    verdict: EntailmentVerdict = EntailmentVerdict.UNAVAILABLE
+    confidence: float = 1.0
+    rationale: str = ""
+    extracted_claim: str = ""
+    matched_evidence: str = ""
+
+
+@dataclass
+class PositiveControl(DataClassSerializationMixin):
+    """Known high-quality example that must score highly on a calibrated metric."""
+
+    description: str = ""
+    input_text: str = ""
+    reference: str = ""
+    expected_min_score: float = 0.7
+
+
+@dataclass
+class NegativeControl(DataClassSerializationMixin):
+    """Known degraded/flawed example that must score poorly on a calibrated metric."""
+
+    description: str = ""
+    input_text: str = ""
+    reference: str = ""
+    expected_max_score: float = 0.4
+
+
+@dataclass
+class MetricCalibrationCase(DataClassSerializationMixin):
+    """Pair of positive and negative controls for validating metric sensitivity."""
+
+    metric_name: str
+    positive_controls: list[PositiveControl] = field(default_factory=list)
+    negative_controls: list[NegativeControl] = field(default_factory=list)
+
+
+@dataclass
+class MetricSensitivityResult(DataClassSerializationMixin):
+    """Evaluator health diagnostic certifying whether a metric reliably discriminates."""
+
+    metric_name: str
+    health: EvaluatorHealth = EvaluatorHealth.UNRELIABLE
+    positive_controls_passed: int = 0
+    positive_controls_total: int = 0
+    negative_controls_passed: int = 0
+    negative_controls_total: int = 0
+    sensitivity_gap: float = 0.0  # Mean positive score minus mean negative score
+    notes: str = ""
+
+    def is_healthy(self) -> bool:
+        return self.health == EvaluatorHealth.CALIBRATED
+
+
 @dataclass
 class BenchmarkCase(DataClassSerializationMixin):
     """A single evaluation task with explicit, unmemorizable requirements."""
@@ -79,6 +182,9 @@ class CandidateOutput(DataClassSerializationMixin):
     success: bool = True
     failure_classification: str | None = None
     extra_artifacts: dict[str, Any] = field(default_factory=dict)
+    execution_manifest: ExecutionManifest | None = None
+    stage_timings: dict[str, float] = field(default_factory=dict)
+    cost_provenance: str = CostProvenance.ESTIMATED.value
 
 
 @dataclass
@@ -89,6 +195,7 @@ class MetricScore(DataClassSerializationMixin):
     score: float = 0.0
     details: dict[str, Any] = field(default_factory=dict)
     deterministic: bool = True
+    metric_version: str = "v1"
 
 
 @dataclass

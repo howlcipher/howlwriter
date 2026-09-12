@@ -232,6 +232,9 @@ of every model call including the exact prompt HowlWriter sent. See
 ### Empirical Benchmarking & Evaluation
 
 ```bash
+# Audit evaluator calibration, sensitivity gaps, and judge bias (Milestone 26.1)
+howlwriter benchmark validate
+
 # List all 36 evaluation cases across 11 categories
 howlwriter benchmark list
 

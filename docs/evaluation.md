@@ -55,65 +55,53 @@ The evaluation suite includes 35+ benchmark tasks across 11 diverse categories:
 
 ---
 
+## 2.1 Evaluator Calibration & Sensitivity Suite (Milestone 26.1)
+
+To ensure future architectural decisions are based on trustworthy metrics rather than broken evaluators, every evaluation family is calibrated against positive and negative control pairs:
+
+- **Factuality Controls**: Positive controls with valid paraphrases, synonyms, and grounded numbers must score $\ge 0.70$. Negative controls with fabricated statistics or inverted polarities must score $\le 0.40$.
+- **Voice Fidelity Controls**: Measured against genuine human author reference corpora. Distinguishes authentic personal style from generic bland LLM prose with a sensitivity gap $\ge 0.25$. If reference features are absent, the evaluator records `NO_DEMONSTRATED_VOICE_EFFECT` rather than defaulting to $1.000$.
+- **Citation Integrity Controls**: Requires resolvable URLs and DOIs that match genuine source corpus metadata.
+- **Judge Symmetry & Position-Bias Controls**: Audits pairwise judges using position-swapped candidate pairs and identical inputs (which must declare `TIE`).
+
+---
+
 ## 3. Independent Metric Families
 
-Rather than collapsing evaluation into a single opaque score, metrics are reported independently:
+Metrics are strictly partitioned into **Final Output Quality** and **Assurance & Verification Coverage**:
 
-### 1. Requirement Satisfaction (Deterministic)
-- **Word count compliance**: Evaluates whether output words fall strictly within `[min_words, max_words]`.
-- **Required sections**: Deterministic regex matching verifying all requested section headings appear.
-- **Required content points**: Keyword and semantic checks confirming key arguments are present.
-- **Verbatim phrases**: Checks exact retention of required phrases.
-- **Citation requirements**: Verifies citations are present when required or omitted when prohibited.
-- **Forbidden words**: Enforces absence of banned words and AI clichés.
+### 3.1 Final Output Quality
 
-### 2. Factuality & Grounding
-- Extracts claims via `HeuristicClaimExtractor`.
-- Checks claims against provided source snippets and assignment context.
-- Detects invented numbers, dates, statistics, and fabricated citations.
+Measures the intrinsic writing quality, accuracy, voice, and requirement adherence of produced prose:
 
-### 3. Citation Integrity
-- Reuses Milestone 25/25.1 verification standards:
-  - **ACCESS**: URL/DOI pattern validity and reachability.
-  - **METADATA**: In-text authors and years match reference list entries.
-  - **AUTHORITY**: Classified source authority tier (`PRIMARY_LAW`, `STANDARD`, `GOVERNMENT`, `SCHOLARLY`).
-  - **EVIDENCE**: Citation binds to documented source in corpus.
-  - **FRESHNESS**: Verified currency status.
+1. **Factuality & Semantic Entailment (`factuality/v2-semantic`)**:
+   - Evaluates claims via `DeterministicEntailmentEvaluator` with semantic entailment rules (handling synonyms, modal hedges, polarity, and clause splitting).
+   - Preserves strict deterministic verification for dates, numbers, currency, and percentages.
+2. **Voice Fidelity (`voice-fidelity/v2-distance`)**:
+   - Multi-dimensional distribution distance from held-out human reference author features (`DocumentFeatures`).
+   - Penalizes distance in sentence length percentiles, punctuation rates, paragraph pacing, and lexical diversity.
+   - Guarded with `NO_DEMONSTRATED_VOICE_EFFECT` when no reference profile exists.
+3. **Meaning Preservation**:
+   - Detects factual shifts, hedge additions/removals, polarity inversions, and causal shifts in rewrites.
+4. **Requirement Satisfaction**:
+   - Deterministic verification of word counts, outline sections, required points, and forbidden phrases.
+5. **Structural Diversity (`structural-diversity/v2`)**:
+   - Computes distance from reference human writing distribution.
+   - Penalizes both rigid template collapse (hyper-uniformity) and chaotic randomness.
+   - Reports normalized $[0.0, 1.0]$ score alongside raw coefficient of variation ($CV$).
 
-### 4. Source Quality
-- Semantic classification via `classify_source_authority`.
-- Computes weighted authority score prioritizing primary statutes and standards over blogs and forums.
+### 3.2 Assurance & Verification Coverage
 
-### 5. Meaning Preservation (Rewriting/Editing)
-- Deterministic diffing via `MeaningPreservationReviewer`:
-  - Number changes and date modifications
-  - Polarity and negation inversions
-  - Hedge word additions or deletions
-  - Causal vs correlational shifts
-  - Attribution modifications
+Measures the depth and integrity of pipeline verification stages:
 
-### 6. Voice Fidelity (Multidimensional — No Fake Percentage)
-- Extracts `DocumentFeatures`:
-  - Sentence length mean, median, stdev, p10, p90
-  - Paragraph length mean and stdev
-  - First-person pronoun rate
-  - Punctuation rates (semicolon, colon, em-dash, parentheticals)
-  - Lexical diversity (TTR)
-  - Transition word density
-  - Passive voice rate
-- Reports independent dimensional deviations against reference writing rather than fabricating an arbitrary "95% match" figure.
-
-### 7. Structural Diversity & Template Convergence
-- Evaluates batches of outputs from each system across repeated runs.
-- Calculates coefficient of variation ($CV = \sigma / \mu$) on sentence lengths, paragraph sizes, transition rates, and first-person rates.
-- Flags structural convergence as `PASS`, `WARNING`, or `FAIL`.
-- *Capable of showing HowlWriter worse than the raw model baseline when HowlWriter converges into rigid templates.*
-
-### 8. Writing Quality Signals
-- AI-slop banned words (`AI_STYLE_BANNED_WORD`).
-- Redundancy and paragraph near-duplicates (`detect_redundancy`).
-- Style linter violations (`LintEngine`).
-- Red Pen critique findings (`RedPenEngine`).
+1. **Citation Integrity (`citation-integrity/v2`)**:
+   - Validates that citations resolve against known `case.source_corpus` URLs, DOIs, and author/year metadata.
+2. **Source Authority Quality**:
+   - Classifies authority tiers (`PRIMARY_LAW`, `STANDARD`, `GOVERNMENT`, `SCHOLARLY`).
+3. **Red Pen Critique Enforcement**:
+   - Measures detection and elimination of AI slop words, filler, and passive bloat.
+4. **Style Lint Compliance**:
+   - Evaluates rule compliance across custom and built-in lint families.
 
 ---
 
@@ -160,6 +148,9 @@ Architecture has a real cost. The system reports:
 ## 7. CLI & Deliverables
 
 ```bash
+# Validate evaluator calibration, sensitivity gaps, and judge bias
+howlwriter benchmark validate
+
 # Run core benchmark suite with deterministic metrics and mock models
 howlwriter benchmark run --suite core --deterministic-only --mock-models
 

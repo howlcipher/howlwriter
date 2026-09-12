@@ -9,7 +9,7 @@ import sys
 
 from howlwriter.evaluation.fixtures import get_benchmark_suite, load_all_cases
 from howlwriter.evaluation.judges import DeterministicJudge, ModelJudge
-from howlwriter.evaluation.models import BenchmarkCase, BenchmarkSuite
+from howlwriter.evaluation.models import BenchmarkSuite
 from howlwriter.evaluation.reports import (
     compare_runs,
     generate_markdown_report,
@@ -48,6 +48,14 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
     compare_parser.add_argument("--reference", required=True, help="Path to reference benchmark-results.json.")
     compare_parser.add_argument("--json", dest="output_json", action="store_true", help="Output JSON comparison.")
     compare_parser.set_defaults(handler=handle_compare)
+
+    # 5. howlwriter benchmark validate
+    validate_parser = benchmark_subparsers.add_parser(
+        "validate",
+        help="Validate evaluator calibration, sensitivity gaps, and judge bias.",
+    )
+    validate_parser.add_argument("--json", dest="output_json", action="store_true", help="Output machine-readable JSON.")
+    validate_parser.set_defaults(handler=handle_validate)
 
     # Default if subcommand is omitted: run
     _add_run_arguments(parser)
@@ -195,3 +203,72 @@ def handle_compare(args: argparse.Namespace) -> int:
         else:
             print("No statistically meaningful regressions detected.")
     return 0 if comparison["status"] == "PASS" else 1
+
+
+def handle_validate(args: argparse.Namespace) -> int:
+    from howlwriter.evaluation.calibration import EvaluatorHealthChecker
+    from howlwriter.evaluation.judges import DeterministicJudge, JudgeCalibrationChecker
+
+    checker = EvaluatorHealthChecker()
+    eval_health = checker.check_all()
+
+    judge_checker = JudgeCalibrationChecker()
+    judge_res = judge_checker.calibrate(DeterministicJudge())
+
+    output_json = getattr(args, "output_json", False)
+    if output_json:
+        payload = {
+            "evaluator_health": {
+                name: {
+                    "health": res.health.value,
+                    "positive_controls_passed": res.positive_controls_passed,
+                    "positive_controls_total": res.positive_controls_total,
+                    "negative_controls_passed": res.negative_controls_passed,
+                    "negative_controls_total": res.negative_controls_total,
+                    "sensitivity_gap": res.sensitivity_gap,
+                    "notes": res.notes,
+                }
+                for name, res in eval_health.items()
+            },
+            "judge_calibration": {
+                "status": judge_res.status,
+                "symmetry_rate": judge_res.symmetry_rate,
+                "identical_tie_rate": judge_res.identical_tie_rate,
+                "control_accuracy": judge_res.control_accuracy,
+                "position_bias_detected": judge_res.position_bias_detected,
+            },
+        }
+        print(json.dumps(payload, indent=2))
+        all_ok = all(r.is_healthy() for r in eval_health.values()) and judge_res.is_healthy()
+        return 0 if all_ok else 1
+
+    print("=== HowlWriter Evaluator Calibration & Sensitivity Audit ===\n")
+    print(f"{'METRIC':<26} {'HEALTH':<12} {'POS PASS':<10} {'NEG PASS':<10} {'GAP':<8} {'STATUS'}")
+    print("-" * 75)
+    all_healthy = True
+    for name, res in eval_health.items():
+        is_h = res.is_healthy()
+        if not is_h:
+            all_healthy = False
+        health_str = res.health.value.upper()
+        pos_str = f"{res.positive_controls_passed}/{res.positive_controls_total}"
+        neg_str = f"{res.negative_controls_passed}/{res.negative_controls_total}"
+        print(
+            f"{name:<26} {health_str:<12} {pos_str:<10} "
+            f"{neg_str:<10} {res.sensitivity_gap:<8.3f} {'PASS' if is_h else 'FAIL'}"
+        )
+
+    print("\n=== Pairwise Judge Calibration & Bias Audit ===")
+    print(f"Status:                 {judge_res.status}")
+    print(f"Symmetry Pass Rate:     {judge_res.symmetry_rate * 100:.1f}%")
+    print(f"Identical Input TIE:    {judge_res.identical_tie_rate * 100:.1f}%")
+    print(f"Control Accuracy:       {judge_res.control_accuracy * 100:.1f}%")
+    print(f"Position Bias Detected: {'YES' if judge_res.position_bias_detected else 'NO'}\n")
+
+    if all_healthy and judge_res.is_healthy():
+        print("Verdict: ALL EVALUATORS AND JUDGES CALIBRATED & HEALTHY.")
+        return 0
+    else:
+        print("Verdict: CALIBRATION FAILURE OR METRIC DEGRADATION DETECTED.", file=sys.stderr)
+        return 1
+
