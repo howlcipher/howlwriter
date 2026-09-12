@@ -1,0 +1,80 @@
+[
+  {
+    "id": "S001",
+    "title": "How Do International Organizations Put Together Their Budgets?",
+    "authors": [
+      "Latest Thinking",
+      "GOETZ, Klaus H."
+    ],
+    "publisher": "Latest Thinking, GmbH",
+    "publication_date": "2017-01-01",
+    "url": "https://doi.org/10.21036/ltpub10474",
+    "doi": "10.21036/ltpub10474",
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "Published academic work by Latest Thinking, GmbH: How Do International Organizations Put Together Their Budgets?",
+    "reliability_notes": "Retrieved from Crossref API (type: journal-article)."
+  },
+  {
+    "id": "S002",
+    "title": "Governed Autonomy in Reliability Engineering: Integrating Error Budgets with AI-Driven Remediation",
+    "authors": [
+      "Vankayala, Srikanth Chakravarthy"
+    ],
+    "publisher": "United Research Forum",
+    "publication_date": "2023-05-20",
+    "url": "https://doi.org/10.51219/jaimld/srikanth-chakravarthy-vankayala/648",
+    "doi": "10.51219/jaimld/srikanth-chakravarthy-vankayala/648",
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "Published academic work by United Research Forum: Governed Autonomy in Reliability Engineering: Integrating Error Budgets with AI-Driven Remediation",
+    "reliability_notes": "Retrieved from Crossref API (type: journal-article)."
+  },
+  {
+    "id": "S003",
+    "title": "The CMS High Level Trigger",
+    "authors": [
+      "The CMS Trigger",
+      "Data Acquisition Group"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2005-12-31",
+    "url": "http://arxiv.org/abs/hep-ex/0512077v1",
+    "doi": "10.1140/epjc/s2006-02495-8",
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "At the Large Hadron Collider at CERN the proton bunches cross at a rate of 40MHz. At the Compact Muon Solenoid experiment the original collision rate is reduced by a factor of O (1000) using a Level-1 hardware trigger. A subsequent factor of O(1000) data reduction is obtained by a software-implemented High Level Trigger (HLT) selection that is executed on a multi-processor farm. In this review we present in detail prototype CMS HLT physics selection algorithms, expected trigger rates and trigger performance in terms of both physics efficiency and timing.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S004",
+    "title": "Continuous-time quantum error correction",
+    "authors": [
+      "Ognyan Oreshkov"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2013-11-11",
+    "url": "http://arxiv.org/abs/1311.2485v2",
+    "doi": null,
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "Continuous-time quantum error correction (CTQEC) is an approach to protecting quantum information from noise in which both the noise and the error correcting operations are treated as processes that are continuous in time. This chapter investigates CTQEC based on continuous weak measurements and feedback from the point of view of the subsystem principle, which states that protected quantum information is contained in a subsystem of the Hilbert space. We study how to approach the problem of constructing CTQEC protocols by looking at the evolution of the state of the system in an encoded basis in which the subsystem containing the protected information is explicit. This point of view allows us to reduce the problem to that of protecting a known state, and to design CTQEC procedures from protocols for the protection of a single qubit. We show how previously studied CTQEC schemes with both direct and indirect feedback can be obtained from strategies for the protection of a single qubit via weak measurements and weak unitary operations. We also review results on the performance of CTQEC with direct feedback in cases of Markovian and non-Markovian decoherence, where we have shown that due to the existence of a Zeno regime in non-Markovian dynamics, the performance of CTQEC can exhibit a quadratic improvement if the time resolution of the weak error-correcting operations is high enough to reveal the non-Markovian character of the noise process.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S005",
+    "title": "Entanglement-Assisted Quantum Error-Correcting Codes",
+    "authors": [
+      "Todd Brun",
+      "Min-Hsiu Hsieh"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2016-10-13",
+    "url": "http://arxiv.org/abs/1610.04013v1",
+    "doi": null,
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "We provide a self-contained introduction for entanglement-assisted quantum error-correcting codes in this book chapter.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  }
+]

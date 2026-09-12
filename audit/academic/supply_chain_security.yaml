@@ -1,0 +1,25 @@
+title: "Software Supply Chain Security and Dependency Risk"
+type: academic
+topic: >
+  Analyze the risks introduced by third-party and open-source software dependencies
+  in modern application development, including dependency confusion, malicious
+  packages, and strategies for verification such as SBOMs and signed artifacts.
+target_words: 1500
+word_tolerance_percent: 10
+citation_style: apa7
+source_requirements:
+  minimum_sources: 6
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - Support factual claims with citations
+  - Do not fabricate sources
+  - Include an APA 7 reference page
+  - Cover both attack patterns and defensive controls
+outline:
+  - Introduction
+  - Dependency attack patterns
+  - Software Bills of Materials
+  - Signing and reproducible builds
+  - Organizational controls
+  - Conclusion

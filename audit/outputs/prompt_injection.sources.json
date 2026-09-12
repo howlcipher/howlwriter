@@ -1,0 +1,113 @@
+[
+  {
+    "id": "S001",
+    "title": "Prompt Injection and Jailbreak Attacks in Large Language Model-Based Agents",
+    "authors": [
+      "Tanveer, Rizwan"
+    ],
+    "publisher": "Elsevier BV",
+    "publication_date": "2026-01-01",
+    "url": "https://doi.org/10.2139/ssrn.6740060",
+    "doi": "10.2139/ssrn.6740060",
+    "access_date": "2026-09-01",
+    "source_type": "other",
+    "retrieved_text": "&lt;p&gt;&lt;b&gt;&lt;i&gt;&lt;span&gt;Background.&lt;/span&gt;&lt;/i&gt;&lt;/b&gt;&lt;span&gt; Prompt injection has been ranked the top threat in the OWASP Top 10 for Large Language Model Applications since 2023, and the December 2025 OWASP Top 10 for Agentic Applications places goal hijacking, the agentic manifestation of prompt injection, at position one. The structural cause is that large language models process instructions and data through the same neural pathway, making the boundary between authorised instructions and adversarial content fundamentally permeable. The agentic deployment context, which integrates retrieval, tool invocation, persistent memory, and the Model Context Protocol, has dramatically expanded the prompt-injection attack surface from 2023 to 2026.&lt;/span&gt;&lt;/p&gt;\n&lt;p&gt;&lt;b&gt;&lt;i&gt;&lt;span&gt;Purpose.&lt;/span&gt;&lt;/i&gt;&lt;/b&gt;&lt;span&gt; This paper synthesises the prompt-injection and jailbreak literature, examining direct and indirect injection techniques, the failure modes underlying jailbreak success, retrieval-augmented generation poisoning, Model Context Protocol vulnerabilities, and the evolving landscape of defensive controls. It positions prompt injection as a problem requiring defence-in-depth across input, retrieval, planning, tool execution, and output layers, rather than a single-control problem.&lt;/span&gt;&lt;/p&gt;\n&lt;p&gt;&lt;b&gt;&lt;i&gt;&lt;span&gt;Approach.&lt;/span&gt;&lt;/i&gt;&lt;/b&gt;&lt;span&gt; The paper adopts a narrative literature review methodology drawing on authoritative primary sources, including the OWASP Top 10 for Large Language Model Applications (2025) and OWASP Top 10 for Agentic Applications (2025), foundational jailbreak research (Wei, Haghtalab, &amp;amp; Steinhardt, 2023), indirect prompt injection foundations (Greshake et al., 2023), automated jailbreak research (Zou et al., 2023), recent systematisation-of-knowledge papers, and verified real-world incidents, including the GitHub Copilot CVE-2025-53773 RCE and the CamoLeak CVSS 9.6 exploit.&lt;/span&gt;&lt;/p&gt;\n&lt;p&gt;&lt;b&gt;&lt;i&gt;&lt;span&gt;Findings.&lt;/span&gt;&lt;/i&gt;&lt;/b&gt;&lt;span&gt; Three findings are advanced. First, prompt injection is structural rather than incidental: it arises from the architectural decision to process instructions and data through the same channel and cannot be eliminated through training alone. Second, indirect prompt injection through retrieved content, embedded in agentic workflows, has produced verified real-world security incidents with severities exceeding CVSS 9.0, signalling that the discipline has moved from theoretical to operational. Third, defensive controls require architectural separation of trusted instruction channels from untrusted data channels, output validation, structured policy mediation between agent reasoning and tool execution, and continuous adversarial evaluation.&lt;/span&gt;&lt;/p&gt;\n&lt;p&gt;&lt;b&gt;&lt;i&gt;&lt;span&gt;Implications.&lt;/span&gt;&lt;/i&gt;&lt;/b&gt;&lt;span&gt; Practitioners deploying large language models and agentic systems require defence-in-depth controls aligned to the OWASP Top 10 for Large Language Model Applications and the OWASP Top 10 for Agentic Applications, integrated within ISO/IEC 42001 management system documentation and the NIST AI Risk Management Framework. The paper provides a structured mapping between attack categories and applicable controls.&lt;/span&gt;&lt;/p&gt;",
+    "reliability_notes": "Retrieved from Crossref API (type: posted-content)."
+  },
+  {
+    "id": "S002",
+    "title": "Enhancing Security in Large Language Models: A Comprehensive Review of Prompt Injection Attacks and Defenses",
+    "authors": [
+      "Mathew, Eleena"
+    ],
+    "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+    "publication_date": "2024-10-21",
+    "url": "https://doi.org/10.36227/techrxiv.172954263.32914470/v1",
+    "doi": "10.36227/techrxiv.172954263.32914470/v1",
+    "access_date": "2026-09-01",
+    "source_type": "other",
+    "retrieved_text": "This review paper explores advanced methods to prompt Large Language Models (LLMs) into  generating objectionable or unintended behaviors through adversarial prompt injection attacks. We  examine a series of novel projects like HOUYI, Robustly Aligned LLM (RA-LLM), StruQ, and  Virtual Prompt Injection, that compel LLMs to produce affirmative responses to harmful queries.  Additionally, the paper investigates the robustness of these attacks across different models and  prompts. Several new benchmarks, such as PromptBench, AdvBench, AttackEval, INJECAGENT,  and RobustnessSuite, have been created to evaluate the overall performance and resilience of LLMs  against adversarial prompt injection attacks. Results show significant success rates in misleading  models like Vicuna-7B, Llama-2-7B-Chat, GPT-3.5, and GPT-4. The review highlights limitations  in existing defense mechanisms and proposes future directions for enhancing LLM alignment and  safety mechanisms such as LLM SELF DEFENSE, Unlike previous studies, this paper provides a  more comprehensive evaluation by integrating a broader range of attack methods and target models.  Our study shows that there is a need for improved robustness in LLMs, which will potentially shape  the future of AI-driven applications and security protocols.",
+    "reliability_notes": "Retrieved from Crossref API (type: posted-content)."
+  },
+  {
+    "id": "S003",
+    "title": "UniGuardian: A Unified Defense for Detecting Prompt Injection, Backdoor Attacks and Adversarial Attacks in Large Language Models",
+    "authors": [
+      "Huawei Lin",
+      "Yingjie Lao",
+      "Tong Geng",
+      "Tan Yu",
+      "Weijie Zhao"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2025-02-18",
+    "url": "http://arxiv.org/abs/2502.13141v1",
+    "doi": null,
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "Large Language Models (LLMs) are vulnerable to attacks like prompt injection, backdoor attacks, and adversarial attacks, which manipulate prompts or models to generate harmful outputs. In this paper, departing from traditional deep learning attack paradigms, we explore their intrinsic relationship and collectively term them Prompt Trigger Attacks (PTA). This raises a key question: Can we determine if a prompt is benign or poisoned? To address this, we propose UniGuardian, the first unified defense mechanism designed to detect prompt injection, backdoor attacks, and adversarial attacks in LLMs. Additionally, we introduce a single-forward strategy to optimize the detection pipeline, enabling simultaneous attack detection and text generation within a single forward pass. Our experiments confirm that UniGuardian accurately and efficiently identifies malicious prompts in LLMs.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S004",
+    "title": "Detecting Prompt Injection Attacks Against Application Using Classifiers",
+    "authors": [
+      "Safwan Shaheer",
+      "G. M. Refatul Islam",
+      "Mohammad Rafid Hamid",
+      "Md. Abrar Faiaz Khan",
+      "Md. Omar Faruk",
+      "Yaseen Nur"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2025-12-14",
+    "url": "http://arxiv.org/abs/2512.12583v1",
+    "doi": null,
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "Prompt injection attacks can compromise the security and stability of critical systems, from infrastructure to large web applications. This work curates and augments a prompt injection dataset based on the HackAPrompt Playground Submissions corpus and trains several classifiers, including LSTM, feed forward neural networks, Random Forest, and Naive Bayes, to detect malicious prompts in LLM integrated web applications. The proposed approach improves prompt injection detection and mitigation, helping protect targeted applications and systems.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S005",
+    "title": "Automatic and Universal Prompt Injection Attacks against Large Language Models",
+    "authors": [
+      "Xiaogeng Liu",
+      "Zhiyuan Yu",
+      "Yizhe Zhang",
+      "Ning Zhang",
+      "Chaowei Xiao"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2024-03-07",
+    "url": "http://arxiv.org/abs/2403.04957v1",
+    "doi": null,
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "Large Language Models (LLMs) excel in processing and generating human language, powered by their ability to interpret and follow instructions. However, their capabilities can be exploited through prompt injection attacks. These attacks manipulate LLM-integrated applications into producing responses aligned with the attacker's injected content, deviating from the user's actual requests. The substantial risks posed by these attacks underscore the need for a thorough understanding of the threats. Yet, research in this area faces challenges due to the lack of a unified goal for such attacks and their reliance on manually crafted prompts, complicating comprehensive assessments of prompt injection robustness. We introduce a unified framework for understanding the objectives of prompt injection attacks and present an automated gradient-based method for generating highly effective and universal prompt injection data, even in the face of defensive measures. With only five training samples (0.3% relative to the test data), our attack can achieve superior performance compared with baselines. Our findings emphasize the importance of gradient-based testing, which can avoid overestimation of robustness, especially for defense mechanisms.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S006",
+    "title": "WizardLM: Empowering large pre-trained language models to follow complex instructions",
+    "authors": [
+      "Can Xu",
+      "Qingfeng Sun",
+      "Kai Zheng",
+      "Xiubo Geng",
+      "Pu Zhao",
+      "Jiazhan Feng",
+      "Chongyang Tao",
+      "Qingwei Lin",
+      "Daxin Jiang"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2023-04-24",
+    "url": "http://arxiv.org/abs/2304.12244v3",
+    "doi": null,
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "Training large language models (LLMs) with open-domain instruction following data brings colossal success. However, manually creating such instruction data is very time-consuming and labor-intensive. Moreover, humans may struggle to produce high-complexity instructions. In this paper, we show an avenue for creating large amounts of instruction data with varying levels of complexity using LLM instead of humans. Starting with an initial set of instructions, we use our proposed Evol-Instruct to rewrite them step by step into more complex instructions. Then, we mix all generated instruction data to fine-tune LLaMA. We call the resulting model WizardLM. Human evaluations on a complexity-balanced test bed and Vicuna's testset show that instructions from Evol-Instruct are superior to human-created ones. By analyzing the human evaluation results of the high complexity part, we demonstrate that outputs from our WizardLM are preferred to outputs from OpenAI ChatGPT. In GPT-4 automatic evaluation, WizardLM achieves more than 90\\% capacity of ChatGPT on 17 out of 29 skills. Even though WizardLM still lags behind ChatGPT in some aspects, our findings suggest that fine-tuning with AI-evolved instructions is a promising direction for enhancing LLMs. Our code and data are public at https://github.com/nlpxucan/WizardLM",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  }
+]

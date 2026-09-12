@@ -1,0 +1,25 @@
+title: "Zero Trust Architecture for Enterprise Networks"
+type: academic
+topic: >
+  Examine the principles of Zero Trust architecture—never trust, always verify—and
+  how micro-segmentation, identity-aware proxies, and continuous verification replace
+  traditional perimeter security in enterprise environments.
+target_words: 1500
+word_tolerance_percent: 10
+citation_style: apa7
+source_requirements:
+  minimum_sources: 6
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - Support factual claims with citations
+  - Do not fabricate sources
+  - Include an APA 7 reference page
+  - Discuss implementation challenges and trade-offs
+outline:
+  - Introduction
+  - Perimeter model limitations
+  - Zero Trust core principles
+  - Identity and access controls
+  - Micro-segmentation and enforcement
+  - Challenges and conclusion

@@ -1,0 +1,109 @@
+[
+  {
+    "id": "S001",
+    "title": "Zero trust: Never trust, always verify",
+    "authors": [
+      "Wylde, Allison"
+    ],
+    "publisher": "IEEE",
+    "publication_date": "2021-06-14",
+    "url": "https://doi.org/10.1109/cybersa52016.2021.9478244",
+    "doi": "10.1109/cybersa52016.2021.9478244",
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "Published academic work by IEEE: Zero trust: Never trust, always verify",
+    "reliability_notes": "Retrieved from Crossref API (type: proceedings-article)."
+  },
+  {
+    "id": "S002",
+    "title": "Zero Trust Enforcement Using Microsegmentation, Identity-Aware Proxies, and Continuous Adaptive Risk Assessment in Multi-Tenant Cloud Environments",
+    "authors": [],
+    "publisher": "Association of Technology and Science",
+    "publication_date": "2025-07-14",
+    "url": "https://doi.org/10.7753/ijcatr1407.1006",
+    "doi": "10.7753/ijcatr1407.1006",
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "Published academic work by Association of Technology and Science: Zero Trust Enforcement Using Microsegmentation, Identity-Aware Proxies, and Continuous Adaptive Risk Assessment in Multi-Tenant Cloud Environments",
+    "reliability_notes": "Retrieved from Crossref API (type: journal-article)."
+  },
+  {
+    "id": "S003",
+    "title": "Enhancing Enterprise Security with Zero Trust Architecture",
+    "authors": [
+      "Mahmud Hasan"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2024-10-23",
+    "url": "http://arxiv.org/abs/2410.18291v1",
+    "doi": null,
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "Zero Trust Architecture (ZTA) represents a transformative approach to modern cybersecurity, directly addressing the shortcomings of traditional perimeter-based security models. With the rise of cloud computing, remote work, and increasingly sophisticated cyber threats, perimeter defenses have proven ineffective at mitigating risks, particularly those involving insider threats and lateral movement within networks. ZTA shifts the security paradigm by assuming that no user, device, or system can be trusted by default, requiring continuous verification and the enforcement of least privilege access for all entities. This paper explores the key components of ZTA, such as identity and access management (IAM), micro-segmentation, continuous monitoring, and behavioral analytics, and evaluates their effectiveness in reducing vulnerabilities across diverse sectors, including finance, healthcare, and technology. Through case studies and industry reports, the advantages of ZTA in mitigating insider threats and minimizing attack surfaces are discussed. Additionally, the paper addresses the challenges faced during ZTA implementation, such as scalability, integration complexity, and costs, while providing best practices for overcoming these obstacles. Lastly, future research directions focusing on emerging technologies like AI, machine learning, blockchain, and their integration into ZTA are examined to enhance its capabilities further.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S004",
+    "title": "Identity Control Plane: The Unifying Layer for Zero Trust Infrastructure",
+    "authors": [
+      "Surya Teja Avirneni"
+    ],
+    "publisher": "arXiv",
+    "publication_date": "2025-04-24",
+    "url": "http://arxiv.org/abs/2504.17759v1",
+    "doi": null,
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "This paper introduces the Identity Control Plane (ICP), an architectural framework for enforcing identity-aware Zero Trust access across human users, workloads, and automation systems. The ICP model unifies SPIFFE-based workload identity, OIDC/SAML user identity, and scoped automation credentials via broker-issued transaction tokens. We propose a composable enforcement layer using ABAC policy engines (e.g., OPA, Cedar), aligned with IETF WIMSE drafts and OAuth transaction tokens. The paper includes architectural components, integration patterns, use cases, a comparative analysis with current models, and theorized performance metrics. A FedRAMP and SLSA compliance mapping is also presented. This is a theoretical infrastructure architecture paper intended for security researchers and platform architects. No prior version of this work has been published.",
+    "reliability_notes": "Retrieved from arXiv API; peer-review / preprint."
+  },
+  {
+    "id": "S005",
+    "title": "Zero Trust Architecture in Mission-Critical Systems: From Perimeter Security to Continuous Verification",
+    "authors": [
+      "Yesu Vara Prasad Kollipara"
+    ],
+    "publisher": "Science Research Society",
+    "publication_date": "2025-10-29",
+    "url": "https://doi.org/10.52783/jisem.v10i61s.13351",
+    "doi": "10.52783/jisem.v10i61s.13351",
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "Higher-risk organizations in health care, finance, and law enforcement are experiencing increasing cybersecurity risk that threatens the traditional perimeter-based security model. Zero Trust Architecture (ZTA) involves a fundamental shift in the way we think about security. ZTA eliminates trust assumptions, fixes legacy trust-based security models, and shifts to a model that assumes every access request must be verified, and does so across every request regardless of where the request originates. The \"never trust, always verify\" model that ZTA operates in extends to all interactions with devices, applications, and machine-to-machine communications, expanding the security coverage to the overall ecosystem. The incorporation of artificial intelligence expands ZTA as well as behavior analytics, anomaly detection, and modifying policies in a real-time sense of risk. Organizations will be able to identify unusual behavior and mitigate access for the normal user of those systems, instead of static Non-PJudicial Acquisition access. Using ZTA in higher-risk organizations has settled operations since its inception and demonstrated effectiveness in breach prevention, regulatory compliance, and overall operational resiliency. ZTA is centered upon identity, micro-segmentation, and least-privilege principles that are rooted in identity, which greatly lowers the attack surface, and is transparent to normal operating system availability. ZTA is a critical piece of infrastructure for organizations that deal with sensitive data and critical operations. ZTA provides a tangible way forward in moving towards a sustainable model for establishing systemic trust and an institution's credibility, especially as organizational ecosystems become increasingly complex and threatened.",
+    "reliability_notes": "Retrieved from Crossref API (type: journal-article)."
+  },
+  {
+    "id": "S006",
+    "title": "Zero Trust Architecture: Principles, Implementation, and Impact on Organizational Security",
+    "authors": [
+      "Kannan, Yamini"
+    ],
+    "publisher": "International Journal of Science and Research",
+    "publication_date": "2022-05-05",
+    "url": "https://doi.org/10.21275/sr24716003250",
+    "doi": "10.21275/sr24716003250",
+    "access_date": "2026-09-01",
+    "source_type": "journal_article",
+    "retrieved_text": "Published academic work by International Journal of Science and Research: Zero Trust Architecture: Principles, Implementation, and Impact on Organizational Security",
+    "reliability_notes": "Retrieved from Crossref API (type: journal-article)."
+  },
+  {
+    "id": "S007",
+    "title": "Zero Trust in Multi-Cloud Environments: A Framework for Identity-Aware Micro-Segmentation",
+    "authors": [
+      "Prasad, Amit",
+      "Bhatia, Vishi Singh",
+      "Tyagi, Navneet",
+      "Sengupta, Abhik",
+      "Singh, Harvendra"
+    ],
+    "publisher": "Elsevier BV",
+    "publication_date": "2025-01-01",
+    "url": "https://doi.org/10.2139/ssrn.5285824",
+    "doi": "10.2139/ssrn.5285824",
+    "access_date": "2026-09-01",
+    "source_type": "other",
+    "retrieved_text": "This paper proposes a Zero Trust (ZT) framework designed for multi-cloud environments (AWS, Azure, GCP) to address the challenges of dynamic workloads, fragmented security controls, and lateral threat movement. Traditional perimeterbased security models fail in distributed cloud architectures, necessitating an identitycentric, least-privilege approach. Our framework integrates real-time identity-aware micro-segmentation, leveraging continuous authentication and contextual access policies to enforce granular network segmentation across hybrid and multi-cloud deployments. By binding access decisions to dynamic risk signals-such as user identity, device posture, workload behavior, and environmental context-the model minimizes implicit trust zones and restricts lateral movement. The solution employs adaptive policy engines, software-defined perimeters (SDP), and encryption to isolate workloads, APIs, and data flows while maintaining scalability. Key innovations include a unified identity layer for cross-cloud consistency, intent-based segmentation templates, and automated policy orchestration via cloud-native APIs. We evaluate the framework against attack scenarios (e.g., credential theft, API exploits) in a multicloud testbed, demonstrating reduced attack surfaces and improved threat containment. The results highlight a 60% reduction in unauthorized access attempts and a 40% faster response to policy violations compared to static firewall rules. The paper also discusses operational trade-offs, such as latency overhead (\u22648%) and compliance alignment with NIST SP 800-207. This work advances Zero Trust adoption in multi-cloud environments by balancing security agility with operational practicality, offering a roadmap for enterprises transitioning from perimeter-based defenses to identity-aware micro-segmentation.",
+    "reliability_notes": "Retrieved from Crossref API (type: posted-content)."
+  }
+]

@@ -1,0 +1,25 @@
+title: "Workload Identity and the SPIFFE Standard for Cloud-Native Security"
+type: academic
+topic: >
+  Examine how workload identity standards such as SPIFFE and SPIRE replace
+  long-lived secrets for service-to-service authentication in cloud-native
+  environments, and assess their security and operational properties.
+target_words: 1500
+word_tolerance_percent: 10
+citation_style: apa7
+source_requirements:
+  minimum_sources: 6
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - Support factual claims with citations
+  - Do not fabricate sources
+  - Include an APA 7 reference page
+  - Discuss trust bootstrapping and revocation
+outline:
+  - Introduction
+  - Secret-based authentication risks
+  - SPIFFE identity model
+  - SPIRE attestation and issuance
+  - Operational and security trade-offs
+  - Conclusion
