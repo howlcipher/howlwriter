@@ -1,0 +1,25 @@
+title: "Defenses Against Prompt Injection in Large Language Model Applications"
+type: academic
+topic: >
+  Evaluate defenses against prompt injection and jailbreak attacks in applications
+  that integrate large language models, including input filtering, instruction
+  hierarchies, output constraints, and runtime monitoring.
+target_words: 1500
+word_tolerance_percent: 10
+citation_style: apa7
+source_requirements:
+  minimum_sources: 6
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - Support factual claims with citations
+  - Do not fabricate sources
+  - Include an APA 7 reference page
+  - Compare defensive techniques and their limitations
+outline:
+  - Introduction
+  - Prompt injection attack taxonomy
+  - Input validation and filtering
+  - Instruction hierarchy and output controls
+  - Runtime defenses
+  - Conclusion

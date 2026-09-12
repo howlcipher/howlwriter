@@ -1,0 +1,25 @@
+title: "Memory Safety in Rust Compared with C and C++"
+type: academic
+topic: >
+  Compare Rust's compile-time memory safety guarantees with the manual
+  memory management model of C and C++, focusing on how the borrow checker
+  prevents use-after-free, double-free, and data races in systems software.
+target_words: 1500
+word_tolerance_percent: 10
+citation_style: apa7
+source_requirements:
+  minimum_sources: 6
+  prefer_primary_sources: true
+  scholarly_or_authoritative: true
+requirements:
+  - Support factual claims with citations
+  - Do not fabricate sources
+  - Include an APA 7 reference page
+  - Discuss both security benefits and practical limitations
+outline:
+  - Introduction
+  - Memory safety vulnerabilities in C and C++
+  - Rust ownership and borrow checking
+  - Comparative empirical evidence
+  - Limitations and adoption challenges
+  - Conclusion
