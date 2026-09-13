@@ -11,6 +11,15 @@ from howlwriter.domain.document import Document
 from howlwriter.rendering.base import DocumentRenderer, RenderContext, RenderedArtifact
 
 
+def _set_run_font(run: Any, ctx: RenderContext, *, size_pt: float | None = None) -> None:
+    """Applies the requested font family and optional size to a run."""
+    from docx.shared import Pt
+
+    run.font.name = ctx.font_family
+    if size_pt is not None:
+        run.font.size = Pt(size_pt)
+
+
 def _add_hyperlink(paragraph: Any, url: str, text: str) -> None:
     """Adds a clickable hyperlink run to a python-docx paragraph."""
     try:
@@ -37,7 +46,7 @@ def _add_hyperlink(paragraph: Any, url: str, text: str) -> None:
         run.font.underline = True
 
 
-def _add_inline_formatted(paragraph: Any, text: str) -> None:
+def _add_inline_formatted(paragraph: Any, text: str, ctx: RenderContext) -> None:
     """Parses basic markdown formatting (**bold**, *italic*, `code`, [anchor](url)) into paragraph runs."""
     # Pattern to match links, bold, italic, and code
     pattern = re.compile(
@@ -51,7 +60,7 @@ def _add_inline_formatted(paragraph: Any, text: str) -> None:
     for match in pattern.finditer(text):
         start, end = match.span()
         if start > last_idx:
-            paragraph.add_run(text[last_idx:start])
+            _set_run_font(paragraph.add_run(text[last_idx:start]), ctx)
 
         if match.group("link_text"):
             _add_hyperlink(
@@ -60,9 +69,11 @@ def _add_inline_formatted(paragraph: Any, text: str) -> None:
         elif match.group("bold"):
             run = paragraph.add_run(match.group("bold"))
             run.bold = True
+            _set_run_font(run, ctx)
         elif match.group("italic"):
             run = paragraph.add_run(match.group("italic"))
             run.italic = True
+            _set_run_font(run, ctx)
         elif match.group("code"):
             run = paragraph.add_run(match.group("code"))
             run.font.name = "Courier New"
@@ -70,7 +81,56 @@ def _add_inline_formatted(paragraph: Any, text: str) -> None:
         last_idx = end
 
     if last_idx < len(text):
-        paragraph.add_run(text[last_idx:])
+        _set_run_font(paragraph.add_run(text[last_idx:]), ctx)
+
+
+def _add_page_number_header(section: Any, ctx: RenderContext) -> None:
+    """Puts a right-aligned PAGE field in the section header (APA 7 placement)."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    header_para = section.header.paragraphs[0]
+    header_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    run = header_para.add_run()
+    run.font.name = ctx.font_family
+    run.font.size = Pt(ctx.font_size_pt)
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = "PAGE"
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+    run._r.append(fld_begin)
+    run._r.append(instr)
+    run._r.append(fld_end)
+
+
+def _add_title_page(doc: Any, title: str, lines: list[str], ctx: RenderContext) -> None:
+    """Writes an APA-style title page: title in the upper half, then the
+    author/affiliation/course lines, then a page break."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
+    from docx.shared import Pt
+
+    for _ in range(6):
+        doc.add_paragraph()
+    title_para = doc.add_paragraph()
+    title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title_run = title_para.add_run(title)
+    title_run.bold = True
+    title_run.font.name = ctx.font_family
+    title_run.font.size = Pt(ctx.font_size_pt)
+    title_para.paragraph_format.space_after = Pt(ctx.font_size_pt)
+    for line in lines:
+        para = doc.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = para.add_run(line)
+        run.font.name = ctx.font_family
+        run.font.size = Pt(ctx.font_size_pt)
+    break_para = doc.add_paragraph()
+    break_para.add_run().add_break(WD_BREAK.PAGE)
 
 
 def _parse_markdown_table(lines: list[str]) -> tuple[list[str], list[list[str]]] | None:
@@ -129,32 +189,42 @@ class DocxRenderer(DocumentRenderer):
 
         doc = docx.Document()
 
-        # Set standard 1-inch margins
+        # Set margins from the formatting context
         for section in doc.sections:
-            section.top_margin = Inches(1.0)
-            section.bottom_margin = Inches(1.0)
-            section.left_margin = Inches(1.0)
-            section.right_margin = Inches(1.0)
+            section.top_margin = Inches(ctx.margin_top_in)
+            section.bottom_margin = Inches(ctx.margin_bottom_in)
+            section.left_margin = Inches(ctx.margin_left_in)
+            section.right_margin = Inches(ctx.margin_right_in)
 
         # Base document styling
         style = doc.styles["Normal"]
         font = style.font
-        font.name = "Times New Roman"
-        font.size = Pt(12)
-        font.color.rgb = RGBColor(0x1A, 0x1A, 0x1A)
+        font.name = ctx.font_family
+        font.size = Pt(ctx.font_size_pt)
+        font.color.rgb = RGBColor(0x00, 0x00, 0x00)
+        style.paragraph_format.line_spacing = ctx.line_spacing
+
+        if ctx.page_numbers:
+            for section in doc.sections:
+                _add_page_number_header(section, ctx)
+
+        if ctx.title_page:
+            _add_title_page(doc, title, ctx.title_page_lines(), ctx)
 
         # Title at the top
         title_para = doc.add_paragraph()
         title_run = title_para.add_run(title)
         title_run.bold = True
-        title_run.font.size = Pt(18)
-        title_para.paragraph_format.space_after = Pt(14)
+        title_run.font.name = ctx.font_family
+        title_run.font.size = Pt(ctx.font_size_pt if ctx.title_page else 18)
+        title_para.paragraph_format.space_after = Pt(0 if ctx.title_page else 14)
 
-        if ctx.author or ctx.institution:
+        if (ctx.author or ctx.institution) and not ctx.title_page:
             meta_p = doc.add_paragraph()
             meta_run = meta_p.add_run(
                 f"{ctx.author or ''}{' — ' if ctx.author and ctx.institution else ''}{ctx.institution or ''}"
             )
+            meta_run.font.name = ctx.font_family
             meta_run.font.size = Pt(11)
             meta_run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
             meta_p.paragraph_format.space_after = Pt(18)
@@ -210,8 +280,18 @@ class DocxRenderer(DocumentRenderer):
             if first_line.startswith("# "):
                 h_text = first_line[2:].strip()
                 h_p = doc.add_heading(h_text, level=1)
-                h_p.paragraph_format.space_before = Pt(14)
-                h_p.paragraph_format.space_after = Pt(6)
+                if ctx.title_page:
+                    h_p.paragraph_format.page_break_before = "reference" in h_text.lower()
+                    h_p.paragraph_format.space_before = Pt(0)
+                    h_p.paragraph_format.space_after = Pt(0)
+                    for run in h_p.runs:
+                        run.font.name = ctx.font_family
+                        run.font.size = Pt(ctx.font_size_pt)
+                else:
+                    h_p.paragraph_format.space_before = Pt(14)
+                    h_p.paragraph_format.space_after = Pt(6)
+                    for run in h_p.runs:
+                        run.font.name = ctx.font_family
                 in_references = "reference" in h_text.lower()
                 continue
 
@@ -219,8 +299,18 @@ class DocxRenderer(DocumentRenderer):
             if first_line.startswith("## "):
                 h_text = first_line[3:].strip()
                 h_p = doc.add_heading(h_text, level=2)
-                h_p.paragraph_format.space_before = Pt(12)
-                h_p.paragraph_format.space_after = Pt(4)
+                if ctx.title_page:
+                    h_p.paragraph_format.page_break_before = "reference" in h_text.lower()
+                    h_p.paragraph_format.space_before = Pt(0)
+                    h_p.paragraph_format.space_after = Pt(0)
+                    for run in h_p.runs:
+                        run.font.name = ctx.font_family
+                        run.font.size = Pt(ctx.font_size_pt)
+                else:
+                    h_p.paragraph_format.space_before = Pt(12)
+                    h_p.paragraph_format.space_after = Pt(4)
+                    for run in h_p.runs:
+                        run.font.name = ctx.font_family
                 in_references = "reference" in h_text.lower()
                 continue
 
@@ -228,8 +318,17 @@ class DocxRenderer(DocumentRenderer):
             if first_line.startswith("### "):
                 h_text = first_line[4:].strip()
                 h_p = doc.add_heading(h_text, level=3)
-                h_p.paragraph_format.space_before = Pt(10)
-                h_p.paragraph_format.space_after = Pt(4)
+                if ctx.title_page:
+                    h_p.paragraph_format.space_before = Pt(0)
+                    h_p.paragraph_format.space_after = Pt(0)
+                    for run in h_p.runs:
+                        run.font.name = ctx.font_family
+                        run.font.size = Pt(ctx.font_size_pt)
+                else:
+                    h_p.paragraph_format.space_before = Pt(10)
+                    h_p.paragraph_format.space_after = Pt(4)
+                    for run in h_p.runs:
+                        run.font.name = ctx.font_family
                 continue
 
             # Horizontal rule
@@ -247,7 +346,7 @@ class DocxRenderer(DocumentRenderer):
                 q_p = doc.add_paragraph()
                 q_p.paragraph_format.left_indent = Inches(0.5)
                 q_p.paragraph_format.space_after = Pt(8)
-                _add_inline_formatted(q_p, quote_text)
+                _add_inline_formatted(q_p, quote_text, ctx)
                 for r in q_p.runs:
                     r.italic = True
                 continue
@@ -260,10 +359,10 @@ class DocxRenderer(DocumentRenderer):
                         bullet_text = l[2:].strip()
                         b_p = doc.add_paragraph(style="List Bullet")
                         b_p.paragraph_format.space_after = Pt(3)
-                        _add_inline_formatted(b_p, bullet_text)
+                        _add_inline_formatted(b_p, bullet_text, ctx)
                     else:
                         p = doc.add_paragraph()
-                        _add_inline_formatted(p, l)
+                        _add_inline_formatted(p, l, ctx)
                 continue
 
             # Numbered list
@@ -275,16 +374,16 @@ class DocxRenderer(DocumentRenderer):
                         item_text = num_match.group(1)
                         n_p = doc.add_paragraph(style="List Number")
                         n_p.paragraph_format.space_after = Pt(3)
-                        _add_inline_formatted(n_p, item_text)
+                        _add_inline_formatted(n_p, item_text, ctx)
                     else:
                         p = doc.add_paragraph()
-                        _add_inline_formatted(p, l)
+                        _add_inline_formatted(p, l, ctx)
                 continue
 
             # Standard paragraph or reference entry
             p = doc.add_paragraph()
-            p.paragraph_format.space_after = Pt(8)
-            p.paragraph_format.line_spacing = 1.15
+            p.paragraph_format.space_after = Pt(0)
+            p.paragraph_format.line_spacing = ctx.line_spacing
 
             if in_references:
                 # APA 7 hanging indent for References
@@ -292,14 +391,14 @@ class DocxRenderer(DocumentRenderer):
                 p.paragraph_format.first_line_indent = Inches(-0.5)
 
             joined_line = " ".join(l.strip() for l in lines)
-            _add_inline_formatted(p, joined_line)
+            _add_inline_formatted(p, joined_line, ctx)
 
         # AI-Use Disclosure section if requested
         if ctx.include_ai_disclosure and ctx.ai_disclosure_text:
             doc.add_heading("AI-Use Disclosure", level=2)
             disc_p = doc.add_paragraph()
             disc_p.paragraph_format.space_after = Pt(8)
-            _add_inline_formatted(disc_p, ctx.ai_disclosure_text.strip())
+            _add_inline_formatted(disc_p, ctx.ai_disclosure_text.strip(), ctx)
 
         output_stream = io.BytesIO()
         doc.save(output_stream)

@@ -622,3 +622,28 @@ def test_source_integrity_orthogonality():
     assert source.relevance == "DIRECT"
     assert report.status == "PASS"
     assert report.findings[0].evidence_support == "DIRECT"
+
+
+def test_scraped_doi_without_expected_title_is_not_reported_as_fabricated():
+    """Regression: `howlwriter sources verify paper.md` scrapes DOIs and titles them
+    "DOI Reference <doi>"; comparing that placeholder to the registrar title reported
+    every real DOI as a BLOCKING mismatch."""
+    def crossref_handler(request: httpx.Request) -> httpx.Response:
+        if "10.1000/real-doi" in str(request.url):
+            return httpx.Response(200, json={"status": "ok", "message": {"title": ["Cyber risk and the U.S. financial system"]}})
+        return httpx.Response(404, text="DOI Not Found")
+
+    verifier = SourceIntegrityVerifier(mock_transport=httpx.MockTransport(crossref_handler))
+    finding = verifier.verify_source(
+        Source(id="S001", title="DOI Reference 10.1000/real-doi", authors=["Unknown"], doi="10.1000/real-doi")
+    )
+    assert finding.access_status == ACCESS_VALID
+    assert finding.severity == SEV_PASS
+    assert finding.metadata_status == METADATA_UNKNOWN
+    assert finding.retrieved_title == "Cyber risk and the U.S. financial system"
+
+    # A fabricated DOI is still caught even without an expected title.
+    fake = verifier.verify_source(
+        Source(id="S002", title="DOI Reference 10.9999/nope", authors=["Unknown"], doi="10.9999/nope")
+    )
+    assert fake.severity == SEV_BLOCKING

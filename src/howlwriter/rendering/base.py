@@ -10,9 +10,20 @@ from howlwriter.domain.document import Document
 from howlwriter.domain.serialization import DataClassSerializationMixin
 
 
+#: Ordered keys of a ``RenderContext.title_page`` mapping, rendered top to
+#: bottom as centered lines beneath the title (APA 7 student title page order).
+TITLE_PAGE_FIELDS = ("author", "affiliation", "course", "assignment", "instructor", "date")
+
+
 @dataclass
 class RenderContext(DataClassSerializationMixin):
-    """Context and options provided to renderers."""
+    """Context and options provided to renderers.
+
+    ``line_spacing`` is a multiple of single spacing (1.0, 1.5, 2.0, etc.).
+    ``page_numbers`` places the page number in the top-right header (APA 7).
+    ``title_page`` holds the lines for a separate title page keyed by
+    :data:`TITLE_PAGE_FIELDS`; when present the body starts on page two.
+    """
 
     title: str = ""
     author: str = ""
@@ -22,6 +33,25 @@ class RenderContext(DataClassSerializationMixin):
     ai_disclosure_text: str | None = None
     run_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    font_family: str = "Times New Roman"
+    font_size_pt: float = 12.0
+    line_spacing: float = 1.0
+    margin_top_in: float = 1.0
+    margin_bottom_in: float = 1.0
+    margin_left_in: float = 1.0
+    margin_right_in: float = 1.0
+    page_numbers: bool = False
+    title_page: dict[str, str] | None = None
+
+    def title_page_lines(self) -> list[str]:
+        """The non-empty title-page lines in APA order (title excluded)."""
+        if not self.title_page:
+            return []
+        return [
+            str(self.title_page[key]).strip()
+            for key in TITLE_PAGE_FIELDS
+            if self.title_page.get(key) and str(self.title_page[key]).strip()
+        ]
 
 
 @dataclass
