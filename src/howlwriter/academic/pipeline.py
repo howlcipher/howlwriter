@@ -35,7 +35,7 @@ from howlwriter.academic.requirements import (
 )
 from howlwriter.academic.research import AcademicResearcher
 from howlwriter.academic.ai_disclosure import build_ai_use_statement
-from howlwriter.academic.spec import AssignmentSpec, load_assignment_spec
+from howlwriter.academic.spec import AssignmentSpec, FormattingSpec, load_assignment_spec
 from howlwriter.domain.generation_provenance import (
     GenerationProvenance,
     normalize_reviewer_independence,
@@ -1070,12 +1070,22 @@ def _run_academic_pipeline(
         )
         out_mgr = LocalOutputManager(output_dir=target_dir, overwrite=should_overwrite)
 
+        formatting = getattr(spec, "formatting", None) or FormattingSpec()
         render_ctx = RenderContext(
             title=spec.title,
             citation_style=spec.citation_style,
             include_ai_disclosure=ai_statement is not None,
             ai_disclosure_text=ai_statement.render() if ai_statement else None,
             run_id=active_run_id,
+            font_family=formatting.font_family,
+            font_size_pt=formatting.font_size_pt,
+            line_spacing=formatting.line_spacing,
+            margin_top_in=formatting.margin_top_in,
+            margin_bottom_in=formatting.margin_bottom_in,
+            margin_left_in=formatting.margin_left_in,
+            margin_right_in=formatting.margin_right_in,
+            page_numbers=bool(formatting.page_numbers),
+            title_page=formatting.title_page,
         )
 
         for fmt in resolved_formats:

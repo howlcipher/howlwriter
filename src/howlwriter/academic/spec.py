@@ -64,6 +64,26 @@ class OutputPublishSpec(DataClassSerializationMixin):
 
 
 @dataclass
+class FormattingSpec(DataClassSerializationMixin):
+    """Page-layout requirements for an academic assignment.
+
+    These defaults implement the standard academic profile (Times New Roman,
+    12 pt, single spacing, 1-inch margins). Any explicit assignment value
+    overrides the default.
+    """
+
+    font_family: str = "Times New Roman"
+    font_size_pt: float = 12.0
+    line_spacing: float = 1.0
+    margin_top_in: float = 1.0
+    margin_bottom_in: float = 1.0
+    margin_left_in: float = 1.0
+    margin_right_in: float = 1.0
+    page_numbers: bool = False
+    title_page: dict[str, str] | None = None
+
+
+@dataclass
 class OutputSpec(DataClassSerializationMixin):
     local: OutputLocalSpec = field(default_factory=OutputLocalSpec)
     publish: OutputPublishSpec | None = None
@@ -95,6 +115,7 @@ class AssignmentSpec(DataClassSerializationMixin):
     outline: list[str] = field(default_factory=list)
     voice_profile: str | None = None
     output: OutputSpec = field(default_factory=OutputSpec)
+    formatting: FormattingSpec = field(default_factory=FormattingSpec)
     sections: list[SectionSpec] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -107,6 +128,10 @@ class AssignmentSpec(DataClassSerializationMixin):
             self.output = OutputSpec.from_dict(self.output)
         elif self.output is None:
             self.output = OutputSpec()
+        if isinstance(self.formatting, dict):
+            self.formatting = FormattingSpec.from_dict(self.formatting)
+        elif self.formatting is None:
+            self.formatting = FormattingSpec()
         if self.sections and isinstance(self.sections[0], dict):
             self.sections = [SectionSpec.from_dict(s) for s in self.sections]
         if not self.title and self.topic:
@@ -170,6 +195,25 @@ def validate_assignment_spec(spec: AssignmentSpec) -> list[str]:
             "length_constraints.target_page_min must be <= target_page_max "
             f"(got {lc.target_page_min} > {lc.target_page_max})."
         )
+
+    fmt = spec.formatting
+    if not isinstance(fmt.font_family, str) or not fmt.font_family.strip():
+        errors.append("formatting.font_family must be a non-empty string.")
+    if fmt.font_size_pt <= 0:
+        errors.append(f"formatting.font_size_pt must be positive, got {fmt.font_size_pt}.")
+    if fmt.line_spacing <= 0:
+        errors.append(f"formatting.line_spacing must be positive, got {fmt.line_spacing}.")
+    for margin_name in (
+        "margin_top_in",
+        "margin_bottom_in",
+        "margin_left_in",
+        "margin_right_in",
+    ):
+        value = getattr(fmt, margin_name)
+        if value < 0:
+            errors.append(f"formatting.{margin_name} must be non-negative, got {value}.")
+    if fmt.title_page is not None and not isinstance(fmt.title_page, dict):
+        errors.append("formatting.title_page must be a mapping of title-page fields to text.")
 
     if not errors:
         # Cross-check that the hard ceiling doesn't conflict with the

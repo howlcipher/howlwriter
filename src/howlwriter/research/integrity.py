@@ -162,6 +162,17 @@ except ImportError:  # pragma: no cover
     SSRFSafeTransport = None  # type: ignore[misc,assignment]
 
 
+#: Titles the CLI invents when it scrapes bare DOIs/URLs out of a text file.
+_PLACEHOLDER_TITLE_PREFIXES = ("DOI Reference ", "Web Source")
+
+
+def _is_placeholder_title(title: str | None) -> bool:
+    """True when no real expected title exists (empty, or a scraped placeholder)."""
+    if not title or not title.strip():
+        return True
+    return title.strip().startswith(_PLACEHOLDER_TITLE_PREFIXES)
+
+
 def _normalize_title(title: str) -> str:
     """Normalizes document or metadata title for robust comparison."""
     if not title:
@@ -529,6 +540,30 @@ class SourceIntegrityVerifier:
                     resolved_url=current_url,
                     retrieved_title="",
                     diagnostics=["DOI resolved in Crossref, but metadata contains no title."],
+                )
+
+            if _is_placeholder_title(source.title):
+                # A DOI scraped out of prose or a References list carries no
+                # expected title, so there is nothing to compare: resolution
+                # in the registrar is the whole check. Comparing the
+                # placeholder used to report every real DOI as a BLOCKING
+                # "likely fabricated" mismatch.
+                return SourceIntegrityFinding(
+                    source_id=source.id,
+                    source_title=source.title,
+                    url_or_doi=doi,
+                    access_status=ACCESS_VALID,
+                    metadata_status=METADATA_UNKNOWN,
+                    evidence_support=evidence_support,
+                    severity=SEV_PASS,
+                    http_status=200,
+                    resolved_url=current_url,
+                    retrieved_title=retrieved_title,
+                    diagnostics=[
+                        "DOI resolved successfully in Crossref.",
+                        "No expected title was supplied for this DOI, so the registrar "
+                        f"title was not compared: '{retrieved_title}'.",
+                    ],
                 )
 
             sim = _compute_string_similarity(source.title, retrieved_title)

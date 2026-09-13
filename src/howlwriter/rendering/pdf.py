@@ -27,7 +27,8 @@ def _markdown_to_html(markdown_text: str, title: str, context: RenderContext) ->
         # Headings
         if first.startswith("# "):
             h_text = html.escape(first[2:].strip())
-            html_parts.append(f"<h1>{h_text}</h1>")
+            css_class = ' class="references-heading"' if "reference" in h_text.lower() else ""
+            html_parts.append(f"<h1{css_class}>{h_text}</h1>")
             in_references = "reference" in h_text.lower()
             continue
         elif first.startswith("## "):
@@ -111,6 +112,40 @@ def _markdown_to_html(markdown_text: str, title: str, context: RenderContext) ->
 
     body_content = "\n".join(html_parts)
 
+    title_page_html = ""
+    if context.title_page:
+        title_lines = "".join(
+            f"<p>{html.escape(line)}</p>" for line in context.title_page_lines()
+        )
+        title_page_html = (
+            f'<section class="title-page"><h1 class="title-page-title">{html.escape(title)}</h1>'
+            f"{title_lines}</section>\n"
+        )
+    body_content = title_page_html + body_content
+
+    # Chromium's page.pdf() ignores @page margin boxes, so page numbers are
+    # drawn through its header template (see PdfRenderer); line-height follows
+    # the requested spacing.
+    line_height = context.line_spacing or 1.0
+    font_size_pt = f"{context.font_size_pt:g}"
+    font_size = f"{font_size_pt}pt"
+    h1_size = f"{font_size_pt}pt" if context.title_page else "18pt"
+    h2_size = f"{font_size_pt}pt" if context.title_page else "14pt"
+    h3_size = f"{font_size_pt}pt"
+    references_break = "break-before: page;" if context.title_page else ""
+    h1_after = "0" if context.title_page else "12pt"
+    h2_before = "0" if context.title_page else "18pt"
+    h2_after = "0" if context.title_page else "6pt"
+    h2_border = "none" if context.title_page else "1px solid #ddd"
+    h2_padding = "0" if context.title_page else "2pt"
+    paragraph_after = "0"
+    reference_after = "0"
+
+    margin_top = f"{context.margin_top_in:g}in"
+    margin_right = f"{context.margin_right_in:g}in"
+    margin_bottom = f"{context.margin_bottom_in:g}in"
+    margin_left = f"{context.margin_left_in:g}in"
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -119,49 +154,62 @@ def _markdown_to_html(markdown_text: str, title: str, context: RenderContext) ->
 <style>
   @page {{
     size: letter;
-    margin: 1in;
-    @bottom-right {{
-      content: counter(page);
-    }}
+    margin: {margin_top} {margin_right} {margin_bottom} {margin_left};
   }}
   body {{
-    font-family: 'Times New Roman', Times, Georgia, serif;
-    font-size: 12pt;
-    line-height: 1.6;
+    font-family: '{context.font_family}', Times, Georgia, serif;
+    font-size: {font_size};
+    line-height: {line_height};
     color: #111;
     margin: 0;
     padding: 0;
   }}
+  .title-page {{
+    page-break-after: always;
+    text-align: center;
+    padding-top: 2.5in;
+  }}
+  .title-page p {{
+    text-align: center;
+    margin-bottom: 0;
+  }}
+  .title-page-title {{
+    font-size: 12pt;
+    margin-bottom: {h1_after};
+  }}
   h1 {{
-    font-size: 18pt;
+    font-size: {h1_size};
     font-weight: bold;
     margin-top: 0;
     margin-bottom: 12pt;
     text-align: center;
   }}
   h2 {{
-    font-size: 14pt;
+    font-size: {h2_size};
     font-weight: bold;
-    margin-top: 18pt;
-    margin-bottom: 6pt;
-    border-bottom: 1px solid #ddd;
-    padding-bottom: 2pt;
+    margin-top: {h2_before};
+    margin-bottom: {h2_after};
+    border-bottom: {h2_border};
+    padding-bottom: {h2_padding};
   }}
   h3 {{
-    font-size: 12pt;
+    font-size: {h3_size};
     font-weight: bold;
     margin-top: 12pt;
     margin-bottom: 4pt;
   }}
+  .references-heading {{
+    {references_break}
+  }}
   p {{
     margin-top: 0;
-    margin-bottom: 8pt;
+    margin-bottom: {paragraph_after};
     text-align: justify;
   }}
   .reference-entry {{
     margin-left: 0.5in;
     text-indent: -0.5in;
-    margin-bottom: 6pt;
+    margin-bottom: {reference_after};
     text-align: left;
   }}
   blockquote {{
@@ -260,20 +308,32 @@ class PdfRenderer(DocumentRenderer):
 
             html_doc = _markdown_to_html(document.text, title=title, context=ctx)
 
+            pdf_options: dict = {
+                "format": "Letter",
+                "margin": {
+                    "top": f"{ctx.margin_top_in:g}in",
+                    "bottom": f"{ctx.margin_bottom_in:g}in",
+                    "left": f"{ctx.margin_left_in:g}in",
+                    "right": f"{ctx.margin_right_in:g}in",
+                },
+                "print_background": True,
+            }
+            if ctx.page_numbers:
+                # APA 7: page number flush right in the header on every page.
+                pdf_options["display_header_footer"] = True
+                pdf_options["header_template"] = (
+                    f'<div style="box-sizing:border-box; width:100%; '
+                    f'font-family:{ctx.font_family!r}, Times, serif; '
+                    f'font-size:{ctx.font_size_pt:g}pt; text-align:right; padding:0 1in;">'
+                    '<span class="pageNumber"></span></div>'
+                )
+                pdf_options["footer_template"] = "<span></span>"
+
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 page = browser.new_page()
                 page.set_content(html_doc, wait_until="networkidle")
-                pdf_bytes = page.pdf(
-                    format="Letter",
-                    margin={
-                        "top": "1in",
-                        "bottom": "1in",
-                        "left": "1in",
-                        "right": "1in",
-                    },
-                    print_background=True,
-                )
+                pdf_bytes = page.pdf(**pdf_options)
                 browser.close()
 
             return RenderedArtifact(

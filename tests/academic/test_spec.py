@@ -113,3 +113,55 @@ def test_length_constraints_contradictory_range_raises():
                 "max_words": 100,
             },
         })
+
+
+def test_formatting_block_round_trips_and_validates():
+    from howlwriter.academic.spec import FormattingSpec, load_assignment_spec, validate_assignment_spec
+
+    spec = load_assignment_spec(
+        {
+            "title": "Paper",
+            "topic": "Topic",
+            "formatting": {
+                "line_spacing": 1.5,
+                "page_numbers": True,
+                "title_page": {"author": "Jane Student", "date": "2026-09-12"},
+            },
+        }
+    )
+    assert isinstance(spec.formatting, FormattingSpec)
+    assert spec.formatting.line_spacing == 1.5
+    assert spec.formatting.page_numbers is True
+    assert spec.formatting.title_page == {"author": "Jane Student", "date": "2026-09-12"}
+    assert validate_assignment_spec(spec) == []
+
+    # Absent block uses the default academic profile.
+    plain = load_assignment_spec({"title": "Paper", "topic": "Topic"})
+    assert plain.formatting == FormattingSpec()
+    assert plain.formatting.font_family == "Times New Roman"
+    assert plain.formatting.font_size_pt == 12.0
+    assert plain.formatting.line_spacing == 1.0
+    assert plain.formatting.margin_top_in == 1.0
+
+
+def test_formatting_validation_rejects_unreasonable_values():
+    from howlwriter.academic.spec import FormattingSpec, validate_assignment_spec
+    from howlwriter.academic.spec import AssignmentSpec
+
+    base = AssignmentSpec(title="Paper", topic="Topic")
+
+    bad_font = base
+    bad_font.formatting = FormattingSpec(font_family="")
+    assert any("font_family" in e for e in validate_assignment_spec(bad_font))
+
+    bad_size = base
+    bad_size.formatting = FormattingSpec(font_size_pt=0)
+    assert any("font_size_pt" in e for e in validate_assignment_spec(bad_size))
+
+    bad_spacing = base
+    bad_spacing.formatting = FormattingSpec(line_spacing=-1)
+    assert any("line_spacing" in e for e in validate_assignment_spec(bad_spacing))
+
+    bad_margin = base
+    bad_margin.formatting = FormattingSpec(margin_left_in=-0.5)
+    assert any("margin_left_in" in e for e in validate_assignment_spec(bad_margin))

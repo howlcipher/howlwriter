@@ -40,3 +40,24 @@ def test_document_sentence_accessor_and_all_sentences():
 def test_document_default_mode_is_custom():
     doc = Document.parse("Text.", title="t")
     assert doc.mode == WritingMode.CUSTOM
+
+
+def test_dotted_initialisms_and_abbreviations_do_not_end_sentences():
+    """Regression: "U.S. Government" used to split into two sentences, producing
+    fragment claims such as "Government Accountability Office, 2020)."."""
+    text = (
+        "Treasury did not track sector efforts (U.S. Government Accountability Office, 2020). "
+        "The U.K. and D.C. examples remain intact. "
+        "Some victims, e.g. Small utilities, serve larger firms; i.e. dependencies matter. "
+        "Dr. Smith agreed. The rule took effect in Sept. 2021. It still applies."
+    )
+    doc = Document.parse(text, title="t")
+    sentences = [s.text for s in doc.paragraphs[0].sentences]
+    assert sentences == [
+        "Treasury did not track sector efforts (U.S. Government Accountability Office, 2020).",
+        "The U.K. and D.C. examples remain intact.",
+        "Some victims, e.g. Small utilities, serve larger firms; i.e. dependencies matter.",
+        "Dr. Smith agreed.",
+        "The rule took effect in Sept. 2021.",
+        "It still applies.",
+    ]

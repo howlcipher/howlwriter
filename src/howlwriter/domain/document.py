@@ -5,11 +5,9 @@ pen critique, and evidence can point at an exact location ("paragraph 4,
 sentence 2") instead of an opaque string offset.
 
 The splitter is deliberately simple: blank-line paragraph breaks and a regex
-sentence boundary. It does not handle abbreviations ("Dr.", "e.g.") or
-decimal numbers ("3.14") correctly in all cases -- those can be split as
-false sentence boundaries. This is a known, documented limitation for v1
-(see docs/architecture.md); pulling in a full NLP sentence tokenizer is not
-worth the dependency weight for the MVP's deterministic subsystems.
+sentence boundary, followed by a narrow merge for dotted initialisms and
+common abbreviations. It is not a full NLP sentence tokenizer, but it avoids
+turning forms such as "U.S." and "e.g." into fragment claims.
 """
 
 from __future__ import annotations
@@ -22,6 +20,16 @@ from howlwriter.domain.modes import WritingMode
 from howlwriter.domain.serialization import DataClassSerializationMixin
 
 _SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(])")
+
+# A period that ends a dotted initialism ("U.S.", "D.C.") or a common
+# abbreviation is not a sentence boundary. Without this, "the U.S. Government"
+# split into two sentences, and the claim extractor then reported the
+# fragment "Government Accountability Office, 2020)." as an unsupported claim.
+_ABBREVIATION_END = re.compile(
+    r"(?:(?:^|\s|\()(?:[A-Za-z]\.){2,}"
+    r"|\b(?:e\.g|i\.e|cf|vs|etc|Dr|Mr|Mrs|Ms|Prof|No|Nos|Fig|Vol|St|Inc|Ltd|Co"
+    r"|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept|Sep|Oct|Nov|Dec)\.)$"
+)
 
 
 @dataclass
@@ -136,5 +144,11 @@ class Document(DataClassSerializationMixin):
 
 
 def _split_sentences(paragraph_text: str) -> list[str]:
-    pieces = _SENTENCE_BOUNDARY.split(paragraph_text)
-    return [piece.strip() for piece in pieces if piece.strip()]
+    pieces = [p.strip() for p in _SENTENCE_BOUNDARY.split(paragraph_text) if p.strip()]
+    merged: list[str] = []
+    for piece in pieces:
+        if merged and _ABBREVIATION_END.search(merged[-1]):
+            merged[-1] = f"{merged[-1]} {piece}"
+        else:
+            merged.append(piece)
+    return merged

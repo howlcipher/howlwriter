@@ -26,24 +26,81 @@ _TITLE_PUNCTUATION = frozenset({".", ":", ";", "?", "!", "—"})
 
 
 def _token_is_likely_acronym(token: str) -> bool:
-    """Preserves all-uppercase initialisms/acronyms (e.g., HTTP, NASA, API)."""
+    """Preserves all-uppercase initialisms/acronyms (e.g., HTTP, NASA, U.S.)."""
     return token.isupper() and len(token) > 1
+
+
+# Dotted initialisms ("U.S.", "D.C.", "Ph.D.") are one token: splitting them on
+# the periods used to turn "U.S. Financial" into "u.S. Financial" because each
+# period looked like a sentence boundary.
+_TITLE_TOKEN = re.compile(r"(?:[A-Za-z]\.){2,}|[A-Za-z0-9_'-]+|[^A-Za-z0-9_'-]+")
+_WORD_RUN = re.compile(r"(?:[A-Za-z]\.){2,}|[A-Za-z0-9_'-]+")
+
+
+def _has_internal_upper(word: str) -> bool:
+    """Mixed-case words ("iPhone", "McDonald") are probable proper nouns; the
+    check runs per hyphen part so Title-Cased compounds ("Pre-Mortem") are not
+    mistaken for them."""
+    return any(any(c.isupper() for c in piece[1:]) for piece in word.split("-"))
+
+
+def _looks_title_cased(title: str) -> bool:
+    """True when most words are capitalized, i.e. the title needs converting.
+
+    A title whose words are mostly lowercase is already sentence case, and the
+    capitals it does carry ("China", "Microsoft", "Yellen") are the author's
+    proper nouns. Converting such a title would only strip those, so it is
+    left alone; no mechanical rule can tell "Financial" from "China" in a
+    Title-Cased string, which is why the decision is made per title.
+    """
+    # Skip the first word and words after sentence punctuation: those are
+    # capitalized in sentence case too and carry no signal. Acronyms and
+    # mixed-case words are preserved either way, so they carry none either.
+    signal: list[str] = []
+    capitalize_expected = True
+    for part in _TITLE_TOKEN.findall(title):
+        if not _WORD_RUN.fullmatch(part):
+            if any(p in part for p in _TITLE_PUNCTUATION):
+                capitalize_expected = True
+            continue
+        if capitalize_expected:
+            capitalize_expected = False
+            continue
+        if not part[0].isalpha() or _token_is_likely_acronym(part) or _has_internal_upper(part):
+            continue
+        signal.append(part)
+    if not signal:
+        return False
+    capitalized = sum(1 for w in signal if w[0].isupper())
+    return capitalized / len(signal) >= 0.5
+
+
+#: Words that stay capitalized inside a sentence-case title.
+_ALWAYS_CAPITALIZED = frozenset({
+    "january", "february", "march", "april", "may", "june", "july", "august",
+    "september", "october", "november", "december", "jan", "feb", "mar", "apr",
+    "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+})
 
 
 def _sentence_case(title: str) -> tuple[str, bool]:
     """Converts a work title to APA 7 sentence case.
 
     Returns the transformed title and a flag indicating whether any change was
-    made. All-uppercase acronyms/initialisms are preserved; words that already
-    contain internal capitals (e.g. "iPhone") are left as-is to avoid mangling
-    proper nouns. Other words are lowercased except the first word and the first
-    word after a colon/semicolon/question/exclamation/dash.
+    made. All-uppercase acronyms/initialisms (including dotted ones such as
+    "U.S.") are preserved; words that already contain internal capitals (e.g.
+    "iPhone") are left as-is to avoid mangling proper nouns. Other words are
+    lowercased except the first word and the first word after a
+    colon/semicolon/question/exclamation/dash. A title that is already in
+    sentence case is returned unchanged so its proper nouns survive.
     """
     if not title:
         return title, False
+    if not _looks_title_cased(title):
+        return title, False
 
-    # Preserve hyphenated words and apostrophes as single tokens.
-    parts = re.findall(r"[A-Za-z0-9_'-]+|[^A-Za-z0-9_'-]+", title)
+    # Preserve hyphenated words, apostrophes and dotted initialisms as single tokens.
+    parts = _TITLE_TOKEN.findall(title)
     changed = False
     capitalize_next = True
     result: list[str] = []
@@ -52,7 +109,7 @@ def _sentence_case(title: str) -> tuple[str, bool]:
         if not part:
             continue
         # Non-word runs are punctuation/whitespace.
-        if not re.match(r"[A-Za-z0-9_'-]+", part):
+        if not _WORD_RUN.fullmatch(part):
             result.append(part)
             if any(p in part for p in _TITLE_PUNCTUATION):
                 # Next alphabetic token after punctuation gets capitalized if
@@ -67,13 +124,12 @@ def _sentence_case(title: str) -> tuple[str, bool]:
 
         # Preserve mixed-case tokens (e.g., iPhone, McDonald) as probable
         # proper nouns; otherwise apply sentence-case rules.
-        has_internal_upper = any(c.isupper() for c in part[1:])
-        if has_internal_upper:
+        if _has_internal_upper(part):
             result.append(part)
             capitalize_next = False
             continue
 
-        if capitalize_next:
+        if capitalize_next or part.lower() in _ALWAYS_CAPITALIZED:
             new_part = part[0].upper() + part[1:].lower() if part else part
             capitalize_next = False
         else:
@@ -102,6 +158,28 @@ _ORG_SUFFIXES = (
     "corporation",
 )
 
+# Words that essentially never occur inside a person's name written in
+# natural order ("Jane A. Smith") but are common in group-author names
+# ("Financial Stability Oversight Council", "Office of the Director of
+# National Intelligence"). Checked only when the author string has no comma:
+# a comma means the caller already wrote an inverted person name
+# ("Hill, French"), which must stay a person.
+_ORG_WORDS = frozenset({
+    "of", "for", "the", "and", "&",
+    "u.s.", "us", "united", "national", "international", "federal", "state",
+    "office", "council", "board", "bureau", "commission", "committee",
+    "department", "ministry", "service", "services", "fund", "bank", "center",
+    "centre", "group", "union", "house", "endowment", "authority", "society",
+    "association", "institute", "institution", "agency", "administration",
+    "corporation", "company", "inc", "inc.", "llc", "ltd", "university",
+    "college", "foundation", "team", "project", "studies", "laboratory", "lab",
+    "partners", "press", "journal", "law", "register", "network", "alliance",
+    "system", "systems", "forum", "consortium", "coalition", "program",
+    "programme", "initiative", "trust", "exchange", "assembly", "congress",
+    "senate", "parliament", "government", "secretariat", "organisation",
+    "organization", "translate", "research",
+})
+
 
 @dataclass
 class CitationWarning(DataClassSerializationMixin):
@@ -118,7 +196,13 @@ class CitationResult(DataClassSerializationMixin):
 
 def _is_organizational(author: str) -> bool:
     lowered = author.lower().strip()
-    return any(lowered.endswith(suffix) for suffix in _ORG_SUFFIXES)
+    if any(lowered.endswith(suffix) for suffix in _ORG_SUFFIXES):
+        return True
+    if "," in lowered:
+        # "Surname, Given" is an explicit person form.
+        return False
+    tokens = [t.strip("()[]{}:;\"'") for t in lowered.split()]
+    return any(t in _ORG_WORDS for t in tokens)
 
 
 def _surname(author: str) -> str:
@@ -233,7 +317,17 @@ class APA7Formatter:
             # APA7: with no known author, the title moves into the author position.
             segments.append(f"{title} ({year_str}).")
 
-        if source.publisher:
+        # APA 7 omits a site/publisher name when it is identical to the sole
+        # organizational author (for example, GAO as both author and publisher).
+        # Besides being redundant, repeating it needlessly lengthens reference
+        # lists for government-heavy papers.
+        publisher_duplicates_author = (
+            bool(source.publisher)
+            and len(source.authors) == 1
+            and _is_organizational(source.authors[0])
+            and source.publisher.strip().casefold() == source.authors[0].strip().casefold()
+        )
+        if source.publisher and not publisher_duplicates_author:
             segments.append(f"{source.publisher}.")
 
         locator, locator_warning = _locator_str(source)
@@ -291,12 +385,17 @@ class APA7Formatter:
         return CitationResult(text=f"{who} ({year_str})", warnings=warnings)
 
     def reference_page(self, sources: list[Source]) -> CitationResult:
-        """Alphabetized by first-author surname (or title, when no author)."""
+        """Alphabetize references, then order one author's works by year."""
 
-        def sort_key(source: Source) -> str:
+        def sort_key(source: Source) -> tuple[str, int, str]:
             if source.authors:
-                return _surname(source.authors[0]).lower()
-            return source.title.lower()
+                author_or_title = _surname(source.authors[0]).casefold()
+            else:
+                author_or_title = source.title.casefold()
+            # Undated works precede dated works for the same author. Title is
+            # a stable tie-breaker for multiple works from the same year.
+            year = source.publication_date.year if source.publication_date else -1
+            return author_or_title, year, source.title.casefold()
 
         warnings: list[CitationWarning] = []
         entries: list[str] = []
