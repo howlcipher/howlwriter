@@ -32,7 +32,7 @@ def _ensure_howlplane_on_path() -> None:
 def _try_import_howlplane() -> tuple[Any, Any, Any, Any, Any] | None:
     _ensure_howlplane_on_path()
     try:
-        from src.control_plane.role_binding import (
+        from howlplane.control_plane.role_binding import (
             IndependenceStatus,
             RoleBindingRegistry,
             RoleDispatcher,
@@ -48,7 +48,7 @@ def _try_import_howlplane() -> tuple[Any, Any, Any, Any, Any] | None:
         )
     except ImportError:
         try:
-            from howlplane.control_plane.role_binding import (
+            from src.control_plane.role_binding import (
                 IndependenceStatus,
                 RoleBindingRegistry,
                 RoleDispatcher,
