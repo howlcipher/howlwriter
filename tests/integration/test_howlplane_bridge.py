@@ -11,12 +11,20 @@ from howlwriter.integration.model_role import (
     ModelRoleNotConfiguredError,
     WritingRole,
 )
-from src.control_plane.agent_execution import FakeAgentBackend
-from src.control_plane.role_binding import (
-    RoleBinding,
-    RoleBindingRegistry,
-    RoleDispatcher,
-)
+try:
+    from howlplane.control_plane.agent_execution import FakeAgentBackend
+    from howlplane.control_plane.role_binding import (
+        RoleBinding,
+        RoleBindingRegistry,
+        RoleDispatcher,
+    )
+except ImportError:
+    from src.control_plane.agent_execution import FakeAgentBackend
+    from src.control_plane.role_binding import (
+        RoleBinding,
+        RoleBindingRegistry,
+        RoleDispatcher,
+    )
 
 
 def test_bridge_is_role_configured():

@@ -69,3 +69,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "."]
+markers = [
+    "contract: hermetic contract validation tests against real dependencies",
+]
