@@ -13,7 +13,12 @@ import re
 import time
 from typing import Any, Callable
 
-from howlwriter.academic.citations import AcademicCitationManager, CitationAnalysis
+from howlwriter.academic.citations import (
+    AcademicCitationManager,
+    CitationAnalysis,
+    CitationWarning,
+    CITATION_TOO_MANY_SOURCES,
+)
 from howlwriter.academic.consistency import (
     ConsistencyReviewResult,
     RealModelConsistencyReviewer,
@@ -736,6 +741,24 @@ def _run_academic_pipeline(
     final_document = citation_mgr.attach_references(
         transformed_doc, citation_analysis
     )
+
+    # Surface a non-blocking warning when a spec sets an upper bound on sources
+    # and the paper exceeds it. This helps short-form assignments (e.g.,
+    # discussion posts) avoid reference bloat without failing the run.
+    max_sources = spec.source_requirements.maximum_sources
+    if max_sources is not None and len(citation_analysis.used_sources) > max_sources:
+        citation_analysis.warnings.append(
+            CitationWarning(
+                code=CITATION_TOO_MANY_SOURCES,
+                field="references",
+                message=(
+                    f"Paper cites {len(citation_analysis.used_sources)} sources, "
+                    f"but the assignment sets a maximum of {max_sources}. Consider "
+                    "focusing the reference list on the most relevant sources."
+                ),
+            )
+        )
+
     final_preserve_violations = preserved_violations(outline, final_document.text)
     if final_preserve_violations:
         ids = ", ".join(f.node_id for f in final_preserve_violations)

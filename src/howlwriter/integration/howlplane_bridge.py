@@ -12,13 +12,33 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from howlwriter.integration.model_role import (
     ModelRoleNotConfiguredError,
     WritingRole,
 )
 from howlwriter.integration.provenance_capture import capture_call
+
+
+@runtime_checkable
+class RoleBindingProtocol(Protocol):
+    domain: str
+    role: str
+    provider: str | None
+
+
+@runtime_checkable
+class RoleBindingRegistryProtocol(Protocol):
+    def get_binding(self, domain: str, role: str) -> Any | None: ...
+    def register_binding(self, binding: Any) -> None: ...
+    def clear(self) -> None: ...
+
+
+@runtime_checkable
+class RoleDispatcherProtocol(Protocol):
+    def execute(self, request: Any, custom_backend: Any | None = None) -> Any: ...
+
 
 def _ensure_howlplane_on_path() -> None:
     """Discovers HowlPlane from HOWLPLANE_ROOT environment variable if provided."""
@@ -32,7 +52,7 @@ def _ensure_howlplane_on_path() -> None:
 def _try_import_howlplane() -> tuple[Any, Any, Any, Any, Any] | None:
     _ensure_howlplane_on_path()
     try:
-        from src.control_plane.role_binding import (
+        from howlplane.control_plane.role_binding import (
             IndependenceStatus,
             RoleBindingRegistry,
             RoleDispatcher,
@@ -48,7 +68,7 @@ def _try_import_howlplane() -> tuple[Any, Any, Any, Any, Any] | None:
         )
     except ImportError:
         try:
-            from howlplane.control_plane.role_binding import (
+            from src.control_plane.role_binding import (
                 IndependenceStatus,
                 RoleBindingRegistry,
                 RoleDispatcher,

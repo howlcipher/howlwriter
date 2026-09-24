@@ -15,6 +15,7 @@ from howlwriter.domain.serialization import DataClassSerializationMixin
 @dataclass
 class SourceRequirements(DataClassSerializationMixin):
     minimum_sources: int = 4
+    maximum_sources: int | None = None
     prefer_primary_sources: bool = True
     scholarly_or_authoritative: bool = True
     allowed_types: list[str] = field(default_factory=list)
@@ -164,9 +165,22 @@ def validate_assignment_spec(spec: AssignmentSpec) -> list[str]:
             f"Unsupported citation_style '{spec.citation_style}'. Currently supported: apa7."
         )
 
-    if spec.source_requirements.minimum_sources < 0:
+    sr = spec.source_requirements
+    if sr.minimum_sources < 0:
         errors.append(
-            f"minimum_sources must be non-negative, got {spec.source_requirements.minimum_sources}."
+            f"minimum_sources must be non-negative, got {sr.minimum_sources}."
+        )
+    if sr.maximum_sources is not None and sr.maximum_sources < 0:
+        errors.append(
+            f"maximum_sources must be non-negative or null, got {sr.maximum_sources}."
+        )
+    if (
+        sr.maximum_sources is not None
+        and sr.minimum_sources > sr.maximum_sources
+    ):
+        errors.append(
+            f"minimum_sources ({sr.minimum_sources}) cannot exceed maximum_sources "
+            f"({sr.maximum_sources})."
         )
 
     lc = spec.length_constraints

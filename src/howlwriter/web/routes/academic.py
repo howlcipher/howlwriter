@@ -43,6 +43,7 @@ def _dto_to_spec(dto: AssignmentSpecDto) -> AssignmentSpec:
         citation_style=dto.citation_style,
         source_requirements=SourceRequirements(
             minimum_sources=dto.source_requirements.minimum_sources,
+            maximum_sources=dto.source_requirements.maximum_sources,
             prefer_primary_sources=dto.source_requirements.prefer_primary_sources,
             scholarly_or_authoritative=dto.source_requirements.scholarly_or_authoritative,
             allowed_types=dto.source_requirements.allowed_types,
@@ -64,6 +65,7 @@ def _spec_to_dto(spec: AssignmentSpec) -> AssignmentSpecDto:
         citation_style=spec.citation_style,
         source_requirements=SourceRequirementsDto(
             minimum_sources=spec.source_requirements.minimum_sources,
+            maximum_sources=spec.source_requirements.maximum_sources,
             prefer_primary_sources=spec.source_requirements.prefer_primary_sources,
             scholarly_or_authoritative=spec.source_requirements.scholarly_or_authoritative,
             allowed_types=spec.source_requirements.allowed_types,

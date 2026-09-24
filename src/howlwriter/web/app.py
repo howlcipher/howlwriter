@@ -33,11 +33,17 @@ def create_app(static_dir: Path | str | None = None) -> FastAPI:
         redoc_url="/api/redoc",
     )
 
-    # Local CORS
+    # Local CORS: restrict to loopback origins and disable wildcard credentials
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=[
+            "http://localhost",
+            "http://127.0.0.1",
+            "https://localhost",
+            "https://127.0.0.1",
+        ],
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
