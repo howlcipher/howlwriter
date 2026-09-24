@@ -144,6 +144,41 @@ def test_formatting_block_round_trips_and_validates():
     assert plain.formatting.margin_top_in == 1.0
 
 
+def test_maximum_sources_parses_and_validates():
+    from howlwriter.academic.spec import validate_assignment_spec
+    spec = load_assignment_spec({
+        "title": "Discussion Post",
+        "topic": "IoT Security",
+        "source_requirements": {
+            "minimum_sources": 3,
+            "maximum_sources": 5,
+        },
+    })
+    assert spec.source_requirements.minimum_sources == 3
+    assert spec.source_requirements.maximum_sources == 5
+    assert validate_assignment_spec(spec) == []
+
+
+def test_source_requirements_defaults_have_no_maximum():
+    spec = load_assignment_spec({"title": "Paper", "topic": "Topic"})
+    assert spec.source_requirements.minimum_sources == 4
+    assert spec.source_requirements.maximum_sources is None
+
+
+def test_maximum_sources_validation_rejects_bad_values():
+    from howlwriter.academic.spec import AssignmentSpec, SourceRequirements, validate_assignment_spec
+
+    base = AssignmentSpec(title="Paper", topic="Topic")
+
+    negative = base
+    negative.source_requirements = SourceRequirements(minimum_sources=2, maximum_sources=-1)
+    assert any("maximum_sources" in e for e in validate_assignment_spec(negative))
+
+    contradictory = base
+    contradictory.source_requirements = SourceRequirements(minimum_sources=6, maximum_sources=4)
+    assert any("minimum_sources" in e and "maximum_sources" in e for e in validate_assignment_spec(contradictory))
+
+
 def test_formatting_validation_rejects_unreasonable_values():
     from howlwriter.academic.spec import FormattingSpec, validate_assignment_spec
     from howlwriter.academic.spec import AssignmentSpec

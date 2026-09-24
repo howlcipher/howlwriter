@@ -161,6 +161,7 @@ class HowlPipelineResponse(BaseModel):
 # Academic Assignment Models
 class SourceRequirementsDto(BaseModel):
     minimum_sources: int = 4
+    maximum_sources: Optional[int] = None
     prefer_primary_sources: bool = True
     scholarly_or_authoritative: bool = True
     allowed_types: list[str] = Field(default_factory=list)
