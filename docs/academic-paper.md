@@ -145,7 +145,19 @@ Options:
 - `--config <path>`: Optional project config path.
 - `--sources <sources.json>`: Pre-collected sources to use for offline or deterministic runs.
 - `--deterministic`: Runs without model provider invocations.
-- `--save-artifacts`: Emits auxiliary `<out>.sources.json` and `<out>.report.json` files.
+- `--materials-dir <dir>`: Folder of assignment materials (instructions, rubrics, reference documents, data). Also settable as `materials.directory` in the spec (relative to the spec file). Instructions and rubrics add requirements; readable reference text becomes local evidence; everything else is inventoried honestly. See `docs/architecture.md`.
+- `--format`, `--output-dir`, `--overwrite`, `--verify-sources`, `--publish`, `--update-doc`, `--update-mode`: multi-format output and publishing (see `docs/publishing-and-output.md`).
+- `--save-artifacts`: Emits auxiliary `<out>.sources.json`, `<out>.report.json` and (with `--materials-dir`) `<out>.materials.json` files.
+
+Spec section for materials (optional):
+
+```yaml
+materials:
+  directory: ./assignment-materials   # relative to this file
+  roles:                               # explicit roles beat filename heuristics
+    syllabus.pdf: REFERENCE
+    week3/notes.docx: REFERENCE
+```
 
 ### 2. Drafting Prose Directly
 

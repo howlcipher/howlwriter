@@ -17,6 +17,9 @@ venv/
 # profiles/*.example.yaml, and the tests are deliberately NOT ignored.
 .voice/
 voices/
+# ...but the UI's voices component is source code, not voice data. The bare
+# `voices/` rule above had silently kept it out of version control.
+!frontend/src/components/voices/
 voice_corpus/
 profiles/private/
 *.voice.local.*

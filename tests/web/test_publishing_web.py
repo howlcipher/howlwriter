@@ -3,7 +3,7 @@
 from pathlib import Path
 from fastapi.testclient import TestClient
 
-from howlwriter.publishing.google.fake import FakeGoogleDocsAdapter
+from tests.fakes.google_docs import FakeGoogleDocsAdapter
 from howlwriter.publishing.google.publisher import GoogleDocsPublisher
 from howlwriter.publishing.registry import register_publisher
 from howlwriter.web.app import create_app

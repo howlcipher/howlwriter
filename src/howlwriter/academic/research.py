@@ -10,8 +10,15 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
+from howlwriter.academic.research_diagnostics import (
+    ResearchDiagnostic,
+    failure,
+    success,
+)
 from howlwriter.academic.spec import AssignmentSpec
 from howlwriter.domain.source import (
+    ORIGIN_AUTOMATIC_RESEARCH,
+    ORIGIN_USER_SUPPLIED,
     DEPTH_ABSTRACT,
     DEPTH_METADATA_ONLY,
     FreshnessStatus,
@@ -99,8 +106,21 @@ def derive_research_plan(spec: AssignmentSpec, max_queries: int = 6) -> list[str
     return queries
 
 
-def fetch_arxiv_sources(query: str, max_results: int = 3) -> list[Source]:
-    """Fetches real preprint and academic paper metadata directly from arXiv API."""
+def _note(diagnostics: list[ResearchDiagnostic] | None, diagnostic: ResearchDiagnostic) -> None:
+    if diagnostics is not None:
+        diagnostics.append(diagnostic)
+
+
+def fetch_arxiv_sources(
+    query: str,
+    max_results: int = 3,
+    diagnostics: list[ResearchDiagnostic] | None = None,
+) -> list[Source]:
+    """Fetches real preprint and academic paper metadata directly from arXiv API.
+
+    Failures never raise (research is best-effort) but, when ``diagnostics`` is
+    given, each lookup appends a structured outcome so a failed lookup is
+    distinguishable from one that simply found nothing."""
     encoded_query = urllib.parse.quote_plus(query)
     url = (
         f"https://export.arxiv.org/api/query?search_query=all:{encoded_query}"
@@ -115,7 +135,8 @@ def fetch_arxiv_sources(query: str, max_results: int = 3) -> list[Source]:
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
             data = resp.read().decode("utf-8")
-    except Exception:
+    except Exception as exc:
+        _note(diagnostics, failure("arxiv", query, exc))
         return []
 
     sources: list[Source] = []
@@ -187,14 +208,22 @@ def fetch_arxiv_sources(query: str, max_results: int = 3) -> list[Source]:
                 ),
             )
             sources.append(src)
-    except Exception:
-        pass
+    except Exception as exc:
+        _note(diagnostics, failure("arxiv", query, exc))
+        return sources
 
+    _note(diagnostics, success("arxiv", query, len(sources)))
     return sources
 
 
-def fetch_crossref_sources(query: str, max_results: int = 3) -> list[Source]:
-    """Fetches real peer-reviewed journal and conference publications from Crossref API."""
+def fetch_crossref_sources(
+    query: str,
+    max_results: int = 3,
+    diagnostics: list[ResearchDiagnostic] | None = None,
+) -> list[Source]:
+    """Fetches real peer-reviewed journal and conference publications from Crossref API.
+
+    See :func:`fetch_arxiv_sources` for the diagnostics contract."""
     encoded_query = urllib.parse.quote_plus(query)
     url = f"https://api.crossref.org/works?query={encoded_query}&rows={max_results}"
 
@@ -208,7 +237,8 @@ def fetch_crossref_sources(query: str, max_results: int = 3) -> list[Source]:
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310
             raw_json = json.loads(resp.read().decode("utf-8"))
-    except Exception:
+    except Exception as exc:
+        _note(diagnostics, failure("crossref", query, exc))
         return []
 
     sources: list[Source] = []
@@ -294,6 +324,7 @@ def fetch_crossref_sources(query: str, max_results: int = 3) -> list[Source]:
         )
         sources.append(src)
 
+    _note(diagnostics, success("crossref", query, len(sources)))
     return sources
 
 
@@ -347,6 +378,8 @@ class AcademicResearcher:
 
     def __init__(self, existing_sources: list[Source] | None = None) -> None:
         self.existing_sources = list(existing_sources or [])
+        #: Structured outcome of every external lookup this researcher made.
+        self.diagnostics: list[ResearchDiagnostic] = []
 
     def execute_research(
         self,
@@ -385,6 +418,8 @@ class AcademicResearcher:
 
         # 1. First include any pre-loaded sources
         for s in self.existing_sources:
+            if s.origin is None:
+                s.origin = ORIGIN_USER_SUPPLIED
             _add_source(s)
 
         # If caller explicitly provided enough usable sources, do not search.
@@ -409,8 +444,9 @@ class AcademicResearcher:
 
             # Query Crossref
             try:
-                crossref_res = fetch_crossref_sources(q, max_results=3)
+                crossref_res = fetch_crossref_sources(q, max_results=3, diagnostics=self.diagnostics)
                 for s in crossref_res:
+                    s.origin = ORIGIN_AUTOMATIC_RESEARCH
                     s.relevance = classify_source_relevance(
                         s,
                         topic=spec.topic,
@@ -420,16 +456,17 @@ class AcademicResearcher:
                     _add_source(s)
                     if len(collected) >= max_sources_total:
                         break
-            except Exception:
-                pass
+            except Exception as exc:
+                self.diagnostics.append(failure("crossref", q, exc))
 
             if len(collected) >= max_sources_total:
                 break
 
             # Query arXiv
             try:
-                arxiv_res = fetch_arxiv_sources(q, max_results=3)
+                arxiv_res = fetch_arxiv_sources(q, max_results=3, diagnostics=self.diagnostics)
                 for s in arxiv_res:
+                    s.origin = ORIGIN_AUTOMATIC_RESEARCH
                     s.relevance = classify_source_relevance(
                         s,
                         topic=spec.topic,
@@ -439,8 +476,8 @@ class AcademicResearcher:
                     _add_source(s)
                     if len(collected) >= max_sources_total:
                         break
-            except Exception:
-                pass
+            except Exception as exc:
+                self.diagnostics.append(failure("arxiv", q, exc))
 
         return collected
 

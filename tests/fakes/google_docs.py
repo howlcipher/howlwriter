@@ -1,4 +1,8 @@
-"""Hermetic test double for Google Docs and Drive APIs."""
+"""Hermetic test double for Google Docs and Drive APIs (test support only).
+
+Note: ``deleteContentRange`` here wipes the whole body regardless of the range,
+so tests built on it cannot catch range/index mistakes in the real publisher.
+"""
 
 from __future__ import annotations
 

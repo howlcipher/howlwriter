@@ -70,5 +70,5 @@ where = ["src"]
 testpaths = ["tests"]
 pythonpath = ["src", "."]
 markers = [
-    "contract: hermetic contract validation tests against real dependencies",
+    "contract: validates the integration against the REAL pinned HowlPlane package; skipped when the hermetic test double is active, run by the dedicated contract CI job",
 ]

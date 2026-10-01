@@ -9,7 +9,7 @@ HowlWriter extends from an editorial and verification pipeline into a complete w
 1. **Destination-Neutral Publishing:** The publishing architecture separates the rendered document from destination-specific APIs via a typed `ArtifactPublisher` protocol.
 2. **Human Authority Boundary:** HowlWriter does not publish unverified or failed drafts without explicit human intent. Publishing requires a verification status of `READY` or `PASS`, unless overridden by the user.
 3. **Deterministic Output & Collision Safety:** Finished files default to the standard `output/` directory, which is gitignored to avoid repository bloat while preserving an empty `output/.gitkeep`. Existing deliverables are never overwritten silently.
-4. **Hermetic Testing & Zero Credential Leakage:** Google Docs and cloud adapters operate using narrowly scoped OAuth2 credentials stored in `~/.howlwriter/credentials/` with strict `0600` filesystem permissions. Tests use a hermetic in-memory test double (`FakeGoogleDocsAdapter`).
+4. **Hermetic Testing & Zero Credential Leakage:** Google Docs and cloud adapters operate using narrowly scoped OAuth2 credentials stored in `~/.howlwriter/credentials/` with strict `0600` filesystem permissions. Tests use a hermetic in-memory test double (`FakeGoogleDocsAdapter`, kept in `tests/fakes/`, not in the installed package).
 
 ---
 
@@ -91,14 +91,32 @@ HowlWriter supports organizing documents into specific cloud folders and updatin
 
 ```bash
 # Create a new document in a specific folder
-howlwriter publish draft.md --destination google_docs --title "Cybersecurity Report" --folder-id <folder-id>
+howlwriter publish draft.md --destination google_docs --title "Cybersecurity Report" --folder <folder-id>
 
-# Replace an existing document's content (clears body and inserts new text)
-howlwriter publish draft.md --destination google_docs --update-doc-id <doc-id> --update-mode replace
+# Replace an existing document's content. WARNING: this deletes the whole body
+# (tables, images, headings, formatting) and inserts plain text. It is only
+# safe for documents that are plain text. See "Existing documents" below.
+howlwriter publish draft.md --destination google_docs --update-doc <doc-id> --update-mode replace
 
 # Append to an existing document
-howlwriter publish draft.md --destination google_docs --update-doc-id <doc-id> --update-mode append
+howlwriter publish draft.md --destination google_docs --update-doc <doc-id> --update-mode append
 ```
+
+#### Existing documents: what `--update-doc` does and does not do
+
+`--update-mode replace` issues one `batchUpdate` containing a `deleteContentRange`
+over the entire body followed by a plain-text `insertText`. `--update-mode append`
+inserts one plain-text block with a dated separator at the end of the document.
+Neither mode reads or preserves structure: **replace will destroy tables, images,
+heading/paragraph styles, lists and page structure**, and Markdown is inserted as
+literal text rather than being converted to Google Docs formatting. Do not use
+`replace` on a rich document.
+
+Structure-preserving revision of an existing document is not implemented. A safe
+design needs, at minimum: reading the document structure, targeting a named range
+or bookmark rather than the whole body, applying paragraph/text styles through
+`updateParagraphStyle`/`updateTextStyle` requests, showing a dry-run diff, and a
+human approval gate. That is tracked as a follow-up milestone in `ROADMAP.md`.
 
 ---
 
@@ -196,7 +214,7 @@ For multi-part assignments (such as Discussion Posts with Peer Responses):
 
 ```bash
 # Generate all three formats from an assignment spec
-howlwriter paper assignment.yaml --format md docx pdf --output-dir output/
+howlwriter paper assignment.yaml --format md,docx,pdf --output-dir output/
 
 # Generate deliverables and publish to Google Docs in one step
 howlwriter paper assignment.yaml --format docx --publish google_docs

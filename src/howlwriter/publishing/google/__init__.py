@@ -6,7 +6,6 @@ from howlwriter.publishing.google.auth import (
     load_credentials,
     revoke_and_logout,
 )
-from howlwriter.publishing.google.fake import FakeGoogleDocsAdapter
 from howlwriter.publishing.google.publisher import GoogleDocsPublisher
 
 __all__ = [
@@ -15,5 +14,4 @@ __all__ = [
     "load_credentials",
     "revoke_and_logout",
     "GoogleDocsPublisher",
-    "FakeGoogleDocsAdapter",
 ]

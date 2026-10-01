@@ -101,6 +101,12 @@ class WritingReport(DataClassSerializationMixin):
     source_integrity_status: str | None = None
     source_integrity_warnings: int | None = None
     source_integrity_findings: list[Any] = field(default_factory=list)
+    # Where sources came from: {"assignment_materials": n, "user_supplied": n, "automatic_research": n}.
+    source_origin_counts: dict[str, int] | None = None
+    # Assignment-materials ledger rollup (counts by role/status), never file text.
+    materials_summary: dict[str, Any] | None = None
+    # Per-provider outcome of external research, including failures.
+    research_diagnostics: dict[str, Any] | None = None
     local_outputs: list[dict[str, Any]] = field(default_factory=list)
     publication_results: list[dict[str, Any]] = field(default_factory=list)
 
@@ -251,6 +257,47 @@ class WritingReport(DataClassSerializationMixin):
                 lines.append(f"  Used In Paper:       {self.sources_used}")
             if self.sources_required is not None:
                 lines.append(f"  Minimum Required:    {self.sources_required}")
+            lines.append("")
+
+        if self.source_origin_counts:
+            origin_labels = {
+                "assignment_materials": "Assignment materials",
+                "user_supplied": "Manually supplied",
+                "automatic_research": "Automatic research",
+            }
+            lines.append("Source Origins:")
+            for key, count in self.source_origin_counts.items():
+                lines.append(f"  {origin_labels.get(key, key)}: {count}")
+            lines.append("")
+
+        if self.materials_summary:
+            m = self.materials_summary
+            lines.append("Assignment Materials:")
+            lines.append(f"  Files Inventoried:   {m.get('total', 0)}")
+            lines.append(f"  Text Extracted:      {m.get('text_extracted', 0)}")
+            lines.append(f"  Usable As Evidence:  {m.get('usable_as_evidence', 0)}")
+            lines.append(f"  Requirement Docs:    {m.get('usable_as_requirements', 0)}")
+            not_read = {
+                k: v for k, v in (m.get("by_status") or {}).items() if k != "OK"
+            }
+            for status, count in sorted(not_read.items()):
+                lines.append(f"  {status}: {count}")
+            lines.append("")
+
+        if self.research_diagnostics and self.research_diagnostics.get("total_queries"):
+            rd = self.research_diagnostics
+            lines.append("External Research:")
+            for provider, p in sorted(rd.get("providers", {}).items()):
+                lines.append(
+                    f"  {provider}: {p['queries']} queries, {p['sources']} sources, "
+                    f"{p['no_results']} empty, {p['failed']} FAILED"
+                )
+            for f in rd.get("failures", [])[:5]:
+                retry = {True: "retryable", False: "not retryable", None: "retryability unknown"}[f.get("retryable")]
+                lines.append(
+                    f"  ! {f['provider']} failed ({f['category']}, {retry}): {f['message']} "
+                    "- continued without it"
+                )
             lines.append("")
 
         # Academic Claims Section

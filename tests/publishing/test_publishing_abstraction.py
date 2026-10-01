@@ -9,7 +9,7 @@ from howlwriter.publishing.base import (
     PublishDestination,
     PublishResult,
 )
-from howlwriter.publishing.google.fake import FakeGoogleDocsAdapter
+from tests.fakes.google_docs import FakeGoogleDocsAdapter
 from howlwriter.publishing.google.publisher import GoogleDocsPublisher
 from howlwriter.publishing.registry import (
     PublisherRegistry,
