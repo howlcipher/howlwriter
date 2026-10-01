@@ -293,7 +293,12 @@ class RunRecord(DataClassSerializationMixin):
         if not target_dir.exists():
             return []
         records = []
-        for file_path in sorted(target_dir.glob("*.json"), reverse=True)[:limit]:
+        # Provenance sidecars share the directory but are not run records.
+        candidates = sorted(
+            (p for p in target_dir.glob("*.json") if not p.name.endswith(".provenance.json")),
+            reverse=True,
+        )
+        for file_path in candidates[:limit]:
             record = cls.load(file_path.name.replace(".json", ""), runs_dir=target_dir)
             if record is not None:
                 records.append(record)

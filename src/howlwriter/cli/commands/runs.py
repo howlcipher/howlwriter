@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 
 from howlwriter.diagnostic.run_record import (
     RunRecord,
@@ -36,6 +37,29 @@ def add_subparser(
         "--raw", action="store_true", help="Print raw JSON record."
     )
 
+    # prune sub-subcommand
+    prune_parser = sub_commands.add_parser(
+        "prune",
+        help="Remove old run records (dry-run unless --yes is given).",
+    )
+    prune_parser.add_argument(
+        "--older-than-days", type=int, default=None, dest="older_than_days",
+        help="Prune runs whose id timestamp is older than N days.",
+    )
+    prune_parser.add_argument(
+        "--keep-latest", type=int, default=None, dest="keep_latest",
+        help="Keep only the newest N runs. With --older-than-days, a run is "
+             "pruned only if it satisfies both.",
+    )
+    prune_parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Show what would be removed (this is also the default).",
+    )
+    prune_parser.add_argument(
+        "--yes", action="store_true",
+        help="Actually delete. Without it nothing is removed.",
+    )
+
     # path sub-subcommand
     sub_commands.add_parser(
         "path", help="Print the local runs storage directory."
@@ -47,6 +71,9 @@ def add_subparser(
 
 def run(args: argparse.Namespace) -> int:
     sub = getattr(args, "subcommand", None) or "list"
+
+    if sub == "prune":
+        return _prune(args)
 
     if sub == "path":
         print(get_default_runs_dir())
@@ -99,4 +126,39 @@ def run(args: argparse.Namespace) -> int:
             f"{(r.meaning_reviewer_provider or '-'):<12} "
             f"{dur_str:<8}"
         )
+    return 0
+
+
+def _prune(args: argparse.Namespace) -> int:
+    from howlwriter.diagnostic.retention import execute_prune, plan_prune
+
+    if args.older_than_days is None and args.keep_latest is None:
+        print("error: specify --older-than-days and/or --keep-latest", file=sys.stderr)
+        return 2
+    if args.dry_run and args.yes:
+        print("error: --dry-run and --yes are mutually exclusive", file=sys.stderr)
+        return 2
+    try:
+        plan = plan_prune(
+            get_default_runs_dir(),
+            older_than_days=args.older_than_days,
+            keep_latest=args.keep_latest,
+        )
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    deleting = args.yes
+    print(f"Runs directory: {plan.runs_dir}")
+    print(f"Run records found: {plan.total_runs}; selected for removal: {len(plan.candidates)}")
+    for c in plan.candidates:
+        print(f"  {'REMOVE' if deleting else 'would remove'} {c.run_id} ({c.reason}) [{len(c.files)} file(s)]")
+    for name in plan.skipped:
+        print(f"  skipped unsafe entry: {name}")
+    if not deleting:
+        if plan.candidates:
+            print("Dry run: nothing was deleted. Re-run with --yes to delete.")
+        return 0
+    removed = execute_prune(plan)
+    print(f"Removed {len(removed)} file(s).")
     return 0
