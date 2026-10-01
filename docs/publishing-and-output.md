@@ -9,7 +9,7 @@ HowlWriter extends from an editorial and verification pipeline into a complete w
 1. **Destination-Neutral Publishing:** The publishing architecture separates the rendered document from destination-specific APIs via a typed `ArtifactPublisher` protocol.
 2. **Human Authority Boundary:** HowlWriter does not publish unverified or failed drafts without explicit human intent. Publishing requires a verification status of `READY` or `PASS`, unless overridden by the user.
 3. **Deterministic Output & Collision Safety:** Finished files default to the standard `output/` directory, which is gitignored to avoid repository bloat while preserving an empty `output/.gitkeep`. Existing deliverables are never overwritten silently.
-4. **Hermetic Testing & Zero Credential Leakage:** Google Docs and cloud adapters operate using narrowly scoped OAuth2 credentials stored in `~/.howlwriter/credentials/` with strict `0600` filesystem permissions. Tests use a hermetic in-memory test double (`FakeGoogleDocsAdapter`).
+4. **Hermetic Testing & Zero Credential Leakage:** Google Docs and cloud adapters operate using narrowly scoped OAuth2 credentials stored in `~/.howlwriter/credentials/` with strict `0600` filesystem permissions. Tests use a hermetic in-memory test double (`FakeGoogleDocsAdapter`, kept in `tests/fakes/`, not in the installed package).
 
 ---
 

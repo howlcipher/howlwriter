@@ -5,10 +5,13 @@ from pathlib import Path
 import subprocess
 import sys
 
+# The Google test double lives with the test support code, not the package.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tests.fakes.google_docs import FakeGoogleDocsAdapter  # noqa: E402
+
 from howlwriter.academic.pipeline import run_academic_pipeline
 from howlwriter.academic.spec import load_assignment_spec, validate_assignment_spec
 from howlwriter.domain.source import Source, SourceAuthority, SourceType
-from howlwriter.publishing.google.fake import FakeGoogleDocsAdapter
 from howlwriter.publishing.google.publisher import GoogleDocsPublisher
 from howlwriter.publishing.registry import register_publisher
 from howlwriter.research.integrity import SourceIntegrityVerifier

@@ -12,7 +12,7 @@ from howlwriter.publishing.google.auth import (
     get_token_path,
     revoke_and_logout,
 )
-from howlwriter.publishing.google.fake import FakeGoogleDocsAdapter
+from tests.fakes.google_docs import FakeGoogleDocsAdapter
 from howlwriter.publishing.google.publisher import GoogleDocsPublisher
 
 
