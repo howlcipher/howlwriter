@@ -117,13 +117,14 @@ See [docs/architecture.md](docs/architecture.md) for the full walkthrough.
   train/holdout split, holdout validation, and the private local voice
   registry under `~/.howlwriter/voices/`
 - Meaning-preservation review (number/attribution/hedge diffing)
-- The full `howl` pipeline and every CLI subcommand
+- The full `howl` pipeline and the CLI subcommands (`howlwriter --help` lists them)
 - Local web application (FastAPI + React) with source/claim/verification and publishing UI
 - Deterministic local output management under `output/` with path-traversal prevention, collision safety, and `publication-manifest.json`
 - Multi-format deliverable renderers: Markdown with frontmatter, APA 7 DOCX (running head, hanging indents, tables, hyperlinks), PDF (Playwright headless Chromium with ReportLab fallback), and `CombinedDocument` for multi-section assignments
 - Source and citation integrity verification (`howlwriter sources verify`) with per-hop redirect SSRF defense (blocking private/loopback/cloud-metadata IPs, loop detection, hop limits), socket peer IP verification against DNS rebinding, bounded streaming retrieval (capped at 1 MiB for HTML, uninspected for binaries), and Crossref DOI metadata matching with hybrid title similarity
 - Semantic source authority classification (`PRIMARY_LAW`, `STANDARD`, `GOVERNMENT`, `SCHOLARLY`, `VENDOR_PRIMARY`, etc.) and context-sensitive topic prioritization
-- Destination-neutral artifact publishing architecture with human authority gating, and native Google Docs publishing (`howlwriter google auth/status/logout`, `howlwriter publish`) with narrow scopes and atomic replace/append modes
+- Destination-neutral artifact publishing architecture with human authority gating, and native Google Docs publishing (`howlwriter google auth/status/logout`, `howlwriter publish`) with narrow scopes and plain-text replace/append modes (these do not preserve tables, images or formatting in an existing document)
+- Assignment-materials intake (`howlwriter paper --materials-dir`) with a typed material ledger, requirement extraction from instructions/rubrics, local reference evidence with honest provenance and evidence depth, and visible research-failure diagnostics
 
 **Explicit typed interfaces, unconfigured by default (never faked):**
 
@@ -196,6 +197,14 @@ howlwriter finalize original.md revised.md
 howlwriter paper assignment.yaml --out paper.md
 howlwriter paper assignment.yaml --out paper.md --deterministic
 
+# Assignment folder: instructions/rubrics become requirements, readable
+# reference documents become local evidence, everything else is inventoried
+howlwriter paper assignment.yaml --materials-dir ./assignment-materials --save-artifacts
+
+# Prune old diagnostic run records (dry-run unless --yes is given)
+howlwriter runs prune --older-than-days 90
+howlwriter runs prune --keep-latest 1000 --yes
+
 # Multi-format academic production (Markdown, APA 7 DOCX, PDF)
 howlwriter paper assignment.yaml --format md docx pdf --output-dir output/ --verify-sources
 
@@ -208,8 +217,8 @@ howlwriter google auth
 howlwriter google logout
 
 # Publish verified deliverables to Google Docs or cloud storage
-howlwriter publish draft.md --destination google_docs --title "Research Analysis" --folder-id <folder-id>
-howlwriter publish draft.md --destination google_docs --update-doc-id <doc-id> --update-mode replace
+howlwriter publish draft.md --destination google_docs --title "Research Analysis" --folder <folder-id>
+howlwriter publish draft.md --destination google_docs --update-doc <doc-id> --update-mode replace
 howlwriter paper assignment.yaml --format md docx pdf --publish google_docs
 
 # Outline-guided authorship: write from your ideas, claims, structure and

@@ -18,6 +18,12 @@ src/howlwriter/
 ├── academic/     Researched academic paper pipeline: Crossref/arXiv retrieval,
 │                 structured drafting, length remediation, outline conformance,
 │                 identifier grounding, requirements classification, and verifier
+├── materials/    Assignment-materials intake: deterministic directory scan into a
+│                 typed ledger (role, hash, extraction status, evidence depth),
+│                 requirement extraction from instructions/rubrics, and local
+│                 sources. Reuses the voice-corpus extractors.
+├── provenance/   Generation-provenance assembly, redaction and sidecar writers
+├── evaluation/   Benchmarking and evaluator-calibration framework
 ├── citations/    CitationStyle registry + the APA7Formatter
 ├── voice/        Voice corpus profiling (voice/corpus/: discovery,
 │                 extraction, cleanup, quality, dedup, features, traits,
@@ -28,7 +34,8 @@ src/howlwriter/
 ├── output/       LocalOutputManager, safe naming, collision protection, manifests
 ├── rendering/    Multi-format renderers (Markdown, APA 7 DOCX, PDF, CombinedDocument)
 ├── publishing/   ArtifactPublisher protocol, registry, Google Docs adapter
-├── diagnostic/   Run records (run_record.py) for durable local telemetry
+├── diagnostic/   Run records (run_record.py) for durable local telemetry, and
+│                 explicit, dry-run-first retention (retention.py)
 ├── web/          FastAPI backend + React SPA local web application
 ├── integration/  HowlPlaneWritingBridge / ModelRoleNotConfiguredError --
 │                 the shared seam executing WritingRoles via HowlPlane
@@ -137,6 +144,33 @@ Key principles:
   (e.g., Main Discussion Post + Peer Responses) into a single cohesive deliverable with
   section headers, word counts, and an integrated references page.
 
+## Assignment materials and evidence precedence
+
+`howlwriter paper assignment.yaml --materials-dir DIR` (or a `materials:` section in the
+spec) inventories every file under DIR. Roles (`INSTRUCTIONS`, `RUBRIC`, `REFERENCE`,
+`USER_DATA`, `PRIOR_DRAFT`, `AUXILIARY`) come from explicit spec overrides first and
+filename heuristics second; the ledger records which. What each may be used for:
+
+1. **Assignment requirements** (spec text plus instructions/rubric lines) say what must
+   be done. They are never evidence.
+2. **Local material and manually supplied sources.** Reference/data files with extracted
+   text become sources (`origin: assignment_materials`, `FULL_TEXT` only when the whole
+   document was read, `PARTIAL_TEXT` if truncated); `--sources` entries are
+   `origin: user_supplied`. Both pass through the same relevance, authority, freshness,
+   claim-verification and citation gates as any other source.
+3. **Automatic Crossref/arXiv research**, used only when 2 does not already meet the
+   minimum-source requirement (`origin: automatic_research`).
+
+Files that cannot be read as text (pcap, video, images, archives, scanned PDFs) stay in the
+ledger with `REQUIRES_EXTERNAL_INSPECTION`, `UNSUPPORTED_FOR_TEXT_EXTRACTION` or
+`SCANNED_NO_TEXT` and are never evidence. Symlinks are never followed. The ledger is written
+to `<paper>.materials.json` with `--save-artifacts` or `--provenance` and never contains
+absolute paths or file text.
+
+External lookups are best-effort but not silent: each Crossref/arXiv query records a
+structured outcome (results / no results / failed with category and retryability) that
+appears in the report and in the provenance `research` record.
+
 ## Artifact Publishing & Human Authority Gating
 
 `publishing/base.py` defines a destination-neutral `ArtifactPublisher` protocol.
@@ -145,8 +179,10 @@ Publishers register with `PublisherRegistry` (`publishing/registry.py`).
   OAuth2 (`google-auth-oauthlib`), requesting only narrow scopes (`documents` and
   `drive.file`), and saving tokens to `~/.howlwriter/credentials/google_token.json`
   with strict `0600` permissions. Supports creating documents in designated folders
-  and updating existing documents via atomic `replace` (clearing existing body content
-  via `deleteContentRange` before inserting) or `append` modes.
+  and updating existing documents via `replace` (one batch: `deleteContentRange` over
+  the whole body, then a plain-text `insertText`) or `append` (plain text at the end).
+  Both modes are plain-text only: `replace` destroys tables, images and formatting, and
+  structure-preserving editing is not implemented (see docs/publishing-and-output.md).
 - **Human Authority Boundary:** HowlWriter enforces an uncompromising human gate:
   automated publishing is rejected with an error if verification status is not `READY`
   or `PASS`, unless the user explicitly passes `--allow-unverified`.

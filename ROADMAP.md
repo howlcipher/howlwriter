@@ -21,8 +21,8 @@ The following capabilities are implemented, tested, and active on `main`:
 | 13 | Academic paper pipeline | Done -- `howlwriter paper` with assignment specification, outline enforcement, identifier grounding, and bounded length remediation |
 | 14 | Local Web Application | Done -- FastAPI backend + React SPA (`howlwriter ui`) with workspace, diff inspection, academic pipeline rail, runs ledger |
 | 15 | Diagnostic run records | Done -- durable local records in `~/.howlwriter/runs/` with SHA-256 hashes, latency metrics, failure classification |
-| 16 | CLI foundation | Done -- all 16 subcommands (`paper writer editor humanize voice fact-check research sources cite references red-pen critique lint finalize howl runs ui`) |
-| 17 | Tests & Verification | Done -- 585 passing tests across unit, integration, dogfood, and web suites |
+| 16 | CLI foundation | Done -- one subcommand per capability, registered in `src/howlwriter/cli/main.py` (run `howlwriter --help` for the current list) |
+| 17 | Tests & Verification | Done -- unit, integration, dogfood, web and responsive suites; the real-HowlPlane contract tests run in their own CI job (`pytest -m contract`) and are skipped when the hermetic HowlPlane test double is active |
 | 18 | Contextual Structural Variance v1 | Done -- between-document structural variance measurement, paragraph & sentence spread percentiles rendered as bounded guidance, split tendencies rendered as varying rather than absolute, extended diversity validation, and hyper-symmetry detection. Context-conditioned pacing is implemented but stays inactive until a context slice carries enough documents to support it |
 | 19 | Distributional Voice Fidelity | Done -- behaviours a corpus mean misdescribes are stored as cross-document presence plus when-present percentiles; corpus percentiles are real order statistics rather than averaged per-document percentiles; plurality ties are reported as split instead of resolved alphabetically; the feature-cache fingerprint now covers changed measurements as well as changed fields |
 | 20 | Outline-Guided Authorship | Done -- versioned `outline/v1` schema, seventeen node kinds, an explicit authority order, generation freedom derived from what the user supplied, a writer stage in front of the existing chain, and a deterministic coverage report checking verbatim retention, required points and ordering against the finished artifact |
@@ -57,6 +57,23 @@ The following capabilities are implemented, tested, and active on `main`:
 - **Reviewer independence is tracked asymmetrically.** Only the meaning
   reviewer passes `avoid_provider`. The consistency reviewer requests the same
   role without it, and the writer has no independence tracking at all.
+- **Existing Google Docs cannot be edited structure-preservingly.**
+  `--update-doc` with `replace` deletes the whole body and inserts plain text
+  (tables, images and formatting are lost); `append` inserts plain text. Bounded
+  next milestone: read the document structure, replace only a named range or
+  bookmark with style-aware `batchUpdate` requests, show a dry-run diff, and
+  keep the human approval gate. Also confirm the final-newline `endIndex`
+  handling against the live API, which the in-memory test double cannot catch.
+- **Frontend source is incomplete in Git.** `frontend/src/components/voices/VoicesPanel.tsx`
+  was never committed (an over-broad `voices/` ignore rule), so the SPA cannot be
+  rebuilt from a clean checkout; the CI `frontend` job warns until it is added.
+- **Materials intake v1 limits.** No OCR (scanned PDFs are reported, not read),
+  no legacy `.doc`/`.pptx`/`.xlsx` parsing, and requirement lines are lifted
+  deterministically from bullets and obligation sentences, so rubric tables may
+  need a manual `requirements:` entry. Pcap/video/image artifacts need human or
+  external inspection.
+- **The real-HowlPlane contract job tracks `main`.** It is labelled pinned but
+  checks out the `main` branch; pin it to a tag or commit.
 - **No APA reference entry can be generated for most runs.** HowlPlane's
   providers routinely report no model name, and APA's template requires a tool
   and version.
