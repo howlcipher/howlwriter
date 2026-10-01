@@ -18,7 +18,28 @@ def test_cli_google_status(capsys, monkeypatch, tmp_path: Path):
     assert "Authenticated:       False" in captured.out
 
 
-def test_cli_sources_verify_and_alias(capsys, tmp_path: Path):
+def test_cli_sources_verify_and_alias(capsys, tmp_path: Path, monkeypatch):
+    # Hermetic: never reach the live network. Every probe answers HTTP 404 and
+    # the SSRF DNS pre-check is satisfied with a public address.
+    import httpx
+
+    from howlwriter.research import integrity
+
+    monkeypatch.setattr(
+        integrity.SourceIntegrityVerifier,
+        "_build_client",
+        lambda self: httpx.Client(
+            transport=httpx.MockTransport(lambda request: httpx.Response(404)),
+            follow_redirects=False,
+        ),
+    )
+    monkeypatch.setattr(
+        integrity.socket,
+        "getaddrinfo",
+        lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 0))],
+        raising=False,
+    )
+
     doc_path = tmp_path / "paper.md"
     doc_path.write_text(
         "# Cybersecurity Analysis\n\n"

@@ -9,6 +9,12 @@ from howlwriter.integration.howlplane_bridge import set_howlplane_bridge
 # and fakes have not been explicitly disabled (e.g. for contract tests against the real HowlPlane package).
 _no_fakes = os.environ.get("HOWLWRITER_NO_CONTROL_PLANE_FAKES") == "1"
 
+# True when the hermetic HowlPlane test double (tests/fakes/control_plane.py) is
+# standing in for the real package. `contract` tests assert the real package, so
+# they are skipped (not weakened) in that mode; the dedicated contract CI job
+# sets HOWLWRITER_NO_CONTROL_PLANE_FAKES=1 and so can never skip them silently.
+_fakes_active = False
+
 try:
     import howlplane.control_plane.role_binding as hp_rb
     import howlplane.control_plane.agent_execution as hp_ae
@@ -29,6 +35,19 @@ except ImportError:
             from tests.fakes.control_plane import install_control_plane_fakes
 
             install_control_plane_fakes()
+            _fakes_active = True
+
+
+def pytest_collection_modifyitems(config, items):
+    if not _fakes_active:
+        return
+    skip = pytest.mark.skip(
+        reason="real HowlPlane not installed; contract tests run in the dedicated "
+        "contract job (HOWLWRITER_NO_CONTROL_PLANE_FAKES=1)"
+    )
+    for item in items:
+        if "contract" in item.keywords:
+            item.add_marker(skip)
 
 
 @pytest.fixture(autouse=True)
