@@ -45,6 +45,11 @@ RELEVANCE_SUPPORTING = "SUPPORTING"
 RELEVANCE_TANGENTIAL = "TANGENTIAL"
 RELEVANCE_IRRELEVANT = "IRRELEVANT"
 
+# Where a source entered the evidence pool.
+ORIGIN_ASSIGNMENT_MATERIALS = "assignment_materials"
+ORIGIN_USER_SUPPLIED = "user_supplied"
+ORIGIN_AUTOMATIC_RESEARCH = "automatic_research"
+
 # Evidence depth actually retrieved for the source.
 DEPTH_FULL_TEXT = "FULL_TEXT"
 DEPTH_PARTIAL_TEXT = "PARTIAL_TEXT"
@@ -104,6 +109,14 @@ class Source(DataClassSerializationMixin):
     evidence_depth: str = DEPTH_OTHER
     freshness: SourceFreshness = field(default_factory=SourceFreshness)
     authority: SourceAuthority = SourceAuthority.UNKNOWN
+    # Where this source came from. None means "not recorded" (legacy files).
+    # See ORIGIN_* constants: assignment materials, user-supplied sources file,
+    # or automatic external research. Origin never changes how a source is
+    # vetted; it only makes the provenance of the evidence pool inspectable.
+    origin: str | None = None
+    # Stable id of the material-ledger entry and content hash, for local files.
+    material_id: str | None = None
+    content_sha256: str | None = None
 
     @property
     def was_accessed(self) -> bool:

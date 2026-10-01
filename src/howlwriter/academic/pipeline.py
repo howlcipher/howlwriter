@@ -38,7 +38,9 @@ from howlwriter.academic.requirements import (
     classify_requirements,
     is_identifier_fabrication_prohibition,
 )
+from howlwriter.academic.materials_intake import apply_materials, resolve_materials_dir
 from howlwriter.academic.research import AcademicResearcher
+from howlwriter.academic.research_diagnostics import summarize as summarize_research
 from howlwriter.academic.ai_disclosure import build_ai_use_statement
 from howlwriter.academic.spec import AssignmentSpec, FormattingSpec, load_assignment_spec
 from howlwriter.domain.generation_provenance import (
@@ -78,6 +80,7 @@ from howlwriter.domain.provenance import ProvenanceGraph
 from howlwriter.domain.report import WritingReport
 from howlwriter.domain.source import (
     DEPTH_METADATA_ONLY,
+    ORIGIN_AUTOMATIC_RESEARCH,
     FreshnessStatus,
     RELEVANCE_IRRELEVANT,
     Source,
@@ -196,6 +199,10 @@ class AcademicPipelineResult:
     local_deliverables: list[Any] = field(default_factory=list)
     publish_result: Any | None = None
     source_integrity_report: Any | None = None
+    #: Assignment-materials ledger (MaterialLedger) when a materials directory was used.
+    materials_ledger: Any | None = None
+    #: Structured outcome of external research lookups (ResearchDiagnostic list).
+    research_diagnostics: list[Any] = field(default_factory=list)
 
 
 def run_academic_pipeline(
@@ -246,6 +253,8 @@ def _run_academic_pipeline(
     overwrite: bool = False,
     allow_unverified_publish: bool = False,
     allow_unverified: bool = False,
+    materials_dir: Path | str | None = None,
+    materials_exclude: list[Path | str] | None = None,
 ) -> AcademicPipelineResult:
     """Executes the full researched academic paper pipeline.
 
@@ -308,6 +317,24 @@ def _run_academic_pipeline(
         provenance.outline_sha256 = prov_sha256(outline.to_json())
         provenance.outline_summary = summarize_outline(outline)
         provenance.research["requested"] = research_questions(outline)
+
+    # Assignment materials: instructions/rubrics enrich requirements; extracted
+    # reference text joins the evidence pool ahead of manually supplied sources.
+    materials_intake = apply_materials(
+        spec,
+        existing_sources,
+        resolve_materials_dir(spec, materials_dir, cwd),
+        exclude=materials_exclude,
+    )
+    spec = materials_intake.spec
+    existing_sources = materials_intake.sources
+    material_scan = materials_intake.scan
+    if material_scan is not None:
+        provenance.research["materials"] = {
+            "root_label": material_scan.ledger.root_label,
+            "counts": material_scan.ledger.counts(),
+            "derived_requirements": len(material_scan.ledger.derived_requirements),
+        }
     recorder_token = recorder.activate()
 
     realization = None
@@ -347,7 +374,19 @@ def _run_academic_pipeline(
     researcher = AcademicResearcher(existing_sources=existing_sources)
     sources = researcher.execute_research(spec)
     researcher_duration = round(time.time() - t_res_start, 2)
-    researcher_provider = "scholarly_api" if sources else "none"
+    external_used = any(s.origin == ORIGIN_AUTOMATIC_RESEARCH for s in sources)
+    if external_used:
+        researcher_provider = "scholarly_api"
+    elif sources:
+        researcher_provider = "local_sources"
+    else:
+        researcher_provider = "none"
+    research_summary = summarize_research(researcher.diagnostics)
+    provenance.research["external_lookups"] = research_summary
+    origin_counts: dict[str, int] = {}
+    for s in sources:
+        if s.origin:
+            origin_counts[s.origin] = origin_counts.get(s.origin, 0) + 1
 
     if not sources:
         # If no sources found at all, create an honest fallback marker that is
@@ -977,6 +1016,9 @@ def _run_academic_pipeline(
         source_integrity_status=source_integrity_report.status if source_integrity_report else None,
         source_integrity_warnings=len(verif_summary.source_integrity_warnings) if verif_summary.source_integrity_warnings else None,
         source_integrity_findings=verif_summary.source_integrity_findings,
+        source_origin_counts=origin_counts or None,
+        materials_summary=material_scan.ledger.counts() if material_scan else None,
+        research_diagnostics=research_summary if researcher.diagnostics else None,
     )
 
     # 11. RECORD DOGFOOD DIAGNOSTIC ARTIFACT
@@ -1235,4 +1277,6 @@ def _run_academic_pipeline(
         local_deliverables=local_deliverables,
         publish_result=publish_result,
         source_integrity_report=source_integrity_report,
+        materials_ledger=material_scan.ledger if material_scan else None,
+        research_diagnostics=list(researcher.diagnostics),
     )

@@ -98,6 +98,19 @@ class OutputSpec(DataClassSerializationMixin):
 
 
 @dataclass
+class MaterialsSpec(DataClassSerializationMixin):
+    """Where the assignment's supporting materials live, plus explicit roles.
+
+    ``directory`` is resolved relative to the spec file. ``roles`` maps a
+    path (relative to the directory) or bare filename to a MaterialRole name;
+    explicit roles always beat filename heuristics.
+    """
+
+    directory: str | None = None
+    roles: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class AssignmentSpec(DataClassSerializationMixin):
     title: str = ""
     topic: str = ""
@@ -119,8 +132,13 @@ class AssignmentSpec(DataClassSerializationMixin):
     formatting: FormattingSpec = field(default_factory=FormattingSpec)
     sections: list[SectionSpec] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    materials: MaterialsSpec = field(default_factory=MaterialsSpec)
 
     def __post_init__(self) -> None:
+        if isinstance(self.materials, dict):
+            self.materials = MaterialsSpec.from_dict(self.materials)
+        elif self.materials is None:
+            self.materials = MaterialsSpec()
         if isinstance(self.source_requirements, dict):
             self.source_requirements = SourceRequirements.from_dict(self.source_requirements)
         if isinstance(self.length_constraints, dict):
@@ -164,6 +182,17 @@ def validate_assignment_spec(spec: AssignmentSpec) -> list[str]:
         errors.append(
             f"Unsupported citation_style '{spec.citation_style}'. Currently supported: apa7."
         )
+
+    if not isinstance(spec.materials.roles, dict):
+        errors.append("materials.roles must be a mapping of path to role.")
+    else:
+        valid_roles = {"INSTRUCTIONS", "RUBRIC", "REFERENCE", "USER_DATA", "PRIOR_DRAFT", "AUXILIARY"}
+        for path_key, role in spec.materials.roles.items():
+            if str(role).upper() not in valid_roles:
+                errors.append(
+                    f"materials.roles['{path_key}'] has invalid role '{role}'. "
+                    f"Valid roles: {', '.join(sorted(valid_roles))}."
+                )
 
     sr = spec.source_requirements
     if sr.minimum_sources < 0:

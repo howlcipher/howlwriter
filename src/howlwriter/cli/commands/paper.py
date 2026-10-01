@@ -116,6 +116,15 @@ def add_subparser(
         help="Path to pre-collected sources.json file to use for research context.",
     )
     parser.add_argument(
+        "--materials-dir",
+        dest="materials_dir",
+        default=None,
+        help="Directory of assignment materials (instructions, rubrics, reference "
+             "documents, data). Every file is inventoried; instructions/rubrics "
+             "enrich the requirements and readable reference text becomes local "
+             "evidence. Overrides materials.directory in the assignment spec.",
+    )
+    parser.add_argument(
         "--voice",
         default=None,
         help="Name of a personal voice built with `howlwriter voice build`. The "
@@ -262,6 +271,8 @@ def run(args: argparse.Namespace) -> int:
             publish_update_mode=args.publish_update_mode,
             overwrite=args.overwrite,
             allow_unverified_publish=args.allow_unverified,
+            materials_dir=getattr(args, "materials_dir", None),
+            materials_exclude=[args.assignment] if args.assignment else None,
         )
     except OutputCollisionError as coll_exc:
         print(f"error: {coll_exc}", file=sys.stderr)
@@ -331,6 +342,21 @@ def run(args: argparse.Namespace) -> int:
             "scholarly References page is unaffected: nothing from these files "
             "belongs there."
         )
+
+    # Materials ledger: written whenever auxiliary artifacts were requested.
+    if result.materials_ledger is not None and (
+        args.save_artifacts or getattr(args, "provenance", False)
+    ):
+        ledger_path = out_path.with_suffix(".materials.json")
+        if ledger_path.exists() and not args.overwrite:
+            print(
+                f"warning: {ledger_path} already exists; materials ledger not written "
+                "(use --overwrite to replace it)",
+                file=sys.stderr,
+            )
+        else:
+            atomic_write_text(ledger_path, result.materials_ledger.to_json() + "\n")
+            print(f"Wrote {ledger_path}")
 
     # Optional auxiliary artifacts
     if args.save_artifacts:
