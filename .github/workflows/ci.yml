@@ -53,6 +53,50 @@ jobs:
       - name: Verify SEO Metadata & Artifacts
         run: python3 scripts/test_seo.py
 
+  frontend:
+    name: Frontend reproducible build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the frontend source tree is complete
+        id: complete
+        run: |
+          # frontend/src/components/voices/ was untracked (swallowed by a
+          # `voices/` .gitignore rule), so a clean checkout cannot build. Until
+          # the component is committed, say so loudly instead of going red or
+          # silently green. Delete this guard once the file is in the repo.
+          if [ -f frontend/src/components/voices/VoicesPanel.tsx ]; then
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Frontend not reproducible::frontend/src/components/voices/VoicesPanel.tsx is missing from the repository, so the committed SPA bundle cannot be rebuilt from source."
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.complete.outputs.complete == 'true'
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install (locked) and build
+        if: steps.complete.outputs.complete == 'true'
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Committed bundle must match a fresh build
+        if: steps.complete.outputs.complete == 'true'
+        run: |
+          git status --porcelain src/howlwriter/web/static
+          if [ -n "$(git status --porcelain src/howlwriter/web/static)" ]; then
+            echo "::error::Committed SPA bundle is stale. Run 'npm ci && npm run build' in frontend/ and commit src/howlwriter/web/static."
+            git diff --stat -- src/howlwriter/web/static
+            exit 1
+          fi
+
   responsive:
     name: Responsive Browser QA (Playwright Chromium)
     runs-on: ubuntu-latest
