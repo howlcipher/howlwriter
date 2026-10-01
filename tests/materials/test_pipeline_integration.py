@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from howlwriter.academic.pipeline import run_academic_pipeline
 from howlwriter.cli.main import main
 from howlwriter.domain.source import (
@@ -98,3 +100,38 @@ def test_cli_materials_dir_writes_ledger(tmp_path, monkeypatch, capsys):
     main(["paper", str(pkg / "assignment.yaml"), "--materials-dir", str(pkg), "--deterministic",
           "--output-dir", str(out), "--save-artifacts", "--overwrite"])
     assert ledger_path.read_text() != "sentinel"
+
+
+def test_claims_cannot_cite_nonexistent_material(tmp_path):
+    from howlwriter.academic.citations import AcademicCitationManager
+    from howlwriter.domain.document import Document
+    from howlwriter.domain.modes import WritingMode
+    from howlwriter.materials import materials_to_sources, scan_materials
+
+    pkg = build_package(tmp_path / "pkg", with_pdf=False)
+    sources = materials_to_sources(scan_materials(pkg))
+    doc = Document.parse(
+        "Zero trust limits lateral movement (Nobody, 2031). Filename-only claims such as "
+        "(Lab Artifact, 2024) have no extracted source behind them.",
+        title="T", mode=WritingMode.ACADEMIC,
+    )
+    analysis = AcademicCitationManager().analyze_and_build_references(doc, sources)
+    assert "Nobody, 2031" in analysis.unmatched_in_text_citations
+    # the pcap was never turned into a source, so it cannot be cited
+    assert not any("lab-artifact" in s.reliability_notes for s in sources)
+
+
+def test_cli_renders_md_docx_pdf_with_materials(tmp_path, monkeypatch):
+    pytest.importorskip("docx")
+    _offline(monkeypatch)
+    pkg = build_package(tmp_path / "pkg", with_pdf=False)
+    out = tmp_path / "out"
+    rc = main(["paper", str(pkg / "assignment.yaml"), "--materials-dir", str(pkg),
+               "--deterministic", "--format", "md,docx", "--output-dir", str(out),
+               "--provenance"])
+    assert rc == 0
+    assert (out / "zero-trust-architecture.md").exists()
+    assert (out / "zero-trust-architecture.docx").stat().st_size > 0
+    prov = json.loads((out / "zero-trust-architecture.provenance.json").read_text())
+    assert prov["research"]["materials"]["counts"]["total"] == 5
+    assert str(tmp_path) not in (out / "zero-trust-architecture.provenance.json").read_text()

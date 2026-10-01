@@ -206,7 +206,7 @@ howlwriter runs prune --older-than-days 90
 howlwriter runs prune --keep-latest 1000 --yes
 
 # Multi-format academic production (Markdown, APA 7 DOCX, PDF)
-howlwriter paper assignment.yaml --format md docx pdf --output-dir output/ --verify-sources
+howlwriter paper assignment.yaml --format md,docx,pdf --output-dir output/ --verify-sources
 
 # Verify source operational reachability, SSRF protection, and DOI metadata
 howlwriter sources verify sources.json
@@ -219,7 +219,7 @@ howlwriter google logout
 # Publish verified deliverables to Google Docs or cloud storage
 howlwriter publish draft.md --destination google_docs --title "Research Analysis" --folder <folder-id>
 howlwriter publish draft.md --destination google_docs --update-doc <doc-id> --update-mode replace
-howlwriter paper assignment.yaml --format md docx pdf --publish google_docs
+howlwriter paper assignment.yaml --format md,docx,pdf --publish google_docs
 
 # Outline-guided authorship: write from your ideas, claims, structure and
 # sentences. The more you supply, the less the model is free to invent.

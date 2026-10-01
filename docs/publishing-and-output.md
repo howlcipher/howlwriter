@@ -214,7 +214,7 @@ For multi-part assignments (such as Discussion Posts with Peer Responses):
 
 ```bash
 # Generate all three formats from an assignment spec
-howlwriter paper assignment.yaml --format md docx pdf --output-dir output/
+howlwriter paper assignment.yaml --format md,docx,pdf --output-dir output/
 
 # Generate deliverables and publish to Google Docs in one step
 howlwriter paper assignment.yaml --format docx --publish google_docs

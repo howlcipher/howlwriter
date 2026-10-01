@@ -144,7 +144,7 @@ howlwriter sources verify sources.json
 When running academic papers, passing `--verify-sources` automatically gates the pipeline:
 
 ```bash
-howlwriter paper assignment.yaml --verify-sources --format md docx pdf
+howlwriter paper assignment.yaml --verify-sources --format md,docx,pdf
 ```
 
 If unreachable sources or SSRF violations are detected:
