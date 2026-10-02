@@ -57,6 +57,16 @@ model-backed ones. See [docs/architecture.md](docs/architecture.md) and
 full boundary, including two integration gaps on HowlPlane's side that
 this project surfaced but does not attempt to patch itself.
 
+**Native bounded path (exception to the above).** `howlwriter native` is
+the one Writer path that calls a provider directly, and it does so only
+through [howl-provider-core](https://github.com/howlcipher/howl-provider-core):
+one operator-declared remote command per request, no shell, a private
+temporary working directory, an allowlisted environment, a timeout, an
+output cap, and `HOWL_FORBID_LOCAL_INFERENCE` enforced on the child. It
+never launches a coding agent and never touches files other than the ones
+named on its command line. The HowlPlane agent-backed roles above remain
+available and unchanged for the other subcommands.
+
 This repository is adopted by HowlPlane through the committed
 [`.ai-project.toml`](.ai-project.toml) manifest, validated against
 HowlPlane's own `ai project validate`.
@@ -116,7 +126,12 @@ See [docs/architecture.md](docs/architecture.md) for the full walkthrough.
   revision grouping, ~35 deterministic style features, a stable
   train/holdout split, holdout validation, and the private local voice
   registry under `~/.howlwriter/voices/`
-- Meaning-preservation review (number/attribution/hedge diffing)
+- Meaning-preservation review (number/attribution/hedge diffing, plus number-to-unit
+  binding and scope-qualifier checks shared with the native fidelity engine)
+- Native structured copy path (`howlwriter native`): Dream-native request intake,
+  one bounded howl-provider-core call, a fidelity-checked `howlwriter.copy_package/v1`
+  with `FACTUALLY_PRESERVED` / `FACTUAL_REVIEW_REQUIRED` / `FACTUAL_UNIT_DRIFT` /
+  `FACTUAL_CONFLICT` per proposal
 - The full `howl` pipeline and the CLI subcommands (`howlwriter --help` lists them)
 - Local web application (FastAPI + React) with source/claim/verification and publishing UI
 - Deterministic local output management under `output/` with path-traversal prevention, collision safety, and `publication-manifest.json`
@@ -189,6 +204,18 @@ howlwriter voice build --name jane --source ~/Documents/writing --recursive
 howlwriter voice inspect jane
 howlwriter voice rebuild jane
 howlwriter voice list
+
+# Native structured copy rewriting: Dream export -> request -> copy package.
+# The package (howlwriter.copy_package/v1) is consumed directly by
+# `howlcreate develop --from-writer`; schemas live in src/howlwriter/schemas/.
+howlwriter native request --from-dream candidate.json --spec copy-spec.json --out request.json
+howlwriter native write --request request.json --command-config remote.json --out package.json
+# Record an operator edit without crediting Writer with the wording
+howlwriter native amend --request request.json --package package.json \
+  --item hero --text "..." --reason "restore canonical unit"
+# Deterministic factual fidelity: numbers stay bound to what they count
+# (exit 4 on FACTUAL_UNIT_DRIFT / FACTUAL_CONFLICT / FACTUAL_REVIEW_REQUIRED)
+howlwriter native check --source before.txt --proposal after.txt --evidence canonical.txt
 
 # Compare meaning between two files (e.g. before/after a rewrite)
 howlwriter finalize original.md revised.md

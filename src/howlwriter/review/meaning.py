@@ -159,6 +159,7 @@ class MeaningPreservationReviewer:
     ) -> MeaningPreservationResult:
         substantive: list[MeaningDiff] = []
         substantive.extend(self._number_diffs(original.text, revised.text))
+        substantive.extend(self._unit_and_scope_diffs(original.text, revised.text))
         substantive.extend(self._attribution_diffs(original.text, revised.text))
         substantive.extend(self._hedge_diffs(original.text, revised.text))
         substantive.extend(self._causal_diffs(original.text, revised.text))
@@ -200,6 +201,32 @@ class MeaningPreservationReviewer:
                 )
             )
         return diffs
+
+    @staticmethod
+    def _unit_and_scope_diffs(
+        original_text: str, revised_text: str
+    ) -> list[MeaningDiff]:
+        """Numbers that kept their digits but changed what they count, and
+        scope qualifiers (dry-run, proof of concept, ...) that were dropped.
+
+        Bare-number comparison passes "25 of 28 repositories" -> "25/28
+        deployment paths"; the native fidelity engine binds each number to
+        its noun, so the drift surfaces here too.
+        """
+        from howlwriter.native.fidelity import compare
+
+        kinds = {
+            "FACTUAL_UNIT_DRIFT": "number_unit_changed",
+            "denominator_changed": "number_denominator_changed",
+            "qualifier_removed": "scope_qualifier_removed",
+            "scope_upgraded": "scope_upgraded",
+            "azure_devops_to_azure_cloud": "scope_upgraded",
+        }
+        return [
+            MeaningDiff(kinds[finding.code], finding.message)
+            for finding in compare(original_text, revised_text).findings
+            if finding.code in kinds
+        ]
 
     @staticmethod
     def _attribution_diffs(
