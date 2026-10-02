@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "howlwriter.request/v1",
+  "title": "HowlWriter native request",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "source_idea_id",
+    "source_run_id",
+    "source_component",
+    "source_component_role",
+    "title",
+    "audience",
+    "items"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "howlwriter.request/v1"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^wreq-[0-9a-f]{12}$"
+    },
+    "source_idea_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_component": {
+      "enum": [
+        "howldream",
+        "operator",
+        "howlplane",
+        "howlcreate"
+      ]
+    },
+    "source_component_role": {
+      "enum": [
+        "GENERATED",
+        "CLUSTERED",
+        "RANKED",
+        "REVIEWED",
+        "VALIDATED",
+        "SELECTED",
+        "TRANSFORMED",
+        "OPERATOR_SUPPLIED"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "problem": {
+      "type": "string"
+    },
+    "proposal": {
+      "type": "string"
+    },
+    "audience": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tone": {
+      "type": "string"
+    },
+    "length_constraints": {
+      "type": "string"
+    },
+    "canonical_evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "factual_constraints": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 50
+    },
+    "copy_implications": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 50
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "required": [
+          "item_id",
+          "current_copy",
+          "desired_copy_role"
+        ],
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "current_copy": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "desired_copy_role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "max_words": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 2000
+          },
+          "evidence": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "object",
+              "required": [
+                "ref",
+                "text"
+              ],
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

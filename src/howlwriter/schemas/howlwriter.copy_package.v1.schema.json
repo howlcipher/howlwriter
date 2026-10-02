@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "howlwriter.copy_package/v1",
+  "title": "HowlWriter copy package",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "writer_proposal_id",
+    "request_id",
+    "source_idea_id",
+    "source_run_id",
+    "source_component",
+    "source_component_role",
+    "proposals",
+    "factual_status",
+    "execution",
+    "contribution",
+    "authority",
+    "lineage"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "howlwriter.copy_package/v1"
+    },
+    "writer_proposal_id": {
+      "type": "string",
+      "pattern": "^wp-[0-9a-f]{12}$"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^wreq-[0-9a-f]{12}$"
+    },
+    "source_idea_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_component": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_component_role": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string"
+    },
+    "audience": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "factual_status": {
+      "enum": [
+        "FACTUALLY_PRESERVED",
+        "FACTUAL_REVIEW_REQUIRED",
+        "FACTUAL_UNIT_DRIFT",
+        "FACTUAL_CONFLICT"
+      ]
+    },
+    "authority": {
+      "type": "object",
+      "required": [
+        "type",
+        "executable"
+      ],
+      "properties": {
+        "type": {
+          "const": "ADVISORY"
+        },
+        "executable": {
+          "const": false
+        }
+      }
+    },
+    "execution": {
+      "type": "object"
+    },
+    "contribution": {
+      "type": "object",
+      "required": [
+        "component",
+        "operation"
+      ],
+      "properties": {
+        "component": {
+          "const": "howlwriter"
+        },
+        "operation": {
+          "const": "TRANSFORMED_COPY"
+        }
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "required": [
+        "source_idea_id",
+        "writer_proposal_id"
+      ]
+    },
+    "canonical_evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "factual_constraints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "proposals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "proposal_item_id",
+          "item_id",
+          "current_text",
+          "proposed_text",
+          "factual_status",
+          "factual_change",
+          "origin",
+          "evidence_refs"
+        ],
+        "properties": {
+          "proposal_item_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "item_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "current_text": {
+            "type": "string"
+          },
+          "proposed_text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string"
+          },
+          "desired_copy_role": {
+            "type": "string"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "factual_status": {
+            "enum": [
+              "FACTUALLY_PRESERVED",
+              "FACTUAL_REVIEW_REQUIRED",
+              "FACTUAL_UNIT_DRIFT",
+              "FACTUAL_CONFLICT"
+            ]
+          },
+          "factual_change": {
+            "type": "boolean"
+          },
+          "fidelity": {
+            "type": "object"
+          },
+          "design_judgment": {
+            "type": "string"
+          },
+          "uncertainty": {
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "MODEL",
+              "UNCHANGED",
+              "OPERATOR_EDITED"
+            ]
+          },
+          "word_count": {
+            "type": "integer"
+          },
+          "max_words": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "length_ok": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}
