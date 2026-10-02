@@ -11,9 +11,10 @@ requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dependencies = [
     "PyYAML>=6.0",
-    # Bounded remote provider transport for the native Writer path. Pinned by
-    # commit, matching howlcreate and howldream.
-    "howl-provider-core @ git+https://github.com/howlcipher/howl-provider-core.git@d0054c46255dbefbf8865baab45d0fc7c9530eba",
+    # Bounded remote provider transport for the native Writer path. Pinned to
+    # the same commit as howlcreate and howldream: pip treats different direct
+    # URLs for one project as a conflict, so the three must stay identical.
+    "howl-provider-core @ git+https://github.com/howlcipher/howl-provider-core.git@5837d467a76e2f9e03b6f32a0feb957f9e48f95e",
 ]
 
 [project.optional-dependencies]
