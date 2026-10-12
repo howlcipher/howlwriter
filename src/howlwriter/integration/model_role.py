@@ -39,7 +39,11 @@ class ModelRoleNotConfiguredError(RuntimeError):
         super().__init__(
             f"{role.value} is not configured. HowlWriter defines the contract; "
             f"provide an implementation (e.g. via HowlPlane model execution) "
-            f"to enable this capability."
+            f"to enable this capability. Install HowlPlane in the same Python "
+            f"environment or set HOWLPLANE_ROOT to its source checkout. "
+            f"Explicitly select an available provider with "
+            f"HOWLPLANE_ROLE_WRITING_{role.value.upper()}=<provider>. "
+            f"See docs/howlplane-integration.md for setup."
         )
 
 

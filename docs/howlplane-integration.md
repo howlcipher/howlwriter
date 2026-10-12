@@ -67,20 +67,31 @@ via HowlPlane's domain-neutral role execution framework:
    across any domain (e.g. `domain="writing"`, `role="humanizer"`, `role="final_reviewer"`).
 
 2. **Explicit Role-to-Executor Binding**:
-   Role bindings are configured declaratively in operator configuration (`~/.config/howlplane/config.toml`
-   or `.env` / `settings.yaml`):
-   ```toml
-   [roles.writing]
-   humanizer = "claude_code"
-   final_reviewer = "codex"
+   The default role registry reads explicit environment bindings when it is
+   first initialized. Select an available provider before starting HowlWriter:
+   ```bash
+   export HOWLPLANE_ROLE_WRITING_WRITER=claude_code
+   export HOWLPLANE_ROLE_WRITING_HUMANIZER=claude_code
+   export HOWLPLANE_ROLE_WRITING_FINAL_REVIEWER=codex
    ```
-   Or explicitly per role:
-   ```toml
-   [roles.writing.humanizer]
-   provider = "claude_code"
-   capability = "text_transform"
-   timeout_seconds = 300
+   These examples require the named providers to be installed and authenticated.
+   Choose bindings appropriate to your environment and reviewer independence
+   requirements. Setting a binding enables that role when it is requested;
+   discovery itself does not execute a provider.
+
+   Install HowlPlane in the same Python environment as HowlWriter, or point at
+   an explicit source checkout:
+   ```bash
+   export HOWLPLANE_ROOT=/path/to/howlplane
    ```
+   The bridge supports the current `src/howlplane/control_plane` layout and
+   the legacy `src/control_plane` layout. An installed `howlplane` package
+   works without `HOWLPLANE_ROOT`.
+
+   The default registry does not automatically read `config.toml`, `.env`, or
+   `settings.yaml`. Export environment bindings yourself, or register bindings
+   through HowlPlane's programmatic registry. Restart the process after changing
+   bindings because the default registry is initialized once per process.
 
 3. **HowlWriter / HowlPlane Bridge (`howlwriter.integration.howlplane_bridge`)**:
    `HowlPlaneWritingBridge` routes `WritingRole` requests from HowlWriter to HowlPlane's

@@ -22,7 +22,15 @@ def add_subparser(
     subparsers: argparse._SubParsersAction,
 ) -> argparse.ArgumentParser:
     parser = subparsers.add_parser(
-        "writer", help="Draft prose from an idea or notes (model-backed)."
+        "writer",
+        help="Draft prose from an idea or notes (model-backed).",
+        description="Draft prose using an explicitly configured HowlPlane writer role.",
+        epilog=(
+            "Setup: install HowlPlane in the same Python environment or set "
+            "HOWLPLANE_ROOT to its source checkout, then set "
+            "HOWLPLANE_ROLE_WRITING_WRITER=<provider> to an available provider. "
+            "See docs/howlplane-integration.md. No provider is selected automatically."
+        ),
     )
     parser.add_argument("prompt", help="The idea, notes, or topic to write from.")
     parser.add_argument(

@@ -41,12 +41,16 @@ class RoleDispatcherProtocol(Protocol):
 
 
 def _ensure_howlplane_on_path() -> None:
-    """Discovers HowlPlane from HOWLPLANE_ROOT environment variable if provided."""
+    """Discover an explicit HowlPlane checkout in current or legacy layout."""
     env_root = os.environ.get("HOWLPLANE_ROOT")
     if env_root:
         p = Path(env_root).resolve()
         if p.is_dir() and str(p) not in sys.path:
             sys.path.insert(0, str(p))
+        source_root = p / "src"
+        if (source_root / "howlplane" / "control_plane").is_dir():
+            if str(source_root) not in sys.path:
+                sys.path.insert(0, str(source_root))
 
 
 def _try_import_howlplane() -> tuple[Any, Any, Any, Any, Any] | None:
