@@ -31,7 +31,7 @@ from typing import Any, Callable
 
 from howlwriter.voice.identity import analysis
 from howlwriter.voice.identity.exclusions import normalize_component
-from howlwriter.voice.identity.store import IdentityConfig, IdentityStore
+from howlwriter.voice.identity.store import IdentityConfig, IdentityStore, source_path_of
 
 DRIVE_READONLY_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 TOKEN_FILE = "google_drive_readonly_token.json"
@@ -79,6 +79,15 @@ def authorize() -> Path:
     return path
 
 
+def docs_service() -> Any:
+    """A Docs v1 service on the same read-only token (drive.readonly covers documents.get)."""
+    from google.oauth2.credentials import Credentials  # type: ignore
+    from googleapiclient.discovery import build  # type: ignore
+
+    credentials = Credentials.from_authorized_user_file(str(token_path()), DRIVE_READONLY_SCOPES)
+    return build("docs", "v1", credentials=credentials, cache_discovery=False)
+
+
 def drive_service() -> Any:
     """A Drive v3 service from the saved read-only token, or a clear refusal."""
     try:
@@ -100,6 +109,87 @@ def drive_service() -> Any:
         credentials.refresh(Request())
         path.write_text(credentials.to_json(), encoding="utf-8")
     return build("drive", "v3", credentials=credentials, cache_discovery=False)
+
+
+#: HTTP statuses worth retrying: rate limiting and transient server errors.
+_RETRYABLE = {429, 500, 502, 503, 504}
+MAX_ATTEMPTS = 5
+BACKOFF_SECONDS = 1.0
+
+
+def _execute(request: Any, *, sleep=None) -> Any:
+    """Execute a Google API request with exponential backoff on 429/5xx."""
+    import time
+
+    sleep = sleep or time.sleep
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            return request.execute()
+        except Exception as error:
+            status = getattr(getattr(error, "resp", None), "status", None)
+            if status is None:
+                status = getattr(error, "status_code", None)
+            try:
+                status = int(status) if status is not None else None
+            except (TypeError, ValueError):
+                status = None
+            if status not in _RETRYABLE or attempt == MAX_ATTEMPTS - 1:
+                raise
+            sleep(BACKOFF_SECONDS * (2**attempt))
+    raise RuntimeError("unreachable")
+
+
+def _list_all(service: Any, **kwargs: Any) -> list[dict]:
+    """files.list across every page."""
+    files: list[dict] = []
+    token = None
+    while True:
+        response = _execute(
+            service.files().list(pageToken=token, **kwargs)
+            if token
+            else service.files().list(**kwargs)
+        )
+        files.extend(response.get("files", []))
+        token = response.get("nextPageToken")
+        if not token:
+            return files
+
+
+def _docs_text(docs: Any, document_id: str) -> str | None:
+    """Full text of a Google Doc, every tab, via the Docs API."""
+    if docs is None:
+        return None
+    document = _execute(docs.documents().get(documentId=document_id, includeTabsContent=True))
+
+    def body_text(body: dict) -> list[str]:
+        out = []
+        for element in body.get("content", []) or []:
+            paragraph = element.get("paragraph")
+            if paragraph:
+                runs = "".join(
+                    (e.get("textRun") or {}).get("content", "")
+                    for e in paragraph.get("elements", []) or []
+                )
+                out.append(runs)
+            table = element.get("table")
+            if table:
+                for row in table.get("tableRows", []) or []:
+                    for cell in row.get("tableCells", []) or []:
+                        out.extend(body_text(cell))
+        return out
+
+    def walk(tabs: list[dict]) -> list[str]:
+        out = []
+        for tab in tabs or []:
+            body = ((tab.get("documentTab") or {}).get("body")) or {}
+            out.extend(body_text(body))
+            out.extend(walk(tab.get("childTabs", [])))
+        return out
+
+    tabs = document.get("tabs")
+    lines = walk(tabs) if tabs else body_text(document.get("body") or {})
+    text = "".join(lines)
+    return text if text.strip() else None
 
 
 def _escape(value: str) -> str:
@@ -129,17 +219,16 @@ def _find(service: Any, relative_path: str, shared_dirs: set[str]) -> dict | Non
             clauses.append(parent_clause)
         else:
             clauses.append("sharedWithMe = true")
-        response = (
-            service.files()
-            .list(
-                q=" and ".join(clauses),
-                spaces="drive",
-                pageSize=10,
-                fields="files(id,name,mimeType,modifiedTime,createdTime,ownedByMe,owners(displayName,me))",
-            )
-            .execute()
+        files = _list_all(
+            service,
+            q=" and ".join(clauses),
+            spaces="drive",
+            pageSize=100,
+            fields=(
+                "nextPageToken,"
+                "files(id,name,mimeType,modifiedTime,createdTime,ownedByMe,owners(displayName,me))"
+            ),
         )
-        files = response.get("files", [])
         if len(files) != 1:
             return None  # missing or ambiguous: never guess between two documents
         if last:
@@ -150,10 +239,10 @@ def _find(service: Any, relative_path: str, shared_dirs: set[str]) -> dict | Non
 
 def _revisions(service: Any, file_id: str) -> dict:
     try:
-        response = (
-            service.revisions()
-            .list(fileId=file_id, fields="revisions(id,modifiedTime)", pageSize=1000)
-            .execute()
+        response = _execute(
+            service.revisions().list(
+                fileId=file_id, fields="revisions(id,modifiedTime)", pageSize=1000
+            )
         )
     except Exception:
         return {"revision_count": None}
@@ -175,6 +264,7 @@ def fetch_native_documents(
     entries: dict[str, dict],
     *,
     service_factory: Callable[[], Any] = drive_service,
+    docs_factory: Callable[[], Any] | None = None,
     perturbations: bool = True,
 ) -> dict[str, int]:
     """Export and analyse every native document the mount could not read."""
@@ -182,8 +272,13 @@ def fetch_native_documents(
         e
         for e in entries.values()
         if e.get("present", True)
-        and e.get("status") == "native_unavailable"
-        and not config.exclusions.path_is_excluded(e["relative_path"].split(":", 1)[-1].split("/"))
+        and (
+            e.get("status") == "native_unavailable"
+            # Names the mount cannot even stat (e.g. containing ':') are
+            # still native documents the API can supply.
+            or (e.get("status") == "unreadable" and not e.get("suffix"))
+        )
+        and not config.exclusions.path_is_excluded(source_path_of(e).split("/"))
     ]
     counts = {
         "attempted": len(pending),
@@ -195,9 +290,14 @@ def fetch_native_documents(
     if not pending:
         return counts
     service = service_factory()
+    docs = None
+    try:
+        docs = (docs_factory or docs_service)()
+    except Exception:
+        docs = None  # Drive export still works without the Docs API
     shared_dirs = {normalize_component(d) for d in config.shared_with_me_dirs}
     for entry in pending:
-        relative = entry["relative_path"].split(":", 1)[-1]
+        relative = source_path_of(entry)
         try:
             found = _find(service, relative, shared_dirs)
         except Exception as error:
@@ -211,7 +311,15 @@ def fetch_native_documents(
             )
             continue
         try:
-            data = service.files().export(fileId=found["id"], mimeType="text/plain").execute()
+            tab_text = None
+            try:
+                tab_text = _docs_text(docs, found["id"])
+            except Exception:
+                tab_text = None
+            if tab_text is not None:
+                data = tab_text.encode("utf-8")
+            else:
+                data = _execute(service.files().export(fileId=found["id"], mimeType="text/plain"))
         except Exception as error:
             counts["failed"] += 1
             entry["reason"] = f"Drive API export failed ({type(error).__name__})"

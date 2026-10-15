@@ -335,6 +335,7 @@ def build_calibration(
     holdout: Iterable[dict[str, float]] = (),
     controls: dict[str, list[dict[str, float]]] | None = None,
     training_fingerprints: Iterable[TextFingerprint] = (),
+    diagnostic_controls: dict[str, list[dict[str, float]]] | None = None,
 ) -> VoiceMatchCalibration:
     """Calibrate a profile from its own documents and validate on controls.
 
@@ -383,6 +384,19 @@ def build_calibration(
         pooled.extend(scores)
         validation["controls"][family] = {
             "distances": describe(distances),
+            "separation": separation(genuine_scores, scores).to_dict(),
+        }
+    # Diagnostics (e.g. mechanically altered copies of the author's own
+    # held-out documents) test sensitivity to style change. They are reported
+    # but never pooled: separating a person from a damaged copy of themselves
+    # says nothing about separating them from someone else.
+    validation["diagnostics"] = {}
+    for family, vectors in sorted((diagnostic_controls or {}).items()):
+        if not centres or not vectors:
+            continue
+        scores = [calibration.score_distance(distance(v, centres)[0]) for v in vectors]
+        validation["diagnostics"][family] = {
+            "scores": describe(scores),
             "separation": separation(genuine_scores, scores).to_dict(),
         }
     pooled_sep = separation(genuine_scores, pooled)

@@ -75,6 +75,7 @@ def assign_split(
     documents: list[tuple[str, str, str]],
     *,
     holdout_fraction: float = HOLDOUT_FRACTION,
+    groups: dict[str, str] | None = None,
 ) -> SplitResult:
     """Assign each document to train or holdout.
 
@@ -106,6 +107,14 @@ def assign_split(
         )
         return result
 
+    # Documents in one group (a draft and its final version, worksheets from
+    # one template) share the group's fingerprint, so they always land on
+    # the same side: a held-out revision of a trained document tests memory.
+    if groups:
+        documents = [
+            (key, f"group:{groups[key]}" if key in groups else fingerprint, context)
+            for key, fingerprint, context in documents
+        ]
     by_context: dict[str, list[tuple[str, str]]] = {}
     for key, fingerprint, context in documents:
         by_context.setdefault(context, []).append((key, fingerprint))

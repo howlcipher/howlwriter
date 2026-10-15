@@ -201,7 +201,7 @@ def extract_structured_output(text: str) -> Optional[Dict[str, Any]]:
     last_b = clean.rfind("}")
     if first_b != -1 and last_b != -1 and last_b > first_b:
         try:
-            parsed_json = json.loads(clean[first_b : last_b + 1])
+            parsed_json = json.loads(clean[first_b:last_b + 1])
             if isinstance(parsed_json, dict):
                 return parsed_json
         except Exception:

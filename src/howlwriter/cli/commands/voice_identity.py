@@ -146,6 +146,29 @@ def add_identity_subparsers(voice_subparsers: argparse._SubParsersAction) -> Non
         metavar="DOC_ID",
         help="Show one document's numbered paragraphs (local display only).",
     )
+    review_parser.add_argument(
+        "--use-proposed-extraction",
+        action="store_true",
+        help="With MIXED_AUTHORSHIP: use the proposed extraction (a worksheet's answer lines).",
+    )
+    review_parser.add_argument(
+        "--groups",
+        action="store_true",
+        help="List pending documents grouped by family, course, series, month.",
+    )
+    review_parser.add_argument(
+        "--group",
+        metavar="GROUP_ID",
+        help="Apply one decision (--decide) to every member of a group.",
+    )
+    review_parser.add_argument(
+        "--decide", metavar="AUTHORSHIP", help="Decision for --group (same values as --set)."
+    )
+    review_parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="With --group: confirm the listed members without an interactive prompt.",
+    )
     review_parser.add_argument("--json", action="store_true")
     review_parser.set_defaults(handler=run_review)
 
@@ -198,6 +221,19 @@ def add_identity_subparsers(voice_subparsers: argparse._SubParsersAction) -> Non
     status_parser.add_argument("--identity")
     status_parser.add_argument("--json", action="store_true")
     status_parser.set_defaults(handler=run_status)
+
+    legacy_parser = voice_subparsers.add_parser(
+        "legacy-reconcile",
+        help="Recover and reconcile the sources behind legacy profiles (read-only on the profiles).",
+    )
+    legacy_parser.add_argument("--identity")
+    legacy_parser.add_argument(
+        "--profiles",
+        default="",
+        help="Comma-separated legacy voice names (default: <identity>,<identity>_v2).",
+    )
+    legacy_parser.add_argument("--json", action="store_true")
+    legacy_parser.set_defaults(handler=run_legacy_reconcile)
 
     chat_parser = voice_subparsers.add_parser(
         "chat-import",
@@ -343,10 +379,16 @@ def run_review(args: argparse.Namespace) -> int:
             context=args.context,
             include_paragraphs=args.paragraphs,
             note=args.note,
+            use_proposed_extraction=args.use_proposed_extraction,
         )
         review.refresh_queue(store)
-        print(f"Recorded {decision.authorship} for {decision.path}")
+        extra = f" (extraction: {decision.extraction})" if decision.extraction else ""
+        print(f"Recorded {decision.authorship} for {decision.path}{extra}")
         return 0
+    if args.group:
+        return _decide_group(store, args)
+    if args.groups:
+        return _print_groups(store, args.json)
     if args.apply:
         result = review.apply_worksheet(store, args.apply)
         print(
@@ -376,9 +418,21 @@ def run_review(args: argparse.Namespace) -> int:
         flags = " [reopened]" if item.reopened else ""
         print(f"\n  {item.doc_id}  {item.path}{flags}")
         print(
-            f"    {item.category} ({item.context}), {item.words} words, {item.paragraphs} paragraphs"
+            f"    {item.category} ({item.context}), ~{item.eligible_words} eligible words "
+            f"of {item.words}, value {item.value}"
         )
-        print(f"    proposed: {item.proposed}")
+        print(
+            f"    proposed: {item.proposed}"
+            + (f" + {item.proposed_extraction}" if item.proposed_extraction else "")
+        )
+        print(
+            f"    history: {item.revision_history}"
+            + (
+                f"; trained legacy profiles: {', '.join(item.legacy_profiles)}"
+                if item.legacy_profiles
+                else ""
+            )
+        )
         for reason in item.reasons[:4]:
             print(f"    - {reason}")
         for signal in item.style_signals:
@@ -394,8 +448,67 @@ def run_review(args: argparse.Namespace) -> int:
 
 _PROMPT = (
     "  [h] my writing   [l] mine, light AI editing   [m] mixed (choose paragraphs)\n"
-    "  [a] mostly AI-generated   [t] someone else's   [u] not sure   [p] preview   [s] skip   [q] quit\n> "
+    "  [w] mixed: use only the proposed answer lines   [a] mostly AI-generated\n"
+    "  [t] someone else's   [u] not sure   [p] preview   [?] explain   [s] skip   [q] quit\n> "
 )
+
+
+def _print_descriptions() -> None:
+    for value, text in review.AUTHORSHIP_DESCRIPTIONS.items():
+        print(f"  {value}: {text}")
+
+
+def _print_groups(store: IdentityStore, as_json: bool) -> int:
+    found = review.groups(store)
+    if as_json:
+        print(json.dumps([g.to_dict() for g in found], indent=2))
+        return 0
+    if not found:
+        print("No groups of two or more pending documents.")
+        return 0
+    for group in found:
+        print(
+            f"\n{group.group_id}  {group.label}: {len(group.doc_ids)} documents, "
+            f"~{group.eligible_words} eligible words"
+        )
+        print("    " + ", ".join(f"{k} x{v}" for k, v in sorted(group.categories.items())))
+        for title in group.titles:
+            print(f"    - {title}")
+    print(
+        f"\nDecide a group:  howlwriter voice review --identity {store.identity} --group GROUP_ID --decide h"
+    )
+    return 0
+
+
+def _decide_group(store: IdentityStore, args: argparse.Namespace) -> int:
+    if not args.decide:
+        raise ValueError("--group needs --decide AUTHORSHIP")
+    group = next((g for g in review.groups(store) if g.group_id == args.group), None)
+    if group is None:
+        raise ValueError(f"no pending review group {args.group!r}; list them with --groups")
+    value = review.normalize_authorship(args.decide)
+    print(f"Apply {value} to all {len(group.doc_ids)} documents in '{group.label}'?")
+    print(f"  {review.AUTHORSHIP_DESCRIPTIONS[value]}")
+    for title in group.titles:
+        print(f"  - {title}")
+    if not args.yes:
+        if not sys.stdin.isatty():
+            raise ValueError(
+                "bulk decisions need confirmation: rerun with --yes after reading the list"
+            )
+        if input("Type 'yes' to confirm every listed document: ").strip().lower() != "yes":
+            print("Cancelled; nothing recorded.")
+            return 0
+    decisions = review.attest_group(
+        store,
+        group.group_id,
+        value,
+        confirmed_doc_ids=group.doc_ids,
+        use_proposed_extraction=args.use_proposed_extraction,
+        note=args.note or f"bulk decision for group {group.group_id}",
+    )
+    print(f"Recorded {value} for {len(decisions)} documents.")
+    return 0
 
 
 def _interactive(store: IdentityStore) -> int:
@@ -406,7 +519,12 @@ def _interactive(store: IdentityStore) -> int:
     print(f"{len(items)} document(s) await review. Decisions are saved as you go.")
     for position, item in enumerate(items, start=1):
         print(f"\n[{position}/{len(items)}] {item.path}")
-        print(f"  {item.category} ({item.context}), {item.words} words; proposed {item.proposed}")
+        print(
+            f"  {item.category} ({item.context}), ~{item.eligible_words} eligible of {item.words} words; "
+            f"proposed {item.proposed}"
+            + (f" + {item.proposed_extraction}" if item.proposed_extraction else "")
+        )
+        print(f"  history: {item.revision_history}")
         for reason in item.reasons[:4]:
             print(f"  - {reason}")
         while True:
@@ -416,15 +534,27 @@ def _interactive(store: IdentityStore) -> int:
                 return 0
             if answer in ("s", ""):
                 break
+            if answer == "?":
+                _print_descriptions()
+                continue
             if answer == "p":
                 for line in review.preview(store, item.doc_id, max_paragraphs=12, max_chars=240):
                     print("   " + line)
                 continue
             try:
                 paragraphs = ""
-                if answer in ("m", "mixed"):
+                use_extraction = answer == "w"
+                if use_extraction:
+                    answer = "m"
+                elif answer in ("m", "mixed"):
                     paragraphs = input('  your paragraphs (e.g. "1-4,7"): ').strip()
-                decision = review.attest(store, item.doc_id, answer, include_paragraphs=paragraphs)
+                decision = review.attest(
+                    store,
+                    item.doc_id,
+                    answer,
+                    include_paragraphs=paragraphs,
+                    use_proposed_extraction=use_extraction,
+                )
                 print(f"  recorded {decision.authorship}")
                 break
             except ValueError as error:
@@ -555,6 +685,38 @@ def run_status(args: argparse.Namespace) -> int:
             print(
                 f"  Voice Match: {vm['status']} ({vm['genuine_documents']} genuine calibration docs)"
             )
+    return 0
+
+
+def run_legacy_reconcile(args: argparse.Namespace) -> int:
+    from howlwriter.voice.identity.legacy import reconcile
+
+    names = [n.strip() for n in args.profiles.split(",") if n.strip()] or None
+    payload = reconcile(_identity(args), legacy_profiles=names)
+    summary = payload["summary"]
+    if args.json:
+        print(json.dumps(summary, indent=2))
+        return 0
+    print(
+        f"Legacy profiles read (not modified): {', '.join(payload['legacy_profiles']) or 'none found'}"
+    )
+    print(
+        f"  Historical sources:        {summary['historical_sources']} "
+        f"({summary['historically_used']} used, {summary['historically_trained']} trained)"
+    )
+    print(
+        f"  Matched now:               {summary['matched_by_path']} by path, "
+        f"{summary['matched_by_content']} by content; {summary['missing']} missing"
+    )
+    print(f"  Changed since legacy build: {summary['content_changed_since_legacy_build']}")
+    print(f"  Historical duplicates:     {summary['historical_duplicates']}")
+    print(f"  Recommendations:           {summary['recommendations']}")
+    print(
+        f"  Trained sources now excluded: {summary['trained_sources_now_excluded']} "
+        f"({summary['trained_word_share_now_excluded']:.0%} of legacy training words)"
+    )
+    print(f"  Confirmed / pending review: {summary['confirmed']} / {summary['pending_review']}")
+    print("Private ledger: legacy_reconciliation.json in the identity directory.")
     return 0
 
 

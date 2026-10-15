@@ -43,7 +43,10 @@ What was found on a real the cloud-drive client mount, and how it is handled:
 
 Coverage is reported honestly. When native documents cannot be read the scan
 says `complete: false` and gives the share of eligible files whose content was
-actually read.
+actually read. The report's `accounting` block lists every present file once
+by format family and outcome (`extracted`, `sensitive_excluded`,
+`too_small`, `unsupported_format`, `native_unavailable`, `unreadable`,
+`nonprose_excluded`), so totals reconcile line by line.
 
 ### Optional: the Drive API fallback for native Google Docs
 
@@ -52,9 +55,19 @@ howlwriter voice google-auth          # one time; needs an OAuth Desktop client 
 howlwriter voice scan --identity william --google-api
 ```
 
+Why it is needed: on the mounted cloud drive, native Google Docs appear as small
+extensionless entries whose read is refused (`EPERM`), and its drive
+configuration offers no export-as-Office option. Names containing `:` cannot
+even be statted by the mount.
+
 Off unless the flag is passed. It uses a separate token with the
-`drive.readonly` scope only, exports native Docs as plain text, and analyses
-them locally exactly like a mounted file. Nothing is sent to any model. Paths
+`drive.readonly` scope only (the Docs API accepts that scope for reading, so
+no second scope is requested), reads every tab of a Doc through the official
+Docs API (`includeTabsContent`), falls back to a plain-text Drive export,
+follows list pagination, retries rate limits and transient 5xx errors with
+exponential backoff, and analyses the text locally exactly like a mounted
+file. Placeholders the mount refused and extensionless names it could not
+stat are both attempted. Nothing is sent to any model. Paths
 are checked against the exclusions before any lookup, shared drives are not
 queried, and a name that matches zero or several Docs is reported rather than
 guessed. Drive revision history (count and span) is recorded as provenance.
@@ -163,8 +176,36 @@ howlwriter voice review --identity william --interactive   # answer one by one
 howlwriter voice review --identity william --preview DOC_ID
 howlwriter voice review --identity william --set DOC_ID h
 howlwriter voice review --identity william --set DOC_ID m --paragraphs "1-4,7"
+howlwriter voice review --identity william --set DOC_ID m --use-proposed-extraction
+howlwriter voice review --identity william --groups
+howlwriter voice review --identity william --group GROUP_ID --decide h
 howlwriter voice review --identity william --apply ~/.howlwriter/identities/william/review_queue.yaml
 ```
+
+**Ordering.** The queue is sorted by expected corpus value: independent
+discussion responses, lab analysis and professional writing first, then
+papers, with eligible word count (log-scaled), a byline, and earlier drafts
+raising value, and worksheets lowered. The second and later members of a
+document family sink, so the first questions cover independent documents.
+Each item shows the eligible word count, the proposal and its reasons, whether
+it is mixed, whether revision history exists, and whether a legacy profile
+trained on it. `?` in interactive review explains each authorship category.
+
+**Groups.** `--groups` lists pending documents by family, publisher worksheet
+series, course code, context and month. `--group ID --decide VALUE` prints
+every member and requires a typed `yes` (or `--yes`); the web view requires a
+confirmation tick. The decision is applied only if the members are still
+exactly the ones shown -- a group that changed is refused. Groups never decide
+anything by similarity.
+
+**Publisher worksheets.** Lab-manual worksheets repeat a running header on
+every page and carry numbered publisher prompts; on the real corpus only
+4-48% of their words were the student's answers. They are detected
+structurally (several numbered prompts, a header line on three or more
+pages) and proposed as `MIXED_AUTHORSHIP` with the `worksheet_answers`
+extraction. Attesting that (`--use-proposed-extraction`, `[w]`
+interactively, or "my answer lines only" on the web) lets only the answer
+lines into a profile; a worksheet with under 150 answer words is not queued.
 
 The queue lists only documents that would affect a profile; routine
 exclusions (someone else's shared file, a licence text) do not interrupt.
@@ -177,6 +218,32 @@ change reopens it. The web UI offers the same review.
 Proceeding while reviews are pending is the normal case: profiles are built
 from whatever has been attested and say how many relevant documents still
 await a decision.
+
+## 5a. Legacy corpus recovery
+
+```bash
+howlwriter voice legacy-reconcile --identity william
+```
+
+Profiles built before authorship review (`william`, `william_v2`) are frozen:
+this reads their `sources.json` and never writes into a voice directory. Each
+historical source is matched to the current inventory by path, then by the
+raw-text hash both builds record (so moved or renamed files are found), and
+receives a recommendation: `candidate` (attested), `candidate_answers_only`
+(a worksheet with separable answers), `pending_review`, `exclude` (with the
+reason: institutional record, instructor instructions, template, licence,
+résumé or profile export, duplicate, unreadable) or `missing`. The result is a
+private `legacy_reconciliation.json`; legacy feature measurements are never
+reused, because they were computed on whole documents including the text
+being removed. The review queue marks documents a legacy profile trained on.
+
+## 5b. Holdout integrity
+
+The holdout split is family-aware. Documents linked by the scanner's duplicate
+grouping, by SimHash within 16 bits, by a shared base name once
+draft/final/version/copy markers are removed, by the same assignment or
+paper number, or by a shared worksheet series always land on the same side,
+so a held-out document never has a revision or template sibling in training.
 
 ## 6. Private storage and Git protection
 
@@ -191,8 +258,10 @@ await a decision.
     calibration.json  supporting_evidence.json
 ```
 
-* Directories 0700, files 0600 (profile directories are tightened after each
-  build).
+* Directories 0700, files 0600 (profile directories and the voices registry
+  directory are tightened after each build). Legacy profile files that were
+  0644 were tightened to 0600 without content change, logged in the
+  identity's `privacy_actions.jsonl`.
 * Before anything is written, the target is checked: inside a Git worktree it
   must be ignored by Git (`git check-ignore`), or the write is refused.
 * `.gitignore` covers identity ledgers, voices, worksheets, chat exports,
@@ -280,6 +349,10 @@ documents.** A genuine document is as likely to score 20 as 80; that spread
 is how much one person's documents differ. Bands make it usable:
 `WITHIN_RANGE` (>= 25), `EDGE_OF_RANGE` (10-25), `ATYPICAL` (< 10).
 
+Mechanically style-altered copies of the author's own held-out documents are
+measured as diagnostics: their separation is reported, but they are never
+pooled into the discrimination AUC that decides `VALIDATED`.
+
 The report also gives the share of comparison-author documents at least as
 close. Comparison documents are prose by other people found in the corpus
 (third-party documents and assignment instructions, never licence texts),
@@ -338,13 +411,39 @@ Evaluation never rewrites; keeping the original is always a valid outcome.
 preferred_identity: william
 ```
 
+`humanize`, `howl` and `paper` accept `--identity`, `--auto-voice` and
+`--allow-generic`; `evaluate` accepts `--identity` and `--auto-voice`.
 `--auto-voice` uses that identity; `--identity` names one directly; `--voice`
 names a profile. Routing: `--mode academic` → the academic profile;
 `professional`, `linkedin`, `technical`, `documentation`, `email`, `article`
 → the professional profile; with no mode the document's own content
 category decides. A missing or unvalidated profile produces a stated reason,
 never a silently substituted profile. No identity is hardcoded into generic
-behaviour.
+behaviour. For writing commands an unavailable context profile is an error;
+`--allow-generic` permits writing without one and records the fallback.
+
+### Voice activation and provenance
+
+Every way of requesting a voice -- `--voice`, `--voice-profile`, a spec's or
+an outline's `voice_profile`, a project config, the web routes, automatic
+selection -- goes through one resolver (`howlwriter.voice.selection`):
+
+* a registry name resolves through the voice registry; an explicit path loads
+  that file; a value that is both is refused as ambiguous;
+* an explicitly requested name or path that does not exist, or a profile file
+  that does not parse, stops the run with an error naming the available
+  voices -- it never writes generic prose instead;
+* a free-text value such as `"Jane Doe"` keeps its legacy meaning: an author
+  label with no profile, recorded as such;
+* a selected profile that then fails to load stops the run;
+* generation provenance records `requested`, `source`, `kind`, `applied`,
+  `profile_applied`, `profile_loaded` and any allowed `fallback`, with no
+  local paths. The old placeholder `configured_voice_profile` is gone.
+
+Before this, `paper` passed a spec's bare name to a path-only loader (no voice
+applied), an outline's voice reached the spec only after the config was fixed
+(never applied), and the web academic route never forwarded the spec's voice.
+`writer` and `native` have no voice path and do not claim one.
 
 ## 12. Incremental rescanning
 

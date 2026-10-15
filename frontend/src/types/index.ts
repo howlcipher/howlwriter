@@ -539,8 +539,29 @@ export interface VoiceIntelReviewItem {
   reasons: string[];
   style_signals: string[];
   priority: number;
+  value: number;
   reopened: boolean;
   predates_llm_era: boolean | null;
+  eligible_words: number;
+  recommendation: string;
+  mixed: boolean;
+  proposed_extraction: string;
+  revision_history: string;
+  legacy_profiles: string[];
+  family: string;
+  course: string;
+  month: string;
+}
+
+export interface VoiceIntelReviewGroup {
+  group_id: string;
+  kind: string;
+  label: string;
+  doc_ids: string[];
+  titles: string[];
+  eligible_words: number;
+  categories: Record<string, number>;
+  proposed: Record<string, number>;
 }
 
 export interface NaturalnessDimension {

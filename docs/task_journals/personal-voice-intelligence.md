@@ -6,78 +6,75 @@ paths inside the drive, or text. Private details live in the identity ledger
 
 ## Summary
 
-Implement the HowlWriter Personal Voice Intelligence system (drive scanner
-with mandatory exclusions, authorship review, `william-academic` and
-`william-professional` profiles, calibrated Naturalness and Voice Match,
-drift, before/after comparison, CLI, web UI) and dogfood it on the owner's
-mounted cloud drive.
+Personal Voice Intelligence for HowlWriter: read-only drive scanner with
+mandatory exclusions, legacy corpus recovery, authorship review,
+`william-academic` and `william-professional` profiles under identity
+`william`, calibrated Naturalness and Voice Match, drift, revision comparison,
+strict voice activation, CLI and web UI. Design: `docs/voice-intelligence.md`.
 
-- Branch: `feat/personal-voice-intelligence` (based on `origin/main` 6c558bf)
-- Design and method: `docs/voice-intelligence.md`
+- Branch: `feat/personal-voice-intelligence` (based on `origin/main` 6c558bf),
+  not pushed, not merged.
+- Legacy profiles `william` and `william_v2`: frozen. Content never modified;
+  file modes tightened 0644 -> 0600 (logged privately).
 
-## Pre-flight (recorded before any change)
+## Environment finding
 
-- Baseline suite on `main`: 1151 passed, 14 failed, 5 skipped. All 14
-  failures are `tests/native/test_native_pipeline.py` and share one
-  environment cause: `howl_provider_core` is not installed in the local venv.
-- Git privacy audit: existing ignore rules worked; identity ledgers, chat
-  exports, Google tokens/client files and review worksheets were NOT covered.
-  No private voice data found in history (only `VoicesPanel.tsx` matched,
-  which is legitimate source).
-- Drive mount: the cloud-drive client FUSE (`fuse.exfs`), listable. Native Google files
-  are listed but reads are refused (EPERM). No xattrs; inode numbers are
-  session-assigned.
+The 14 "baseline failures" in `tests/native` were environmental: the local
+venv predated the pinned `howl-provider-core` dependency and was never
+re-synced. Installing the exact pinned commit (5837d46) into the venv with
+`uv pip install` fixed all 14; no dependency declaration changed.
+Baseline on 729e3b4 with the correct environment: 1319 passed, 5 skipped.
 
-## Progress Log
+## Milestone 1 (commit 729e3b4)
 
-1. Shared infrastructure fixes found during dogfood:
-   - `Document.parse` raised `ValueError: substring not found` when an
-     abbreviation split fell across a newline; merged sentences are now
-     character spans (exact offsets).
-   - DOCX/ODT inflated body parts without limits and read files twice; now a
-     single read with a bounded archive reader. PDFs capped at 400 pages.
-2. Identity layer `src/howlwriter/voice/identity/`: exclusions, privacy,
-   store, provenance, classify, analysis, scanner, review, profiles, chat,
-   google_fallback, status.
-3. Scores `src/howlwriter/evaluation/`: empirical, naturalness, voice_match,
-   drift, perturb, personal. `WritingReport.voice_match` now filled from
-   calibrated profiles in howl, humanize and academic pipelines.
-4. `build_voice` gained `selection=` and `artifacts=` (backward compatible).
-5. CLI: `evaluate`; `voice scan|review|build-identity|sync|status|chat-import|google-auth`.
-6. Web: `/api/voice-intel/*` and the Voice Intelligence tab (bundle rebuilt).
-7. Defects found by dogfood or tests and fixed: whole-scan abort on one bad
-   document; 211 readable extensionless files misreported as cloud
-   placeholders; software licence texts classified as academic papers;
-   coursework hidden when the context classifier abstained; resume needed
-   sources saved at scan start; Git-ignore probe for not-yet-created
-   directories; case-sensitive byline fields; reopened decisions dropping out
-   of the queue; capped shared-run search making pasted-AI detection inert;
-   multi-line f-strings that broke Python 3.11 compatibility.
+Scanner, identity ledger, classification, review, profiles, scores, drift,
+comparison, chat evidence, Drive API fallback, CLI, web tab.
+
+## Milestone 2 (recovery, refinement)
+
+- Legacy corpus recovery (`voice legacy-reconcile`): legacy sources matched by
+  path, then by raw-text hash; private reconciliation ledger.
+- Publisher worksheet segmentation: answer lines proposed as the only usable
+  text (`MIXED_AUTHORSHIP` + `worksheet_answers`); measured answer share on
+  real worksheets 4-48%.
+- Document families; family-aware holdout split (revisions and template
+  siblings never straddle train/holdout).
+- Review: value ordering, assistance fields, grouped review with exact-member
+  confirmation (CLI and web), category descriptions.
+- Strict voice selection layer: names, paths, ambiguity, explicit failures,
+  load guard, requested/applied provenance; `--identity/--auto-voice/
+  --allow-generic` on humanize, howl, paper; evaluate rejects a missing
+  explicit voice; web academic route validates spec voices.
+- Drive API fallback: Docs API tabs, pagination, backoff, unstattable names.
+- Voice Match: non-pooled style-altered diagnostics.
+- Fixed: colon-containing file names were mangled by a prefix-stripping idiom
+  (now explicit `source_path`); worksheet header threshold; profile exports
+  detected from content; scan report gained an `accounting` block.
 
 ## Real-drive state (last scan)
 
-- Files inventoried: 659 (3 excluded directories skipped before traversal,
-  0 symlinks followed)
-- Eligible prose-bearing files: 188; read successfully: 107 (105 extracted,
-  2 credential-shaped files excluded before analysis); native Google files
-  unavailable through the mount: 70; unreadable or failed: 9
-- Content coverage: 57% of eligible files (incomplete: native Docs)
-- Academic candidates: 38; professional candidates: 4
-- Pending authorship reviews: 37; attestations recorded: 0
-- Profiles: not built (no attested documents). Existing legacy voices
-  `william` and `william_v2` untouched.
+- 659 files: 469 non-prose; 188 eligible (105 extracted, 2 credential-shaped
+  excluded before analysis, 4 too small, 3 legacy .doc, 70 native
+  placeholders, 4 native-type read failures); 2 names unstattable by the mount.
+- Content coverage 57% of eligible files.
+- Legacy reconciliation: 70 historical sources, all matched by path, none
+  changed; 41 used / 34 trained historically; recommendations: 3 answers-only
+  candidates, 27 pending review, 40 excluded; 15 trained sources (18% of
+  legacy training words) now excluded.
+- Pending authorship reviews: 32. Attestations: 0.
+- Profiles `william-academic`, `william-professional`: not built (no
+  attestations). Professional evidence essentially absent from readable files.
+- Drive API fallback: implemented; not run (no OAuth client or token).
 
-## Test state
+## Tests
 
-- Full suite after implementation: see the final handoff in the PR; the
-  14 baseline native failures are unchanged and unrelated.
+- Full suite after milestone 2: 1364 passed, 5 skipped, 0 failed (rerun on the
+  committed tree is recorded in the commit/handoff).
 
 ## Next Step
 
-1. Owner attests authorship (`howlwriter voice review --identity william
-   --interactive`, the worksheet, or the web Review view).
-2. Optionally enable the Drive API fallback (`voice google-auth`, then
-   `voice scan --google-api`) to read the 70 native Docs; most professional
-   writing is there.
-3. `howlwriter voice build-identity --identity william`, then record the
-   calibration outcomes (counts and AUCs only) here.
+1. Owner decisions on the consolidated review queue (grouped review).
+2. Optional: OAuth client + `voice google-auth`, then `voice scan --google-api`
+   to recover the 70 native Docs (most professional writing).
+3. `voice build-identity --identity william`; record calibration counts/AUCs
+   here; compare against `william_v2`; dogfood evaluation and generation.

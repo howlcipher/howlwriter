@@ -36,11 +36,16 @@ from howlwriter.voice.corpus import context as context_stage
 from howlwriter.voice.corpus import quality as quality_stage
 from howlwriter.voice.corpus.cleanup import clean_document
 from howlwriter.voice.corpus.features import extract_features
-from howlwriter.voice.identity import classify, provenance
+from howlwriter.voice.corpus.dedup import content_hash
+from howlwriter.voice.identity import classify, provenance, worksheet
 
 #: Bump when any derived measurement changes meaning; every cached entry is
 #: then re-derived on the next scan.
-ANALYSIS_VERSION = 2
+ANALYSIS_VERSION = 4
+
+#: A worksheet with fewer candidate answer words than this has nothing worth
+#: reviewing: its separable text is captions and labels.
+MIN_WORKSHEET_ANSWER_WORDS = 150
 
 #: Prefix lengths at which a document's voice vector is also recorded, for
 #: the sample-size sensitivity part of calibration.
@@ -138,6 +143,26 @@ def analyze(
         auto_accept_pre_llm_bylined=auto_accept_pre_llm_bylined,
     )
 
+    sheet = worksheet.segment(text)
+    eligible_words = cleaned.kept_words
+    if sheet.is_worksheet:
+        # A publisher worksheet: the student's answers are a minority of the
+        # text and are proposed, never assumed, as the usable part.
+        eligible_words = sheet.answer_words
+        if classification.category not in classify.CATEGORY_CONTEXT:
+            classification.category = classify.ACADEMIC_LAB
+        classification.context = "academic"
+        classification.signals.append(
+            f"publisher template worksheet: {sheet.answer_words} of {sheet.total_words} words "
+            "are candidate answers"
+        )
+        proposal = classify.worksheet_proposal(
+            proposal,
+            answer_words=sheet.answer_words,
+            total_words=sheet.total_words,
+            worth_reviewing=sheet.answer_words >= MIN_WORKSHEET_ANSWER_WORDS,
+        )
+
     extras = extra_features(cleaned.text)
     truncated: dict[str, dict[str, float]] = {}
     for limit in TRUNCATION_WORDS:
@@ -157,6 +182,9 @@ def analyze(
         "status": "extracted",
         "words": features.words,
         "prose_words": cleaned.kept_words,
+        "eligible_words": eligible_words,
+        "text_hash": content_hash(text),
+        "worksheet": sheet.to_dict() if sheet.is_worksheet else None,
         "paragraph_count": len(paragraphs_of(cleaned.text)),
         "fingerprint": fingerprint.to_dict(),
         "provenance": signals.to_dict(),

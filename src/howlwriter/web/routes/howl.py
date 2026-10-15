@@ -15,7 +15,7 @@ from howlwriter.web.models import (
     RedPenFindingDto,
     RuleMatchDto,
 )
-from howlwriter.voice.corpus.resolve import resolve_voice_option
+from howlwriter.voice.selection import apply_selection
 
 router = APIRouter(prefix="/api/howl", tags=["howl"])
 
@@ -26,13 +26,16 @@ def execute_howl_pipeline(req: HowlPipelineRequest) -> HowlPipelineResponse:
         project_config_path=req.config_path, mode=parse_mode(req.mode)
     )
     try:
-        resolved = resolve_voice_option(
-            voice=req.voice, voice_profile=req.voice_profile
+        apply_selection(
+            config,
+            voice=req.voice,
+            voice_profile=req.voice_profile,
+            spec_value=config.voice_profile,
+            spec_source="config",
+            mode=req.mode,
         )
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    if resolved:
-        config.voice_profile = resolved
 
     # Write to a temporary file to leverage run_howl_pipeline's atomic file behavior
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as tf:

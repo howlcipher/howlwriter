@@ -263,3 +263,22 @@ def test_ordinary_documents_produce_few_drift_findings():
     )
     findings = drift.analyze(author_a(60, byline=False), baseline)["findings"]
     assert len(findings) <= 2
+
+
+def test_style_altered_diagnostics_are_reported_but_not_pooled():
+    from howlwriter.evaluation.perturb import formulaic_injection
+
+    training = [vm.measure_text(author_a(seed, byline=False))[0] for seed in range(16)]
+    holdout_texts = [author_a(seed, byline=False) for seed in range(16, 20)]
+    calibration = vm.build_calibration(
+        profile="p",
+        context="academic",
+        training=training,
+        holdout=[vm.measure_text(t)[0] for t in holdout_texts],
+        diagnostic_controls={
+            "style_altered": [vm.measure_text(formulaic_injection(t))[0] for t in holdout_texts]
+        },
+    )
+    assert "style_altered" in calibration.validation["diagnostics"]
+    assert calibration.validation["pooled_separation"]["control_n"] == 0
+    assert calibration.validated() is False

@@ -163,6 +163,11 @@ _LICENSE = re.compile(
     r"\bspdx-license-identifier\b|^#+\s*\S+\s+v?\d[\w.]*\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
+_PROFILE_EXPORT = re.compile(r"linkedin\.com/in/|www\.linkedin\.com", re.IGNORECASE)
+_PROFILE_SECTIONS = re.compile(
+    r"^\s*(?:top skills|contact|experience|education|summary|certifications|languages|honors-awards)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 _CITATION = re.compile(r"\(\s*[A-Z][\w'’-]+(?:\s+et\s+al\.?)?,?\s*\d{4}[a-z]?\s*[,)]")
 
 
@@ -196,6 +201,9 @@ class AuthorshipProposal:
     review_priority: int = 0
     affects_profile: bool = False
     style_signals: list[str] = field(default_factory=list)
+    #: A named extraction (see worksheet.EXTRACTIONS) that would isolate the
+    #: author's text, proposed for the person to confirm.
+    proposed_extraction: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -245,6 +253,13 @@ def classify_category(
         return done(ADMINISTRATIVE, 0.7, "administrative record vocabulary")
     if q == quality_stage.RESUME:
         return done(RESUME, 0.8, quality.reason)
+    if (
+        _PROFILE_EXPORT.search(lowered[:6000])
+        and len(_PROFILE_SECTIONS.findall(lowered[:12000])) >= 2
+    ):
+        return done(
+            RESUME, 0.75, "professional-network profile export (formatted sections, not prose)"
+        )
     if q == quality_stage.NON_PROSE:
         if list_rate >= 0.4 or heading_rate >= 0.3:
             return done(NOTES_OUTLINE, 0.5, "list- or heading-dominated with little prose")
@@ -396,6 +411,34 @@ def propose_authorship(
         proposal.review_priority += 1
     proposal.needs_review = feeds_profile
     return proposal
+
+
+def worksheet_proposal(
+    proposal: AuthorshipProposal, *, answer_words: int, total_words: int, worth_reviewing: bool
+) -> AuthorshipProposal:
+    """Re-propose a publisher worksheet as mixed, with answers-only extraction."""
+    reasons = [
+        f"publisher lab worksheet: about {answer_words} of {total_words} words are the "
+        "student's answer lines; the rest is the publisher's header, prompts and labels"
+    ]
+    if worth_reviewing:
+        reasons.append(
+            "confirm as MIXED_AUTHORSHIP with the worksheet_answers extraction to use only "
+            "the answer lines"
+        )
+    else:
+        reasons.append("too little answer text to contribute to a profile")
+    reasons.extend(r for r in proposal.reasons if r not in reasons)
+    return AuthorshipProposal(
+        authorship=MIXED_AUTHORSHIP,
+        confidence="MEDIUM",
+        reasons=reasons,
+        needs_review=worth_reviewing,
+        review_priority=proposal.review_priority if worth_reviewing else 0,
+        affects_profile=worth_reviewing,
+        style_signals=list(proposal.style_signals),
+        proposed_extraction="worksheet_answers" if worth_reviewing else "",
+    )
 
 
 def effective_category(category: str, authorship: str | None) -> str:

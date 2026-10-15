@@ -51,6 +51,25 @@ INVENTORY_VERSION = 1
 _VALID_IDENTITY = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
 
 
+_ROOT_INDEX = re.compile(r"^(\d{1,3}):")
+
+
+def source_path_of(entry_or_relative) -> str:
+    """The path of a document relative to its own source root.
+
+    Inventory keys carry an ``N:`` prefix only when an identity has several
+    source roots. Splitting on the first colon (the earlier idiom) mangled
+    real file names containing one -- "Lab: B7" became " B7" -- so the
+    scanner now records the source-relative path explicitly, and this falls
+    back to stripping only a numeric prefix for entries written before that.
+    """
+    if isinstance(entry_or_relative, dict):
+        if entry_or_relative.get("source_path"):
+            return entry_or_relative["source_path"]
+        entry_or_relative = entry_or_relative.get("relative_path", "")
+    return _ROOT_INDEX.sub("", str(entry_or_relative), count=1)
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -182,6 +201,8 @@ class Decision:
     category: str = ""
     context: str = ""
     include_paragraphs: str = ""
+    #: A named extraction (worksheet.EXTRACTIONS) isolating the attested text.
+    extraction: str = ""
     note: str = ""
     decided_at: str = ""
     source: str = "user_attestation"
@@ -316,6 +337,14 @@ class IdentityStore:
             )
         if decision.include_paragraphs:
             parse_paragraph_ranges(decision.include_paragraphs)
+        if decision.extraction:
+            from howlwriter.voice.identity.worksheet import EXTRACTIONS
+
+            if decision.extraction not in EXTRACTIONS:
+                raise ValueError(
+                    f"unknown extraction {decision.extraction!r}; expected one of "
+                    + ", ".join(sorted(EXTRACTIONS))
+                )
         decisions = self.load_decisions()
         previous = decisions.get(decision.doc_id)
         decision.decided_at = decision.decided_at or utc_now()

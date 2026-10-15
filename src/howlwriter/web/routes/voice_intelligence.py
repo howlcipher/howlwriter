@@ -27,7 +27,7 @@ from howlwriter.voice.identity import review
 from howlwriter.voice.identity.profiles import build_identity
 from howlwriter.voice.identity.scanner import MountUnavailableError, scan
 from howlwriter.voice.identity.status import identity_status
-from howlwriter.voice.identity.store import IdentityStore, validate_identity
+from howlwriter.voice.identity.store import IdentityStore, source_path_of, validate_identity
 from howlwriter.web.jobs import Job, get_job_manager
 from howlwriter.web.models import VoiceIntelJobResultDto
 
@@ -41,7 +41,15 @@ class AttestRequest(BaseModel):
     category: str = ""
     context: str = ""
     include_paragraphs: str = ""
+    use_proposed_extraction: bool = False
     note: str = Field(default="", max_length=500)
+
+
+class GroupDecisionRequest(BaseModel):
+    authorship: str
+    #: Exactly the members the person was shown; a changed group is refused.
+    doc_ids: list[str]
+    use_proposed_extraction: bool = False
 
 
 class EvaluateRequest(BaseModel):
@@ -99,7 +107,7 @@ async def get_review(identity: str, show_paths: bool = Query(False)) -> dict:
     for item in review.queue(store):
         data = item.to_dict()
         relative = data.pop("path")
-        data["title"] = PurePosixPath(relative.split(":", 1)[-1]).name
+        data["title"] = PurePosixPath(source_path_of(relative)).name
         if show_paths:
             data["path"] = relative
         items.append(data)
@@ -118,6 +126,7 @@ async def post_attestation(identity: str, doc_id: str, request: AttestRequest) -
             context=request.context,
             include_paragraphs=request.include_paragraphs,
             note=request.note,
+            use_proposed_extraction=request.use_proposed_extraction,
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -126,6 +135,35 @@ async def post_attestation(identity: str, doc_id: str, request: AttestRequest) -
         "doc_id": decision.doc_id,
         "authorship": decision.authorship,
         "decided_at": decision.decided_at,
+    }
+
+
+@router.get("/{identity}/review-groups")
+async def get_review_groups(identity: str) -> dict:
+    store = _store(identity)
+    return {
+        "groups": [g.to_dict() for g in review.groups(store)],
+        "descriptions": review.AUTHORSHIP_DESCRIPTIONS,
+    }
+
+
+@router.post("/{identity}/review-groups/{group_id}")
+async def post_group_decision(identity: str, group_id: str, request: GroupDecisionRequest) -> dict:
+    store = _store(identity)
+    try:
+        decisions = review.attest_group(
+            store,
+            group_id,
+            request.authorship,
+            confirmed_doc_ids=request.doc_ids,
+            use_proposed_extraction=request.use_proposed_extraction,
+            note=f"bulk decision for group {group_id} (web)",
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {
+        "recorded": len(decisions),
+        "authorship": decisions[0].authorship if decisions else None,
     }
 
 

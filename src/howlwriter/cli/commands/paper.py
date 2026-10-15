@@ -15,7 +15,7 @@ from howlwriter.domain.io import atomic_write_text
 from howlwriter.domain.outline import load_outline
 from howlwriter.output.naming import OutputCollisionError, safe_filename
 from howlwriter.provenance.assemble import write_artifacts
-from howlwriter.voice.corpus.resolve import resolve_voice_option
+from howlwriter.voice.selection import add_selection_arguments, apply_selection
 
 
 def add_subparser(
@@ -136,6 +136,7 @@ def add_subparser(
         default=None,
         help="Path to a VoiceProfile JSON, or an author label.",
     )
+    add_selection_arguments(parser)
     parser.add_argument(
         "--deterministic",
         action="store_true",
@@ -204,11 +205,22 @@ def run(args: argparse.Namespace) -> int:
 
     config = ConfigLoader().load(project_config_path=args.project_config_path)
 
-    resolved_voice = resolve_voice_option(
+    # The outline's voice reaches the spec only inside the pipeline, which
+    # used to be after the config was fixed, so it was never applied. Read it
+    # here, with the spec's own value, and resolve both strictly.
+    outline_voice = outline.voice_profile if outline is not None else None
+    spec_voice = spec.voice_profile or outline_voice
+    apply_selection(
+        config,
         voice=getattr(args, "voice", None),
         voice_profile=getattr(args, "voice_profile", None),
+        spec_value=spec_voice or config.voice_profile,
+        spec_source=("spec" if spec.voice_profile else "outline") if spec_voice else "config",
+        identity=getattr(args, "identity", None),
+        auto_voice=getattr(args, "auto_voice", False),
+        allow_generic=getattr(args, "allow_generic", False),
+        mode="academic",
     )
-    config.voice_profile = resolved_voice or spec.voice_profile or config.voice_profile
 
     existing_sources = None
     if args.sources:

@@ -6,6 +6,7 @@ import {
   NaturalnessReport,
   PersonalComparison,
   PersonalEvaluation,
+  VoiceIntelReviewGroup,
   VoiceIntelReviewItem,
   VoiceIntelStatus,
   VoiceMatchReport,
@@ -150,7 +151,103 @@ const CorpusView: React.FC<{ status: VoiceIntelStatus; onRescan: () => void; bus
 
 // --- Review ----------------------------------------------------------------
 
+const GroupReview: React.FC<{ identity: string; onChanged: () => void }> = ({ identity, onChanged }) => {
+  const [groups, setGroups] = React.useState<VoiceIntelReviewGroup[]>([]);
+  const [descriptions, setDescriptions] = React.useState<Record<string, string>>({});
+  const [confirmed, setConfirmed] = React.useState<Record<string, boolean>>({});
+  const [message, setMessage] = React.useState<string | null>(null);
+
+  const load = React.useCallback(async () => {
+    const data = await api.getReviewGroups(identity);
+    setGroups(data.groups);
+    setDescriptions(data.descriptions);
+    setConfirmed({});
+  }, [identity]);
+
+  React.useEffect(() => {
+    load().catch((err) => setMessage(err instanceof Error ? err.message : 'Failed to load groups'));
+  }, [load]);
+
+  const decide = async (group: VoiceIntelReviewGroup, authorship: string, answersOnly = false) => {
+    try {
+      const res = await api.decideGroup(identity, group.group_id, {
+        authorship,
+        doc_ids: group.doc_ids,
+        use_proposed_extraction: answersOnly,
+      });
+      setMessage(`Recorded ${words(authorship)} for ${res.recorded} documents in "${group.label}".`);
+      await load();
+      onChanged();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not record group decision');
+    }
+  };
+
+  return (
+    <div>
+      <p style={{ fontSize: 12, opacity: 0.85 }}>
+        A group decision applies to every listed document. Read the list, tick the confirmation, then choose.
+        Groups are suggestions for reviewing related documents together; nothing is decided by similarity.
+      </p>
+      <div aria-live="polite" style={{ fontSize: 12, minHeight: 18 }}>
+        {message}
+      </div>
+      {groups.length === 0 && <p style={{ fontSize: 12 }}>No groups of two or more pending documents.</p>}
+      {groups.map((group) => (
+        <article
+          key={group.group_id}
+          style={{ border: '1px solid var(--border-medium, #ccc)', padding: 10, marginBottom: 10 }}
+          aria-label={`Group ${group.label}`}
+        >
+          <strong>{group.label}</strong>{' '}
+          <span style={{ fontSize: 11, opacity: 0.75 }}>
+            {group.doc_ids.length} documents · ~{group.eligible_words} eligible words
+          </span>
+          <ul style={{ fontSize: 12, margin: '6px 0 6px 16px' }}>
+            {group.titles.map((title) => (
+              <li key={title}>{title}</li>
+            ))}
+          </ul>
+          <label style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
+            <input
+              type="checkbox"
+              checked={!!confirmed[group.group_id]}
+              onChange={(e) => setConfirmed((prev) => ({ ...prev, [group.group_id]: e.target.checked }))}
+            />{' '}
+            I confirm the same authorship applies to every document listed above
+          </label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }} role="group" aria-label="Group decision">
+            {AUTHORSHIP_CHOICES.filter((c) => c.value !== 'MIXED_AUTHORSHIP').map((choice) => (
+              <button
+                key={choice.value}
+                type="button"
+                className="btn-tech"
+                disabled={!confirmed[group.group_id]}
+                title={descriptions[choice.value] || choice.hint}
+                onClick={() => decide(group, choice.value)}
+              >
+                {choice.label}
+              </button>
+            ))}
+            {group.kind === 'worksheet_series' && (
+              <button
+                type="button"
+                className="btn-tech"
+                disabled={!confirmed[group.group_id]}
+                onClick={() => decide(group, 'MIXED_AUTHORSHIP', true)}
+              >
+                Mixed: my answer lines only
+              </button>
+            )}
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+};
+
 const ReviewView: React.FC<{ identity: string; onChanged: () => void }> = ({ identity, onChanged }) => {
+  const [grouped, setGrouped] = React.useState(false);
   const [items, setItems] = React.useState<VoiceIntelReviewItem[]>([]);
   const [preview, setPreview] = React.useState<Record<string, string[]>>({});
   const [paragraphs, setParagraphs] = React.useState<Record<string, string>>({});
@@ -165,11 +262,13 @@ const ReviewView: React.FC<{ identity: string; onChanged: () => void }> = ({ ide
     load().catch((err) => setMessage(err instanceof Error ? err.message : 'Failed to load review queue'));
   }, [load]);
 
-  const decide = async (item: VoiceIntelReviewItem, authorship: string) => {
+  const decide = async (item: VoiceIntelReviewItem, authorship: string, answersOnly = false) => {
     try {
       await api.attest(identity, item.doc_id, {
         authorship,
-        include_paragraphs: authorship === 'MIXED_AUTHORSHIP' ? paragraphs[item.doc_id] || '' : '',
+        include_paragraphs:
+          authorship === 'MIXED_AUTHORSHIP' && !answersOnly ? paragraphs[item.doc_id] || '' : '',
+        use_proposed_extraction: answersOnly,
       });
       setMessage(`Recorded: ${item.title} → ${words(authorship)}`);
       await load();
@@ -184,8 +283,22 @@ const ReviewView: React.FC<{ identity: string; onChanged: () => void }> = ({ ide
     setPreview((prev) => ({ ...prev, [item.doc_id]: data.paragraphs }));
   };
 
+  if (grouped) {
+    return (
+      <div>
+        <button type="button" className="btn-tech" onClick={() => setGrouped(false)} style={{ marginBottom: 8 }}>
+          One at a time
+        </button>
+        <GroupReview identity={identity} onChanged={() => { load(); onChanged(); }} />
+      </div>
+    );
+  }
+
   return (
     <div>
+      <button type="button" className="btn-tech" onClick={() => setGrouped(true)} style={{ marginBottom: 8 }}>
+        Review related documents together
+      </button>
       <p style={{ fontSize: 12, opacity: 0.85 }}>
         Only documents that would shape a profile are listed. Nothing here becomes part of a profile until you
         decide. A proposal is a guess from metadata and content; only you can confirm authorship.
@@ -203,7 +316,8 @@ const ReviewView: React.FC<{ identity: string; onChanged: () => void }> = ({ ide
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
             <strong style={{ wordBreak: 'break-word' }}>{item.title}</strong>
             <span style={{ fontSize: 11, opacity: 0.75 }}>
-              {words(item.category)} · {item.words} words · {item.paragraphs} paragraphs
+              {words(item.category)} · ~{item.eligible_words} eligible of {item.words} words · {item.revision_history}
+              {item.legacy_profiles.length > 0 && ` · used by legacy ${item.legacy_profiles.join(', ')}`}
               {item.reopened && <span className="chip chip-warn" style={{ marginLeft: 6 }}>reopened</span>}
             </span>
           </div>
@@ -232,6 +346,16 @@ const ReviewView: React.FC<{ identity: string; onChanged: () => void }> = ({ ide
                 {choice.label}
               </button>
             ))}
+            {item.proposed_extraction && (
+              <button
+                type="button"
+                className="btn-tech"
+                title="Use only the answer lines; the publisher's header and prompts are excluded"
+                onClick={() => decide(item, 'MIXED_AUTHORSHIP', true)}
+              >
+                Mixed: my answer lines only
+              </button>
+            )}
             <button type="button" className="btn-tech" onClick={() => showPreview(item)}>
               Preview
             </button>

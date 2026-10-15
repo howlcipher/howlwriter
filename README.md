@@ -241,6 +241,9 @@ howlwriter voice build-identity --identity william --profiles academic,professio
 howlwriter evaluate paper.md --mode academic --voice william-academic
 howlwriter evaluate original.md --compare revised.md --identity william --auto-voice
 howlwriter voice sync --identity william
+howlwriter voice legacy-reconcile --identity william      # recover sources behind old profiles
+howlwriter voice review --identity william --groups       # review related documents together
+howlwriter humanize draft.md --mode academic --identity william   # automatic context profile
 
 # Native structured copy rewriting: Dream export -> request -> copy package.
 # The package (howlwriter.copy_package/v1) is consumed directly by

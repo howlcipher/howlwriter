@@ -83,6 +83,7 @@ class WalkedFile:
     size: int
     mtime: float
     error: str = ""
+    source_path: str = ""
 
 
 @dataclass
@@ -330,6 +331,7 @@ def scan(
     for index, (root, _status) in enumerate(roots):
         result = walk(root, config.exclusions)
         for file in result.files:
+            file.source_path = file.relative_path
             if len(roots) > 1:
                 file.relative_path = f"{index}:{file.relative_path}"
             walked.append((index, file))
@@ -346,7 +348,7 @@ def scan(
 
     # Defence in depth: nothing walked may sit under an excluded component.
     for _, file in walked:
-        parts = file.relative_path.split(":", 1)[-1].split("/")
+        parts = file.source_path.split("/")
         if config.exclusions.path_is_excluded(parts):
             raise RuntimeError("internal error: walker returned a path under an excluded directory")
 
@@ -368,7 +370,8 @@ def scan(
             "family": family,
             "status": status,
             "reason": reason,
-            "ownership": _ownership(file.relative_path.split(":", 1)[-1], config),
+            "source_path": file.source_path,
+            "ownership": _ownership(file.source_path, config),
             "present": True,
             "first_seen": (prior or {}).get("first_seen", now),
             "last_seen": now,
@@ -438,7 +441,7 @@ def scan(
             derived = analysis.analyze(
                 text=extraction.text,
                 raw=data,
-                relative_path=file.relative_path.split(":", 1)[-1],
+                relative_path=file.source_path,
                 suffix=entry["suffix"],
                 mtime=file.mtime,
                 aliases=config.aliases,
@@ -742,6 +745,24 @@ def build_report(
             "unlistable_directories": walk_totals.unlistable_directories,
         },
         "files_inventoried": len(present),
+        # Every present file appears exactly once here, by format family and
+        # outcome, so the totals above can be reconciled line by line.
+        "accounting": {
+            family: dict(
+                sorted(
+                    (
+                        status,
+                        sum(
+                            1
+                            for e in present
+                            if e.get("family") == family and e.get("status") == status
+                        ),
+                    )
+                    for status in {e.get("status") for e in present if e.get("family") == family}
+                )
+            )
+            for family in sorted({e.get("family", "unknown") for e in present})
+        },
         "removed_since_last_scan": sum(1 for e in entries.values() if e.get("change") == "removed"),
         "renamed_since_last_scan": renamed,
         "read_this_scan": read_this_scan,

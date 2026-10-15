@@ -278,6 +278,9 @@ class ModelHumanizerRewriter:
         )
 
         voice_profile = _load_voice_profile(config.voice_profile)
+        from howlwriter.voice.selection import require_loaded
+
+        require_loaded(config, voice_profile)
         voice_text = _render_voice_profile(voice_profile, document.mode, realization=realization)
 
         mode_label = (

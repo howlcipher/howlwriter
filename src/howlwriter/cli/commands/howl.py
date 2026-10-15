@@ -21,7 +21,7 @@ from howlwriter.domain.modes import parse_mode
 from howlwriter.domain.outline import load_outline
 from howlwriter.pipeline.howl import run_howl_pipeline
 from howlwriter.provenance.assemble import write_artifacts
-from howlwriter.voice.corpus.resolve import resolve_voice_option
+from howlwriter.voice.selection import add_selection_arguments, apply_selection
 
 
 def add_subparser(
@@ -61,6 +61,7 @@ def add_subparser(
         default=None,
         help="Path to a VoiceProfile JSON, or an author label.",
     )
+    add_selection_arguments(parser)
     parser.add_argument(
         "--deterministic",
         action="store_true",
@@ -140,14 +141,18 @@ def run(args: argparse.Namespace) -> int:
     config = ConfigLoader().load(
         mode=mode, project_config_path=args.project_config_path
     )
-    config.voice_profile = resolve_voice_option(
+    outline_voice = outline.voice_profile if outline is not None else None
+    apply_selection(
+        config,
         voice=getattr(args, "voice", None),
         voice_profile=args.voice_profile,
-    ) or config.voice_profile
-    if outline is not None and outline.voice_profile and not args.voice and not args.voice_profile:
-        config.voice_profile = resolve_voice_option(
-            voice=outline.voice_profile, voice_profile=None
-        ) or config.voice_profile
+        spec_value=outline_voice or config.voice_profile,
+        spec_source="outline" if outline_voice else "config",
+        identity=getattr(args, "identity", None),
+        auto_voice=getattr(args, "auto_voice", False),
+        allow_generic=getattr(args, "allow_generic", False),
+        mode=mode.value if mode else None,
+    )
 
     result = run_howl_pipeline(
         args.path,

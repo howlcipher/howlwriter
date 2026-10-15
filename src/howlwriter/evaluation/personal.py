@@ -124,6 +124,11 @@ def choose_profile(
 ) -> ProfileChoice:
     mode_context = MODE_PROFILE_CONTEXT.get((mode or "").lower(), "")
     if voice:
+        # An explicitly named profile must exist; scoring against "nothing"
+        # while the user believes a profile was used would be a silent fallback.
+        from howlwriter.voice.selection import resolve_reference
+
+        resolve_reference(voice, source="flag")
         calibration = load_calibration(voice) or {}
         context = (calibration.get("identity") or {}).get("context") or mode_context or "general"
         ident = (calibration.get("identity") or {}).get("identity")
@@ -466,7 +471,10 @@ def attach_voice_match(report: Any, voice_profile_ref: str | None, text: str) ->
         calibration = vm.VoiceMatchCalibration.from_dict(payload["voice_match"])
         context = (payload.get("identity") or {}).get("context", "")
         result = vm.score_voice_match(
-            clean_document(text).text, calibration, profile=path.parent.name, context=context,
+            clean_document(text).text,
+            calibration,
+            profile=path.parent.name,
+            context=context,
         )
         if result.status == vm.STATUS_SCORED and result.score is not None:
             report.voice_match = round(result.score / 100.0, 3)
@@ -479,4 +487,3 @@ def attach_voice_match(report: Any, voice_profile_ref: str | None, text: str) ->
             report.voice_match_basis = f"{path.parent.name}: {result.reason}"
     except Exception:
         return
-

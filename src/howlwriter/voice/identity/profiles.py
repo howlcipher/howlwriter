@@ -49,12 +49,15 @@ from howlwriter.evaluation.perturb import PERTURBATIONS
 from howlwriter.voice.corpus.build import ArtifactContext, SelectedSource, build_voice
 from howlwriter.voice.corpus.store import VoiceStore
 from howlwriter.voice.identity import classify, privacy
+from howlwriter.voice.identity.families import assign_families
+from howlwriter.voice.identity.worksheet import EXTRACTIONS
 from howlwriter.voice.identity.store import (
     Decision,
     IdentityConfig,
     IdentityStore,
     ProfileSpec,
     parse_paragraph_ranges,
+    source_path_of,
     utc_now,
 )
 
@@ -147,11 +150,17 @@ def select_sources(
         if weight is None:
             continue
         paragraphs: frozenset[int] | None = None
+        text_filter = None
         if decision.authorship == classify.MIXED_AUTHORSHIP:
-            if not decision.include_paragraphs:
+            if decision.extraction:
+                text_filter = EXTRACTIONS.get(decision.extraction)
+                if text_filter is None:
+                    continue
+            elif decision.include_paragraphs:
+                paragraphs = frozenset(parse_paragraph_ranges(decision.include_paragraphs))
+            else:
                 continue
-            paragraphs = frozenset(parse_paragraph_ranges(decision.include_paragraphs))
-        if config.exclusions.path_is_excluded(entry["relative_path"].split(":", 1)[-1].split("/")):
+        if config.exclusions.path_is_excluded(source_path_of(entry).split("/")):
             continue
         chosen.append(
             SourceChoice(
@@ -164,6 +173,7 @@ def select_sources(
                     context=spec.context,
                     paragraphs=paragraphs,
                     authorship=decision.authorship,
+                    text_filter=text_filter,
                 ),
             )
         )
@@ -271,6 +281,12 @@ def _make_artifacts(
             holdout=holdout_vectors,
             controls=control_vectors,
             training_fingerprints=[vm.TextFingerprint.of(t) for t in train_texts],
+            diagnostic_controls={
+                f"style_altered_holdout:{name}": [
+                    vm.measure_text(PERTURBATIONS[name](t))[0] for t in holdout_texts
+                ]
+                for name in ("formulaic_injection", "uniform_paragraphs")
+            },
         )
         trained_entries = [by_path[k].entry for k in context.train_keys if k in by_path]
         held_entries = [by_path[k].entry for k in context.holdout_keys if k in by_path]
@@ -398,6 +414,7 @@ def build_identity(
     inventory = store.load_inventory()
     entries = inventory.get("entries", {})
     decisions = store.load_decisions()
+    families = assign_families(entries)
     wanted = profiles or list(config.profiles)
     results: list[ProfileBuildResult] = []
 
@@ -444,6 +461,7 @@ def build_identity(
                 store_root=voices_root,
                 deterministic_only=not model_traits,
                 selection={c.absolute_path: c.selection for c in choices},
+                split_groups={c.absolute_path: families.get(c.doc_id, c.doc_id) for c in choices},
                 artifacts=_make_artifacts(
                     store=store,
                     config=config,
@@ -464,6 +482,8 @@ def build_identity(
             continue
 
         privacy.restrict_tree(outcome.directory)
+        # The registry directory itself lists voice names; keep it owner-only.
+        privacy.restrict_directory(outcome.directory.parent)
         summary = outcome.profile.corpus_summary
         result.status = "built"
         result.training_documents = summary.included_documents if summary else 0

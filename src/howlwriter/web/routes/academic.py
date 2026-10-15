@@ -107,6 +107,15 @@ def start_generate_paper(req: GeneratePaperRequest) -> JobResponse:
             status_code=400,
             detail=f"Invalid assignment spec: {'; '.join(errors)}",
         )
+    # A named voice must resolve before the job starts: a spec naming a
+    # missing voice is a request error, not a silent generic paper.
+    if spec.voice_profile:
+        from howlwriter.voice.selection import VoiceSelectionError, resolve_reference
+
+        try:
+            resolve_reference(spec.voice_profile, source="spec")
+        except VoiceSelectionError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     manager = get_job_manager()
     job = manager.create_job(job_type="academic_paper")

@@ -32,6 +32,10 @@ class BannedWord(DataClassSerializationMixin):
 @dataclass
 class HowlWriterConfig(DataClassSerializationMixin):
     voice_profile: str | None = None
+    #: How `voice_profile` was chosen (requested value, source, applied
+    #: profile, fallback), set by the voice selection layer. Names only, no
+    #: paths, so it can be copied into provenance as-is.
+    voice_selection: dict | None = None
     banned_words: list[BannedWord] = field(default_factory=list)
     banned_patterns: list[str] = field(default_factory=list)
     citation_style: str = "apa7"

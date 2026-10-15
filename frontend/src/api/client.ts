@@ -19,6 +19,7 @@ import {
   PersonalComparison,
   PersonalEvaluation,
   VoiceIntelIdentities,
+  VoiceIntelReviewGroup,
   VoiceIntelReviewItem,
   VoiceIntelStatus,
 } from '../types';
@@ -258,10 +259,35 @@ export const api = {
   async attest(
     identity: string,
     docId: string,
-    body: { authorship: string; category?: string; context?: string; include_paragraphs?: string; note?: string },
+    body: {
+      authorship: string;
+      category?: string;
+      context?: string;
+      include_paragraphs?: string;
+      use_proposed_extraction?: boolean;
+      note?: string;
+    },
   ): Promise<{ doc_id: string; authorship: string }> {
     const res = await fetch(
       `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review/${encodeURIComponent(docId)}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+    );
+    return handleResponse(res);
+  },
+
+  async getReviewGroups(
+    identity: string,
+  ): Promise<{ groups: VoiceIntelReviewGroup[]; descriptions: Record<string, string> }> {
+    return handleResponse(await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review-groups`));
+  },
+
+  async decideGroup(
+    identity: string,
+    groupId: string,
+    body: { authorship: string; doc_ids: string[]; use_proposed_extraction?: boolean },
+  ): Promise<{ recorded: number }> {
+    const res = await fetch(
+      `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review-groups/${encodeURIComponent(groupId)}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
     );
     return handleResponse(res);

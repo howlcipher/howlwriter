@@ -375,3 +375,130 @@ def test_google_api_without_token_refuses_clearly(env, tmp_path, monkeypatch):
     monkeypatch.setenv("HOWLWRITER_CREDENTIALS_DIR", str(tmp_path / "creds"))
     with pytest.raises(google_fallback.GoogleFallbackUnavailable):
         google_fallback.drive_service()
+
+
+class _HttpError(Exception):
+    def __init__(self, status):
+        self.resp = type("R", (), {"status": status})()
+
+
+class _Flaky:
+    def __init__(self, failures, status, value):
+        self.failures, self.status, self.value = failures, status, value
+
+    def execute(self):
+        if self.failures:
+            self.failures -= 1
+            raise _HttpError(self.status)
+        return self.value
+
+
+def test_google_requests_back_off_on_rate_limits_only():
+    from howlwriter.voice.identity import google_fallback as gf
+
+    slept = []
+    assert gf._execute(_Flaky(2, 429, "ok"), sleep=slept.append) == "ok"
+    assert slept == [1.0, 2.0]
+    with pytest.raises(_HttpError):
+        gf._execute(_Flaky(1, 403, "never"), sleep=slept.append)
+
+
+def test_google_listing_follows_pages():
+    from howlwriter.voice.identity import google_fallback as gf
+
+    class Files:
+        def list(self, pageToken=None, **kwargs):
+            pages = {
+                None: {"files": [{"id": "1"}], "nextPageToken": "p2"},
+                "p2": {"files": [{"id": "2"}]},
+            }
+            return _FakeRequest(pages[pageToken])
+
+    class Service:
+        def files(self):
+            return Files()
+
+    assert [f["id"] for f in gf._list_all(Service(), q="x")] == ["1", "2"]
+
+
+def test_google_docs_text_includes_every_tab():
+    from howlwriter.voice.identity import google_fallback as gf
+
+    def para(text):
+        return {"paragraph": {"elements": [{"textRun": {"content": text}}]}}
+
+    document = {
+        "tabs": [
+            {
+                "documentTab": {"body": {"content": [para("First tab.\n")]}},
+                "childTabs": [{"documentTab": {"body": {"content": [para("Child tab.\n")]}}}],
+            },
+            {
+                "documentTab": {
+                    "body": {
+                        "content": [
+                            {
+                                "table": {
+                                    "tableRows": [{"tableCells": [{"content": [para("Cell.\n")]}]}]
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+        ]
+    }
+
+    class Docs:
+        def documents(self):
+            return self
+
+        def get(self, documentId, includeTabsContent):
+            assert includeTabsContent is True
+            return _FakeRequest(document)
+
+    assert gf._docs_text(Docs(), "id") == "First tab.\nChild tab.\nCell.\n"
+
+
+def test_google_fallback_also_tries_names_the_mount_cannot_stat(env, tmp_path):
+    from howlwriter.voice.identity import google_fallback as gf
+    from howlwriter.voice.identity.store import IdentityConfig
+
+    entries = {
+        "a": {
+            "doc_id": "a",
+            "relative_path": "Lab: B7",
+            "source_path": "Lab: B7",
+            "status": "unreadable",
+            "suffix": "",
+            "present": True,
+        },
+        "b": {
+            "doc_id": "b",
+            "relative_path": "notes.md",
+            "source_path": "notes.md",
+            "status": "unreadable",
+            "suffix": ".md",
+            "present": True,
+        },
+    }
+    seen = []
+
+    class Drive:
+        def files(self):
+            return self
+
+        def list(self, q, **kwargs):
+            seen.append(q)
+            return _FakeRequest({"files": []})
+
+    config = IdentityConfig.default("william")
+    counts = gf.fetch_native_documents(
+        IdentityStore("william"),
+        config,
+        entries,
+        service_factory=Drive,
+        docs_factory=lambda: None,
+    )
+    assert counts["attempted"] == 1
+    assert any("Lab: B7" in q for q in seen)

@@ -121,6 +121,10 @@ class SelectedSource:
     context: str = ""
     paragraphs: frozenset[int] | None = None
     authorship: str = ""
+    #: Maps the raw extracted text to the attested authored portion (e.g. the
+    #: answer lines of a publisher worksheet). An empty result excludes the
+    #: document rather than falling back to the whole text.
+    text_filter: Callable[[str], str] | None = None
 
 
 @dataclass
@@ -262,12 +266,14 @@ def build_voice(
     profile_type: str = "personal_voice",
     selection: dict[str, SelectedSource] | None = None,
     artifacts: Callable[[ArtifactContext], dict[str, str]] | None = None,
+    split_groups: dict[str, str] | None = None,
 ) -> BuildOutcome:
     """Build or rebuild a named personal voice from a corpus.
 
     `selection`, when given, replaces discovery: exactly those files (keys are
     resolved absolute paths) are read, with the caller's weight and context.
-    `roots` is then recorded for provenance only. `artifacts` is called once,
+    `roots` is then recorded for provenance only. `split_groups` maps keys to
+    family ids that must share one side of the holdout split. `artifacts` is called once,
     before the staged directory is committed, and may return extra files
     (name -> content) to write into the profile directory atomically with it.
     """
@@ -388,14 +394,29 @@ def build_voice(
             )
             continue
 
-        cleaned = clean_document(extraction.text)
         selected = selection.get(key) if selection is not None else None
+        source_text = extraction.text
+        if selected is not None and selected.text_filter is not None:
+            source_text = selected.text_filter(extraction.text)
+            if not source_text.strip():
+                warnings.append(
+                    "an attested extraction produced no text for one document; it was excluded"
+                )
+                records[key] = SourceRecord(
+                    key=key, path=key, size=entry.size, mtime=entry.mtime,
+                    parser=extraction.parser, extraction_status=extraction.status,
+                    classification="empty_attested_extraction",
+                    inclusion=quality_stage.EXCLUDE,
+                    reason="the attested extraction produced no text",
+                )
+                continue
+        cleaned = clean_document(source_text)
         if selected is not None and selected.paragraphs is not None:
             cleaned.text = _select_paragraphs(cleaned.text, selected.paragraphs)
             cleaned.kept_words = len(cleaned.text.split())
 
         unchanged = (
-            (selected is None or selected.paragraphs is None)
+            (selected is None or (selected.paragraphs is None and selected.text_filter is None))
             and cached is not None
             and cached.content_hash == content_hash
             and str(key) in cached_features
@@ -576,10 +597,13 @@ def build_voice(
     # --- 5. train / holdout split ---
     notify("features", "RUNNING")
     stage_start = time.time()
-    split = assign_split([
-        (doc.key, _fingerprint(Path(doc.key), records[doc.key].content_hash), doc.context)
-        for doc in evidence
-    ])
+    split = assign_split(
+        [
+            (doc.key, _fingerprint(Path(doc.key), records[doc.key].content_hash), doc.context)
+            for doc in evidence
+        ],
+        groups=split_groups,
+    )
     for doc in evidence:
         records[doc.key].split = split.side_of(doc.key)
     train = [doc for doc in evidence if split.side_of(doc.key) == TRAIN]

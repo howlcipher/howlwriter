@@ -29,7 +29,8 @@ from howlwriter.review.meaning import (
     MeaningPreservationReviewer,
     RealModelMeaningReviewer,
 )
-from howlwriter.voice.corpus.resolve import resolve_voice_option
+from howlwriter.voice.selection import add_selection_arguments, apply_selection
+from howlwriter.voice.selection import require_loaded
 
 
 def add_subparser(
@@ -60,6 +61,7 @@ def add_subparser(
         default=None,
         help="Path to a VoiceProfile JSON, or an author label.",
     )
+    add_selection_arguments(parser)
     parser.add_argument(
         "--deterministic",
         action="store_true",
@@ -95,10 +97,17 @@ def run(args: argparse.Namespace) -> int:
     config = ConfigLoader().load(
         mode=mode, project_config_path=args.project_config_path
     )
-    config.voice_profile = resolve_voice_option(
+    apply_selection(
+        config,
         voice=getattr(args, "voice", None),
         voice_profile=args.voice_profile,
-    ) or config.voice_profile
+        spec_value=config.voice_profile,
+        spec_source="config",
+        identity=getattr(args, "identity", None),
+        auto_voice=getattr(args, "auto_voice", False),
+        allow_generic=getattr(args, "allow_generic", False),
+        mode=mode.value if mode else None,
+    )
 
     text = Path(args.path).read_text(encoding="utf-8")
     document = Document.parse(text, title=Path(args.path).stem, mode=mode)
@@ -149,6 +158,7 @@ def run(args: argparse.Namespace) -> int:
         from howlwriter.voice.realization import derive_structural_realization
 
         profile = _load_voice_profile(config.voice_profile)
+        require_loaded(config, profile)
         if profile is not None:
             input_words = count_body_words(document.text)
             realization = derive_structural_realization(

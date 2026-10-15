@@ -147,3 +147,12 @@ def restrict_tree(path: Path) -> None:
                 os.chmod(os.path.join(root, name), FILE_MODE)
             except OSError:
                 pass
+
+
+def restrict_directory(path: Path) -> None:
+    """Owner-only mode on one existing directory (no recursion, no content change)."""
+    try:
+        if path.is_dir():
+            os.chmod(path, DIRECTORY_MODE)
+    except OSError:
+        pass
