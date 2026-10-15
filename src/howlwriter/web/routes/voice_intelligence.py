@@ -253,3 +253,137 @@ async def post_compare(request: CompareRequest) -> dict:
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+# --- Voice Workshop ---------------------------------------------------------
+
+
+class WorkshopPromptRequest(BaseModel):
+    context: Optional[str] = None
+    subject: Optional[str] = Field(default=None, max_length=120)
+    kind: Optional[str] = None
+    follow_up_of: Optional[str] = None
+
+
+class WorkshopAnswerRequest(BaseModel):
+    prompt_id: str
+    subject: str = Field(default="", max_length=120)
+    text: str = Field(..., max_length=20_000)
+    self_written: bool = False
+    approve: bool = False
+
+
+class WorkshopReclassifyRequest(BaseModel):
+    context: str
+
+
+class WorkshopRevisionRequest(BaseModel):
+    text: str = Field(..., max_length=20_000)
+
+
+def _workshop(identity: str):
+    from howlwriter.voice.identity.workshop import Workshop
+
+    try:
+        return Workshop(validate_identity(identity))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+def _sample_view(sample, counting: set[str], *, with_text: bool) -> dict:
+    data = sample.to_dict()
+    data["counts"] = sample.sample_id in counting
+    if not with_text:
+        data.pop("text")
+        data.pop("preferred_revision")
+    return data
+
+
+@router.get("/{identity}/workshop")
+async def get_workshop(identity: str, show_text: bool = Query(False)) -> dict:
+    """Coverage and samples. Answer text only with ?show_text=true."""
+    from howlwriter.voice.identity.workshop import counting_ids
+
+    workshop = _workshop(identity)
+    samples = workshop.samples()
+    counting = counting_ids(samples.values())
+    return {
+        "coverage": workshop.coverage(),
+        "samples": [
+            _sample_view(s, counting, with_text=show_text)
+            for s in sorted(samples.values(), key=lambda x: x.created_at)
+        ],
+        "local_only": True,
+    }
+
+
+@router.post("/{identity}/workshop/prompt")
+async def post_workshop_prompt(identity: str, request: WorkshopPromptRequest) -> dict:
+    try:
+        return (
+            _workshop(identity)
+            .next_prompt(
+                context=request.context,
+                subject=request.subject,
+                kind=request.kind,
+                follow_up_of=request.follow_up_of,
+            )
+            .to_dict()
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.post("/{identity}/workshop/samples")
+async def post_workshop_sample(identity: str, request: WorkshopAnswerRequest) -> dict:
+    from howlwriter.voice.identity.workshop import counting_ids
+
+    workshop = _workshop(identity)
+    try:
+        sample = workshop.add(
+            prompt_id=request.prompt_id,
+            subject=request.subject,
+            text=request.text,
+            self_written=request.self_written,
+            approve=request.approve,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return _sample_view(sample, counting_ids(workshop.samples().values()), with_text=False)
+
+
+@router.post("/{identity}/workshop/samples/{sample_id}/actions/{action}")
+async def post_workshop_action(identity: str, sample_id: str, action: str) -> dict:
+    if action not in ("approve", "exclude", "remove"):
+        raise HTTPException(status_code=404, detail=f"unknown action {action!r}")
+    workshop = _workshop(identity)
+    try:
+        sample = getattr(workshop, action)(sample_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"sample_id": sample.sample_id, "status": sample.status, "side": sample.side}
+
+
+@router.post("/{identity}/workshop/samples/{sample_id}/context")
+async def post_workshop_reclassify(
+    identity: str, sample_id: str, request: WorkshopReclassifyRequest
+) -> dict:
+    try:
+        sample = _workshop(identity).reclassify(sample_id, request.context)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"sample_id": sample.sample_id, "context": sample.context}
+
+
+@router.post("/{identity}/workshop/samples/{sample_id}/revision")
+async def post_workshop_revision(
+    identity: str, sample_id: str, request: WorkshopRevisionRequest
+) -> dict:
+    try:
+        sample = _workshop(identity).set_preferred_revision(sample_id, request.text)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {
+        "sample_id": sample.sample_id,
+        "has_preferred_revision": bool(sample.preferred_revision),
+    }

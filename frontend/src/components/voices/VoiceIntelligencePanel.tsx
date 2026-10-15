@@ -1,6 +1,7 @@
 import React from 'react';
-import { Fingerprint, Gauge, HardDrive, ListChecks, RefreshCw, ShieldCheck, UserCheck } from 'lucide-react';
+import { Fingerprint, Gauge, HardDrive, ListChecks, PenLine, RefreshCw, ShieldCheck, UserCheck } from 'lucide-react';
 import { api } from '../../api/client';
+import { VoiceWorkshop } from './VoiceWorkshop';
 import {
   JobResponse,
   NaturalnessReport,
@@ -23,7 +24,7 @@ import {
  *  - show document text unless the person asks for one document's preview.
  */
 
-type View = 'corpus' | 'review' | 'profiles' | 'evaluate';
+type View = 'workshop' | 'corpus' | 'review' | 'profiles' | 'evaluate';
 
 const AUTHORSHIP_CHOICES: Array<{ value: string; label: string; hint: string }> = [
   { value: 'CONFIRMED_HUMAN_AUTHORED', label: 'My writing', hint: 'Written by me without substantial AI drafting' },
@@ -690,6 +691,33 @@ const EvaluateView: React.FC<{ identity: string; name: string }> = ({ identity, 
 
 // --- Panel -----------------------------------------------------------------
 
+const StartWorkshop: React.FC<{ onStart: (name: string) => void }> = ({ onStart }) => {
+  const [name, setName] = React.useState('');
+  const valid = /^[a-z0-9][a-z0-9_-]{0,47}$/.test(name);
+  return (
+    <div style={{ fontSize: 12 }}>
+      <p>
+        No identity yet. You can start with the Voice Workshop right away: pick a short name for your private
+        writing identity (lowercase letters, digits, hyphens).
+      </p>
+      <input
+        className="form-input"
+        style={{ width: 200, display: 'inline-block' }}
+        value={name}
+        onChange={(e) => setName(e.target.value.toLowerCase())}
+        aria-label="Identity name"
+      />{' '}
+      <button type="button" className="btn-tech btn-tech-primary" disabled={!valid} onClick={() => onStart(name)}>
+        Open Voice Workshop
+      </button>
+      <p style={{ opacity: 0.75 }}>
+        To also learn from your existing documents, scan them from the command line:{' '}
+        <code>howlwriter voice scan --identity NAME --source /path/to/documents</code>
+      </p>
+    </div>
+  );
+};
+
 export const VoiceIntelligencePanel: React.FC = () => {
   const [identities, setIdentities] = React.useState<string[]>([]);
   const [identity, setIdentity] = React.useState<string | null>(null);
@@ -713,7 +741,14 @@ export const VoiceIntelligencePanel: React.FC = () => {
     try {
       setStatus(await api.getIdentityStatus(identity));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load status');
+      const text = err instanceof Error ? err.message : 'Failed to load status';
+      // A Workshop-only identity has no scan yet; that is a state, not an error.
+      if (text.includes('has not been scanned')) {
+        setStatus(null);
+        setView('workshop');
+      } else {
+        setError(text);
+      }
     }
   }, [identity]);
 
@@ -742,6 +777,7 @@ export const VoiceIntelligencePanel: React.FC = () => {
     { id: 'review', label: `Review${status ? ` (${status.review.pending})` : ''}`, icon: <ListChecks size={14} /> },
     { id: 'profiles', label: 'Profiles', icon: <UserCheck size={14} /> },
     { id: 'evaluate', label: 'Evaluate', icon: <Gauge size={14} /> },
+    { id: 'workshop', label: 'Workshop', icon: <PenLine size={14} /> },
   ];
 
   return (
@@ -767,10 +803,12 @@ export const VoiceIntelligencePanel: React.FC = () => {
         </p>
         {error && <p style={{ color: 'var(--color-red)', fontSize: 12 }}>{error}</p>}
         {!identity ? (
-          <p style={{ fontSize: 12 }}>
-            No identity has been scanned yet. Start from the command line:{' '}
-            <code>howlwriter voice scan --identity NAME --source /path/to/drive</code>
-          </p>
+          <StartWorkshop
+            onStart={(name) => {
+              setIdentity(name);
+              setView('workshop');
+            }}
+          />
         ) : (
           <>
             <nav style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }} aria-label="Voice Intelligence sections">
@@ -790,6 +828,7 @@ export const VoiceIntelligencePanel: React.FC = () => {
             {view === 'review' && <ReviewView identity={identity} onChanged={refresh} />}
             {status && view === 'profiles' && <ProfilesView status={status} onBuild={() => runJob('build')} busy={busy} />}
             {view === 'evaluate' && <EvaluateView identity={identity} name={name} />}
+            {view === 'workshop' && <VoiceWorkshop identity={identity} />}
           </>
         )}
       </div>

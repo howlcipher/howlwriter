@@ -267,12 +267,14 @@ def build_voice(
     selection: dict[str, SelectedSource] | None = None,
     artifacts: Callable[[ArtifactContext], dict[str, str]] | None = None,
     split_groups: dict[str, str] | None = None,
+    forced_splits: dict[str, str] | None = None,
 ) -> BuildOutcome:
     """Build or rebuild a named personal voice from a corpus.
 
     `selection`, when given, replaces discovery: exactly those files (keys are
     resolved absolute paths) are read, with the caller's weight and context.
-    `roots` is then recorded for provenance only. `split_groups` maps keys to
+    `roots` is then recorded for provenance only. `forced_splits` maps keys to
+    "train" or "holdout", bypassing the hash split. `split_groups` maps keys to
     family ids that must share one side of the holdout split. `artifacts` is called once,
     before the staged directory is committed, and may return extra files
     (name -> content) to write into the profile directory atomically with it.
@@ -597,13 +599,29 @@ def build_voice(
     # --- 5. train / holdout split ---
     notify("features", "RUNNING")
     stage_start = time.time()
+    forced = forced_splits or {}
     split = assign_split(
         [
             (doc.key, _fingerprint(Path(doc.key), records[doc.key].content_hash), doc.context)
             for doc in evidence
+            if doc.key not in forced
         ],
         groups=split_groups,
     )
+    # Sources whose side was fixed by the caller (Voice Workshop bundles: a
+    # sample is assigned to training or calibration once, when approved, and
+    # must never be used for both) bypass the hash split.
+    from howlwriter.voice.corpus.split import HOLDOUT as _HOLDOUT, SplitAssignment as _Assignment
+
+    for doc in evidence:
+        side = forced.get(doc.key)
+        if side is None:
+            continue
+        side = _HOLDOUT if side == _HOLDOUT else TRAIN
+        split.assignments[doc.key] = _Assignment(
+            key=doc.key, side=side, context=doc.context, reason="side fixed by the caller",
+        )
+        (split.holdout_keys if side == _HOLDOUT else split.train_keys).append(doc.key)
     for doc in evidence:
         records[doc.key].split = split.side_of(doc.key)
     train = [doc for doc in evidence if split.side_of(doc.key) == TRAIN]

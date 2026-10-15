@@ -22,6 +22,9 @@ import {
   VoiceIntelReviewGroup,
   VoiceIntelReviewItem,
   VoiceIntelStatus,
+  WorkshopCoverage,
+  WorkshopPrompt,
+  WorkshopSample,
 } from '../types';
 
 const API_BASE = '/api';
@@ -335,5 +338,66 @@ export const api = {
       body: JSON.stringify(body),
     });
     return handleResponse<PersonalComparison>(res);
+  },
+  // --- Voice Workshop ---
+
+  async getWorkshop(
+    identity: string,
+    showText = false,
+  ): Promise<{ coverage: WorkshopCoverage; samples: WorkshopSample[]; local_only: boolean }> {
+    const query = showText ? '?show_text=true' : '';
+    return handleResponse(await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop${query}`));
+  },
+
+  async workshopPrompt(
+    identity: string,
+    body: { context?: string | null; subject?: string | null; follow_up_of?: string | null },
+  ): Promise<WorkshopPrompt> {
+    const res = await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/prompt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return handleResponse<WorkshopPrompt>(res);
+  },
+
+  async workshopAnswer(
+    identity: string,
+    body: { prompt_id: string; subject: string; text: string; self_written: boolean; approve: boolean },
+  ): Promise<WorkshopSample> {
+    const res = await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/samples`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return handleResponse<WorkshopSample>(res);
+  },
+
+  async workshopAction(
+    identity: string,
+    sampleId: string,
+    action: 'approve' | 'exclude' | 'remove',
+  ): Promise<{ status: string }> {
+    const res = await fetch(
+      `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/samples/${encodeURIComponent(sampleId)}/actions/${action}`,
+      { method: 'POST' },
+    );
+    return handleResponse(res);
+  },
+
+  async workshopReclassify(identity: string, sampleId: string, context: string): Promise<{ context: string }> {
+    const res = await fetch(
+      `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/samples/${encodeURIComponent(sampleId)}/context`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ context }) },
+    );
+    return handleResponse(res);
+  },
+
+  async workshopRevision(identity: string, sampleId: string, text: string): Promise<unknown> {
+    const res = await fetch(
+      `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/samples/${encodeURIComponent(sampleId)}/revision`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) },
+    );
+    return handleResponse(res);
   },
 };

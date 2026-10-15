@@ -243,6 +243,7 @@ howlwriter evaluate original.md --compare revised.md --identity william --auto-v
 howlwriter voice sync --identity william
 howlwriter voice legacy-reconcile --identity william      # recover sources behind old profiles
 howlwriter voice review --identity william --groups       # review related documents together
+howlwriter voice workshop --identity william              # answer short prompts to fill evidence gaps
 howlwriter humanize draft.md --mode academic --identity william   # automatic context profile
 
 # Native structured copy rewriting: Dream export -> request -> copy package.

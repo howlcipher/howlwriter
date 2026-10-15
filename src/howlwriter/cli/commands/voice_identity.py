@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 import sys
 
 from howlwriter.voice.identity import chat, review
@@ -221,6 +222,56 @@ def add_identity_subparsers(voice_subparsers: argparse._SubParsersAction) -> Non
     status_parser.add_argument("--identity")
     status_parser.add_argument("--json", action="store_true")
     status_parser.set_defaults(handler=run_status)
+
+    workshop_parser = voice_subparsers.add_parser(
+        "workshop",
+        help="Voice Workshop: answer short prompts to add private writing samples (local, no model).",
+    )
+    workshop_parser.add_argument("--identity")
+    workshop_actions = workshop_parser.add_subparsers(dest="workshop_command")
+    w_prompt = workshop_actions.add_parser(
+        "prompt", help="Show the next prompt (largest evidence gap first)."
+    )
+    w_prompt.add_argument("--context", choices=["academic", "professional", "technical", "casual"])
+    w_prompt.add_argument("--subject", default=None, help="Your own subject for the prompt.")
+    w_prompt.add_argument("--kind", choices=["short", "paragraph"])
+    w_prompt.add_argument("--follow-up", dest="follow_up", metavar="SAMPLE_ID")
+    w_prompt.add_argument("--json", action="store_true")
+    w_answer = workshop_actions.add_parser("answer", help="Save an answer verbatim.")
+    w_answer.add_argument("--prompt-id", required=True)
+    w_answer.add_argument("--subject", default="")
+    source = w_answer.add_mutually_exclusive_group(required=True)
+    source.add_argument("--text")
+    source.add_argument("--file", metavar="PATH")
+    w_answer.add_argument(
+        "--self-written",
+        action="store_true",
+        help="I wrote this myself, without AI help (required for approval).",
+    )
+    w_answer.add_argument("--approve", action="store_true", help="Also approve it for profile use.")
+    w_answer.add_argument("--json", action="store_true")
+    w_list = workshop_actions.add_parser("list", help="List samples (no text unless --show-text).")
+    w_list.add_argument("--show-text", action="store_true")
+    w_list.add_argument("--json", action="store_true")
+    for name, helptext in (
+        ("approve", "Approve a sample for profile use."),
+        ("exclude", "Keep a sample but exclude it from profiles."),
+        ("remove", "Delete a sample's text permanently."),
+    ):
+        action = workshop_actions.add_parser(name, help=helptext)
+        action.add_argument("sample_id")
+    w_reclass = workshop_actions.add_parser("reclassify", help="Move a sample to another context.")
+    w_reclass.add_argument("sample_id")
+    w_reclass.add_argument("context", choices=["academic", "professional", "technical", "casual"])
+    w_revise = workshop_actions.add_parser(
+        "revise",
+        help="Store how you would prefer it to read (kept separate; never used as evidence).",
+    )
+    w_revise.add_argument("sample_id")
+    w_revise.add_argument("--text", required=True)
+    w_cov = workshop_actions.add_parser("coverage", help="Evidence per profile, with gaps.")
+    w_cov.add_argument("--json", action="store_true")
+    workshop_parser.set_defaults(handler=run_workshop)
 
     legacy_parser = voice_subparsers.add_parser(
         "legacy-reconcile",
@@ -595,6 +646,13 @@ def _print_builds(results: list) -> None:
                 f"{'usable' if nat.get('usable') else 'NOT usable'}; control AUC {nsep.get('auc')}"
             )
             print(f"  Drift baseline: {result.drift_windows} windows")
+            if result.workshop_bundles.get("train") or result.workshop_bundles.get("calibration"):
+                print(
+                    f"  Voice Workshop: {result.workshop_bundles.get('train', 0)} training bundle(s) "
+                    f"({result.workshop_words} words), {result.workshop_bundles.get('calibration', 0)} "
+                    f"calibration bundle(s)"
+                    + ("; WORKSHOP-ONLY provisional profile" if result.workshop_only else "")
+                )
         for warning in result.warnings[:6]:
             print(f"  note: {warning}")
 
@@ -686,6 +744,184 @@ def run_status(args: argparse.Namespace) -> int:
                 f"  Voice Match: {vm['status']} ({vm['genuine_documents']} genuine calibration docs)"
             )
     return 0
+
+
+def _print_coverage(coverage: dict) -> None:
+    for profile, entry in coverage["profiles"].items():
+        print(
+            f"  {profile}: {entry['documents']} attested documents ({entry['document_words']:,} words); "
+            f"workshop {entry['workshop_samples']} samples ({entry['workshop_words']} words; "
+            f"{entry['workshop_train']} training / {entry['workshop_calibration']} calibration) -- "
+            f"{entry['sufficiency']}"
+        )
+        for gap in entry["gaps"]:
+            print(f"    gap: {gap}")
+    contexts = ", ".join(
+        f"{name} {c['approved']} approved/{c['pending']} pending"
+        for name, c in coverage["contexts"].items()
+    )
+    print(f"  Samples by context: {contexts}")
+
+
+def run_workshop(args: argparse.Namespace) -> int:
+    from howlwriter.voice.identity.workshop import Workshop
+
+    workshop = Workshop(_identity(args))
+    command = getattr(args, "workshop_command", None)
+    if command is None:
+        return _workshop_session(workshop)
+    if command == "prompt":
+        prompt = workshop.next_prompt(
+            context=args.context,
+            subject=args.subject,
+            kind=args.kind,
+            follow_up_of=args.follow_up,
+        )
+        if args.json:
+            print(json.dumps(prompt.to_dict(), indent=2))
+        else:
+            print(f"[{prompt.prompt_id}] ({prompt.context}, {prompt.kind}) {prompt.text}")
+            print(f"  why this prompt: {prompt.reason}")
+        return 0
+    if command == "answer":
+        text = Path(args.file).read_text(encoding="utf-8") if args.file else args.text
+        sample = workshop.add(
+            prompt_id=args.prompt_id,
+            subject=args.subject,
+            text=text,
+            self_written=args.self_written,
+            approve=args.approve,
+        )
+        if args.json:
+            data = sample.to_dict()
+            data.pop("text")
+            print(json.dumps(data, indent=2))
+        else:
+            print(f"Saved {sample.sample_id} ({sample.words} words, {sample.status}).")
+            if sample.duplicate_of or sample.same_prompt_as:
+                print("  note: this repeats an earlier answer and will not count twice.")
+        return 0
+    if command == "list":
+        from howlwriter.voice.identity.workshop import counting_ids
+
+        samples = workshop.samples()
+        counting = counting_ids(samples.values())
+        rows = []
+        for sample in sorted(samples.values(), key=lambda x: x.created_at):
+            row = sample.to_dict()
+            row["counts"] = sample.sample_id in counting
+            if not args.show_text:
+                row.pop("text")
+                row.pop("preferred_revision")
+            rows.append(row)
+        if args.json:
+            print(json.dumps(rows, indent=2))
+            return 0
+        for row in rows:
+            flag = "counts" if row["counts"] else "not counted"
+            print(
+                f"{row['sample_id']} {row['status']:8} {row['context']:12} {row['words']:4} words "
+                f"{row['side'] or '-':11} {flag}  {row['prompt_text'][:60]}"
+            )
+            if args.show_text and row.get("text"):
+                print(f"    {row['text']}")
+        return 0
+    if command in ("approve", "exclude", "remove"):
+        sample = getattr(workshop, command)(args.sample_id)
+        print(f"{sample.sample_id}: {sample.status}" + (f" ({sample.side})" if sample.side else ""))
+        return 0
+    if command == "reclassify":
+        sample = workshop.reclassify(args.sample_id, args.context)
+        print(f"{sample.sample_id}: now {sample.context}")
+        return 0
+    if command == "revise":
+        workshop.set_preferred_revision(args.sample_id, args.text)
+        print(
+            "Preferred revision stored separately; your original answer is unchanged and is the only "
+            "text used as evidence."
+        )
+        return 0
+    coverage = workshop.coverage()
+    if args.json:
+        print(json.dumps(coverage, indent=2))
+    else:
+        _print_coverage(coverage)
+    return 0
+
+
+def _read_answer() -> str:
+    print("Your answer (finish with an empty line):")
+    lines = []
+    while True:
+        try:
+            line = input()
+        except EOFError:
+            break
+        if not line.strip() and lines:
+            break
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def _workshop_session(workshop) -> int:
+    print("Voice Workshop -- answers are saved privately and verbatim; nothing is sent anywhere.")
+    _print_coverage(workshop.coverage())
+    last = None
+    while True:
+        choice = (
+            input(
+                "\n[enter] next prompt  [c] choose context  [s] choose subject  [f] follow-up  [q] quit > "
+            )
+            .strip()
+            .lower()
+        )
+        if choice == "q":
+            return 0
+        context = subject = None
+        follow = None
+        if choice == "c":
+            context = (
+                input("  context (academic/professional/technical/casual): ").strip().lower()
+                or None
+            )
+        elif choice == "s":
+            subject = input("  subject: ").strip() or None
+        elif choice == "f":
+            if last is None:
+                print("  answer a prompt first")
+                continue
+            follow = last
+        try:
+            prompt = workshop.next_prompt(context=context, subject=subject, follow_up_of=follow)
+        except ValueError as error:
+            print(f"  {error}")
+            continue
+        print(f"\n{prompt.text}\n  ({prompt.context}, {prompt.kind}; {prompt.reason})")
+        text = _read_answer()
+        if not text:
+            print("  skipped")
+            continue
+        own = input("Did you write this yourself, without AI help? [y/N] ").strip().lower() in (
+            "y",
+            "yes",
+        )
+        approve = own and input("Include it in your profiles? [y/N] ").strip().lower() in (
+            "y",
+            "yes",
+        )
+        sample = workshop.add(
+            prompt_id=prompt.prompt_id,
+            subject=prompt.subject,
+            text=text,
+            self_written=own,
+            approve=approve,
+        )
+        last = sample.sample_id
+        print(
+            f"  saved {sample.sample_id} ({sample.status}"
+            + (f", {sample.side}" if sample.side else "")
+            + ")"
+        )
 
 
 def run_legacy_reconcile(args: argparse.Namespace) -> int:

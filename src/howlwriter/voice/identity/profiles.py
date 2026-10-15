@@ -99,6 +99,9 @@ class ProfileBuildResult:
     naturalness: dict[str, Any] = field(default_factory=dict)
     drift_windows: int = 0
     pending_reviews_affecting: int = 0
+    workshop_bundles: dict[str, int] = field(default_factory=dict)
+    workshop_words: int = 0
+    workshop_only: bool = False
     warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -256,12 +259,27 @@ def _make_artifacts(
     decisions: dict[str, Decision],
     choices: list[SourceChoice],
     result: ProfileBuildResult,
+    workshop_keys: dict[str, str] | None = None,
 ):
     by_path = {c.absolute_path: c for c in choices}
+    workshop_keys = workshop_keys or {}
 
     def artifacts(context: ArtifactContext) -> dict[str, str]:
-        train_texts = [context.texts[k] for k in context.train_keys if k in context.texts]
-        holdout_texts = [context.texts[k] for k in context.holdout_keys if k in context.texts]
+        # Scoring evidence is documents only. Workshop bundles (concatenated
+        # short answers) shape the profile's distributions for generation,
+        # but their paragraph and cohesion structure is an artefact of
+        # bundling, so they never enter Voice Match centres, the Naturalness
+        # reference, the drift baseline, or contamination fingerprints.
+        train_texts = [
+            context.texts[k] for k in context.train_keys if k in context.texts and k not in workshop_keys
+        ]
+        holdout_texts = [
+            context.texts[k] for k in context.holdout_keys if k in context.texts and k not in workshop_keys
+        ]
+        workshop_calibration = [
+            vm.measure_text(context.texts[k])[0]
+            for k in context.holdout_keys if k in context.texts and k in workshop_keys
+        ]
         train_vectors = [vm.measure_text(t)[0] for t in train_texts]
         holdout_vectors = [vm.measure_text(t)[0] for t in holdout_texts]
 
@@ -274,6 +292,16 @@ def _make_artifacts(
             ]
             for family, items in control_entries.items()
         }
+        diagnostics = {
+            f"style_altered_holdout:{name}": [
+                vm.measure_text(PERTURBATIONS[name](t))[0] for t in holdout_texts
+            ]
+            for name in ("formulaic_injection", "uniform_paragraphs")
+        }
+        if workshop_calibration:
+            # Does the document-built profile describe the person's prompted
+            # writing? Reported, never pooled into the score mapping.
+            diagnostics["workshop_calibration_samples"] = workshop_calibration
         calibration = vm.build_calibration(
             profile=spec.voice,
             context=spec.context,
@@ -281,12 +309,7 @@ def _make_artifacts(
             holdout=holdout_vectors,
             controls=control_vectors,
             training_fingerprints=[vm.TextFingerprint.of(t) for t in train_texts],
-            diagnostic_controls={
-                f"style_altered_holdout:{name}": [
-                    vm.measure_text(PERTURBATIONS[name](t))[0] for t in holdout_texts
-                ]
-                for name in ("formulaic_injection", "uniform_paragraphs")
-            },
+            diagnostic_controls=diagnostics,
         )
         trained_entries = [by_path[k].entry for k in context.train_keys if k in by_path]
         held_entries = [by_path[k].entry for k in context.holdout_keys if k in by_path]
@@ -346,6 +369,11 @@ def _make_artifacts(
                 "profile_type": "personal_voice",
             },
             "built_at": utc_now(),
+            "workshop": {
+                "bundles": dict(result.workshop_bundles),
+                "training_words": result.workshop_words,
+                "workshop_only": result.workshop_only,
+            },
             "sources": {
                 "documents": len(choices),
                 "by_authorship": {
@@ -398,6 +426,7 @@ def build_identity(
     allow_remote_content: bool = False,
     allow_shrink: bool = False,
     stage_callback=None,
+    use_workshop: bool = True,
 ) -> list[ProfileBuildResult]:
     """Build (or rebuild) the identity's profiles. Returns one result per profile."""
     if model_traits and not allow_remote_content:
@@ -429,12 +458,40 @@ def build_identity(
         result.pending_reviews_affecting = pending
         voice = VoiceStore(spec.voice, root=voices_root)
 
-        if len(choices) < MIN_PROFILE_DOCUMENTS:
+        # Voice Workshop evidence: approved, counted samples bundled by side.
+        from howlwriter.voice.corpus.aggregate import MIN_WORDS
+        from howlwriter.voice.identity import workshop as workshop_module
+
+        workshop = workshop_module.Workshop(store.identity, store_root=store_root)
+        counted = workshop.counted(spec.context) if use_workshop else []
+        workshop_only = (
+            len(choices) == 0
+            and sum(s.words for s in counted) >= MIN_WORDS
+            and len(counted) >= 10
+        )
+        bundles = []
+        if counted and (len(choices) >= MIN_PROFILE_DOCUMENTS or workshop_only):
+            bundles = workshop.bundles(spec.context, document_words=result.eligible_words)
+        workshop_keys = {str(path.resolve()): side for path, side, _ in bundles}
+        result.workshop_bundles = {
+            "train": sum(1 for _, side, _ in bundles if side == "train"),
+            "calibration": sum(1 for _, side, _ in bundles if side == "holdout"),
+        }
+        result.workshop_words = sum(words for _, side, words in bundles if side == "train")
+        result.workshop_only = workshop_only and bool(bundles)
+
+        if len(choices) < MIN_PROFILE_DOCUMENTS and not result.workshop_only:
             result.status = "insufficient"
             result.reason = (
                 f"{len(choices)} attested document(s) for the {spec.context} profile; at least "
                 f"{MIN_PROFILE_DOCUMENTS} are needed"
                 + (f" ({pending} relevant document(s) await your review)" if pending else "")
+                + (
+                    f"; Voice Workshop has {len(counted)} approved {spec.context} sample(s) "
+                    f"({sum(x.words for x in counted)} words), short of a workshop-only profile "
+                    f"(10 samples and {MIN_WORDS} words)"
+                    if counted and len(choices) == 0 else ""
+                )
                 + ("; the existing profile was left unchanged" if voice.exists() else "")
             )
             results.append(result)
@@ -455,13 +512,20 @@ def build_identity(
             build = voice.load_build()
             previous = dict(build.counts)
         try:
+            selection = {c.absolute_path: c.selection for c in choices}
+            for key in workshop_keys:
+                selection[key] = SelectedSource(
+                    weight=workshop_module.WORKSHOP_WEIGHT, context=spec.context,
+                    authorship="CONFIRMED_HUMAN_AUTHORED",
+                )
             outcome = build_voice(
                 spec.voice,
-                [c.absolute_path for c in choices],
+                [c.absolute_path for c in choices] + list(workshop_keys),
                 store_root=voices_root,
                 deterministic_only=not model_traits,
-                selection={c.absolute_path: c.selection for c in choices},
+                selection=selection,
                 split_groups={c.absolute_path: families.get(c.doc_id, c.doc_id) for c in choices},
+                forced_splits=workshop_keys,
                 artifacts=_make_artifacts(
                     store=store,
                     config=config,
@@ -470,6 +534,7 @@ def build_identity(
                     decisions=decisions,
                     choices=choices,
                     result=result,
+                    workshop_keys=workshop_keys,
                 ),
                 stage_callback=stage_callback,
             )

@@ -675,3 +675,49 @@ export interface PersonalComparison {
   integrity_problems: string[];
   policy: string;
 }
+
+export interface WorkshopPrompt {
+  prompt_id: string;
+  context: string;
+  kind: string;
+  subject: string;
+  text: string;
+  reason: string;
+  follow_up_of: string;
+}
+
+export interface WorkshopSample {
+  sample_id: string;
+  prompt_id: string;
+  prompt_text: string;
+  prompt_kind: string;
+  context: string;
+  subject: string;
+  text?: string;
+  preferred_revision?: string;
+  words: number;
+  created_at: string;
+  status: 'pending' | 'approved' | 'excluded' | 'removed';
+  self_written: boolean;
+  side: string;
+  classified_context: string;
+  counts: boolean;
+}
+
+export interface WorkshopCoverage {
+  profiles: Record<
+    string,
+    {
+      documents: number;
+      document_words: number;
+      workshop_samples: number;
+      workshop_train: number;
+      workshop_calibration: number;
+      workshop_words: number;
+      sufficiency: string;
+      gaps: string[];
+    }
+  >;
+  contexts: Record<string, { approved: number; pending: number; excluded_or_not_counted: number; words: number }>;
+  notes: string[];
+}

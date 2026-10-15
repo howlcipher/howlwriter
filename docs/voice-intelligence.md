@@ -300,6 +300,66 @@ only formal-safe tendencies (concrete detail, low tolerance for filler,
 explicit qualification). Without an export nothing is fabricated: the owner's
 own observations are recorded as `provisional_unvalidated`.
 
+## 7a. Voice Workshop
+
+```bash
+howlwriter voice workshop --identity jane                 # interactive: prompt, answer, approve, resume later
+howlwriter voice workshop --identity jane prompt --context technical --subject "our deploy script"
+howlwriter voice workshop --identity jane answer --prompt-id tec-s1 --subject "our deploy script" \
+    --text "..." --self-written --approve
+howlwriter voice workshop --identity jane list            # no text unless --show-text
+howlwriter voice workshop --identity jane coverage        # evidence per profile, with gaps
+howlwriter voice workshop --identity jane approve|exclude|remove SAMPLE_ID
+howlwriter voice workshop --identity jane reclassify SAMPLE_ID professional
+howlwriter voice workshop --identity jane revise SAMPLE_ID --text "how I'd prefer it to read"
+```
+
+The web UI's **Workshop** tab does the same; with no identity yet, it asks
+for a short name and opens directly. No scan or other setup is needed.
+
+Short prompts (1-3 sentences) and paragraph exercises cover academic,
+professional, technical and casual writing. They come from a template bank in
+`voice/identity/workshop.py`: **no model is called**, so the Workshop is
+local-only by construction. You may supply your own subject. Without a
+chosen context, the next prompt targets the context whose profile has the
+least evidence (no documents first); a follow-up reuses your last subject in
+the context with the largest gap. A prompt is never offered again for the
+same subject.
+
+What is stored, privately (`<identity>/workshop/samples.json`, 0600): your
+answer exactly as typed (no spelling, grammar or structure correction; the
+web form disables autocorrect), the prompt id and text as metadata, the
+subject, your "I wrote this myself, without AI help" declaration, the
+classifier's view of its context, and a history of what happened to it. An
+optional preferred revision is stored separately and is never evidence.
+
+Rules that keep samples from skewing a profile:
+
+* nothing counts until you approve it, and only self-written answers can be
+  approved;
+* each approved sample is assigned once, by its own hash, to training (about
+  three quarters) or calibration, and never moves;
+* only one answer per prompt and subject counts, and exact or near-duplicate
+  answers count once -- earliest approval wins, recomputed every time, so
+  excluding an answer lets a later one count;
+* casual answers are kept and shown in coverage but never train the academic
+  or professional profiles;
+* approved samples join a build as bundles of about 300 words at weight 0.5,
+  with their sides fixed, and when the profile has documents the training
+  bundles are capped at 25% of its training words;
+* bundles never enter Voice Match centres, the Naturalness reference, the
+  drift baseline or contamination fingerprints: scoring stays
+  document-based. Calibration-side bundles are measured against the profile
+  and reported as the `workshop_calibration_samples` diagnostic;
+* a profile with no documents is built from samples only with at least 10
+  samples and 3,000 words, and is labelled workshop-only.
+
+Coverage shows evidence -- documents, words, samples by side -- with a
+sufficiency label and named gaps ("no attested documents in this context",
+"no paragraph-length workshop answers"), never a completion percentage.
+`remove` deletes the answer's text, keeping a text-free record that it
+existed.
+
 ## 8. The two scores
 
 Both are **empirical percentiles**, computed independently from different
