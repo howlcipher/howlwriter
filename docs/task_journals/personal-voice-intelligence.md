@@ -72,6 +72,14 @@ comparison, chat evidence, Drive API fallback, CLI, web tab.
   run with no output. Local model generation was refused by HowlPlane's RAM
   gate (RESOURCE_CONSTRAINED); writing roles are unbound in HowlPlane config.
 
+## Milestone 4 (Voice Workshop, commit c73f562)
+
+- `voice workshop` CLI and web Workshop tab: local prompt bank, verbatim
+  private samples, explicit approval, fixed train/calibration sides,
+  duplicate and repeated-prompt protection, capped down-weighted bundles kept
+  out of scoring references, evidence coverage without percentages.
+- No real workshop samples exist yet (feature delivered, not yet used).
+
 ## Real-drive state (last scan)
 
 - 659 files: 469 non-prose; 188 eligible (105 extracted, 2 credential-shaped
@@ -94,9 +102,9 @@ comparison, chat evidence, Drive API fallback, CLI, web tab.
 
 ## Tests
 
-- Full suite on the working tree before commit: 1373 passed, 0 failed,
-  0 skipped (HowlPlane installed editable in the venv, as the CI contract
-  job does; pinned howl-provider-core installed).
+- Full suite on the final tree (c73f562): 1391 passed, 0 failed, 0 skipped
+  (HowlPlane installed editable in the venv, as the CI contract job does;
+  pinned howl-provider-core installed).
 
 ## Next Step
 
