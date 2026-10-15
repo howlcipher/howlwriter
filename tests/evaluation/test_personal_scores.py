@@ -83,8 +83,8 @@ def test_thin_reference_set_withholds(reference_texts):
 
 
 def test_reference_documents_score_as_a_percentile(calibration):
-    scores = [calibration.score_index(i) for i in calibration.loo_indices]
-    assert 35 <= sum(scores) / len(scores) <= 65
+    median = calibration.validation["reference_scores"]["median"]
+    assert 30 <= median <= 70
 
 
 def test_mechanical_perturbation_lowers_naturalness(calibration):
@@ -123,7 +123,8 @@ def test_formal_register_is_not_a_naturalness_dimension():
 
 def test_more_variation_than_reference_is_not_penalised(calibration):
     reference = calibration.reference["sentence_variation"]
-    assert nat._tail("sentence_variation", max(reference) * 3, reference) == 1.0
+    pairs = [(v, 1.0) for v in reference]
+    assert nat._tail("sentence_variation", max(reference) * 3, pairs) == 1.0
 
 
 def test_uniform_paragraphs_registers_as_less_paragraph_variation(reference_texts):
@@ -282,3 +283,18 @@ def test_style_altered_diagnostics_are_reported_but_not_pooled():
     assert "style_altered" in calibration.validation["diagnostics"]
     assert calibration.validation["pooled_separation"]["control_n"] == 0
     assert calibration.validated() is False
+
+
+def test_naturalness_is_ranked_against_comparable_lengths(reference_texts):
+    """A long document is not ranked against a reference of short ones."""
+    short = [author_a(seed, paragraphs=6, byline=False) for seed in range(200, 230)]
+    calibration = nat.build_calibration(_measure(short), context="academic", source="short only")
+    long_doc = "\n\n".join(author_a(seed, paragraphs=9, byline=False) for seed in range(300, 312))
+    report = nat.score_naturalness(nat.measure_naturalness(long_doc), calibration, context="academic")
+    assert report.status == nat.STATUS_UNAVAILABLE
+    assert "comparable length" in report.reason
+
+
+def test_calibration_records_its_length_correlation(calibration):
+    assert "length_correlation" in calibration.validation
+    assert calibration.validation["length_bandwidth"] == nat.LENGTH_BANDWIDTH

@@ -452,11 +452,14 @@ class VoiceMatchReport:
     differences: list[str] = field(default_factory=list)
     drift: list[dict] = field(default_factory=list)
     words: int = 0
+    #: Points one genuine calibration document is worth (100 / n).
+    resolution: float | None = None
     disclaimer: str = DISCLAIMER
 
     def to_dict(self) -> dict:
         return {
             "metric": "personal_voice_match",
+            "resolution": None if self.resolution is None else round(self.resolution, 1),
             "status": self.status,
             "score": None if self.score is None else round(self.score, 1),
             "band": self.band,
@@ -574,6 +577,7 @@ def score_voice_match(
         return report
 
     report.score = _score(overall, calibration.genuine_distances)
+    report.resolution = 100.0 / len(calibration.genuine_distances)
     report.band = band_for(report.score)
     report.status = STATUS_SCORED
     n = len(calibration.genuine_distances)

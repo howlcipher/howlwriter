@@ -20,8 +20,12 @@ documents:
 * their SimHash fingerprints are within `FAMILY_SIMHASH_BITS`;
 * their file names share a base name once draft/final/version/copy markers
   are removed;
-* their file names name the same assignment or paper number
-  (``Paper2_Project Proposal`` and ``Paper 2 _ Project Submission``);
+* their file names name the same numbered deliverable -- a paper, project or
+  deliverable (``Paper2_Project Proposal`` and ``Paper 2 _ Project
+  Submission``). Generic numbering (``A3``, ``Assignment 3``, ``Lab 3``) does
+  not link on its own: on a real corpus it joined unrelated documents from
+  different courses that happened to share a number, and genuine revisions
+  are already joined by content (duplicate grouping, SimHash) or base name;
 * they are worksheets from the same publisher series (same parenthesised
   edition and suffix, e.g. ``(4e) - Name``).
 """
@@ -44,7 +48,7 @@ _VERSION_MARKERS = re.compile(
     re.IGNORECASE,
 )
 _ASSIGNMENT = re.compile(
-    r"\b(?:(assignment|paper|lab|deliverable|project|a)\s*[_ :-]*\s*(\d{1,2}))(?!\d)", re.IGNORECASE
+    r"\b(?:(paper|deliverable|project)\s*[_ :-]*\s*(\d{1,2}))(?!\d)", re.IGNORECASE
 )
 _SERIES = re.compile(r"(\(\s*\d+\s*[a-z]{1,3}\s*\)\s*-\s*[\w .'-]+)$", re.IGNORECASE)
 _COURSE = re.compile(r"\b([A-Z]{3,5})\s?[-_]?\s?(\d{3})\b")
@@ -63,9 +67,7 @@ def assignment_key(relative_path: str) -> str | None:
     match = _ASSIGNMENT.search(_stem(relative_path))
     if not match:
         return None
-    kind = match.group(1).lower()
-    kind = "assignment" if kind in ("a", "assignment") else kind
-    return f"{kind}:{int(match.group(2))}"
+    return f"{match.group(1).lower()}:{int(match.group(2))}"
 
 
 def series_key(relative_path: str) -> str | None:

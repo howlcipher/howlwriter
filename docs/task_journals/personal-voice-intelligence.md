@@ -51,6 +51,27 @@ comparison, chat evidence, Drive API fallback, CLI, web tab.
   (now explicit `source_path`); worksheet header threshold; profile exports
   detected from content; scan report gained an `accounting` block.
 
+## Milestone 3 (authorship, profiles, calibration fixes)
+
+- Owner attested 31 documents through grouped review (12 + 2 light AI editing,
+  14 human, 3 worksheets answers-only); one attestation was corrected to
+  third-party after its contents showed it was an institutional letter.
+  Two documents' categories were corrected from professional to academic
+  (a course midterm, a lab worksheet) so academic work cannot fill the
+  professional profile.
+- Families: generic assignment numbering no longer links documents (on the
+  real corpus it joined unrelated courses and pushed the holdout to 12/27).
+- Naturalness: length-weighted calibration (v2). Real corpus: length vs
+  unweighted index rho -0.67 -> -0.12 after weighting; scores withheld when
+  fewer than 8 comparable references exist. Reports state resolution.
+- Citation preservation: multi-word organisational authors, multisets.
+- Voice activation verified through the real `howl` pipeline with a recording
+  dispatcher (zero-change): the request carried the `william-academic` block,
+  provenance recorded requested/applied/loaded; automatic professional
+  selection refused with zero provider calls; a nonexistent voice stopped the
+  run with no output. Local model generation was refused by HowlPlane's RAM
+  gate (RESOURCE_CONSTRAINED); writing roles are unbound in HowlPlane config.
+
 ## Real-drive state (last scan)
 
 - 659 files: 469 non-prose; 188 eligible (105 extracted, 2 credential-shaped
@@ -58,23 +79,30 @@ comparison, chat evidence, Drive API fallback, CLI, web tab.
   placeholders, 4 native-type read failures); 2 names unstattable by the mount.
 - Content coverage 57% of eligible files.
 - Legacy reconciliation: 70 historical sources, all matched by path, none
-  changed; 41 used / 34 trained historically; recommendations: 3 answers-only
-  candidates, 27 pending review, 40 excluded; 15 trained sources (18% of
-  legacy training words) now excluded.
-- Pending authorship reviews: 32. Attestations: 0.
-- Profiles `william-academic`, `william-professional`: not built (no
-  attestations). Professional evidence essentially absent from readable files.
-- Drive API fallback: implemented; not run (no OAuth client or token).
+  changed; 15 legacy-trained sources (about 18% of legacy training words)
+  excluded as non-William or publisher text.
+- Pending authorship reviews: 0.
+- `william-academic`: BUILT. 30 attested documents (46,149 words), 23 train /
+  6 holdout (family-aware), sufficiency strong, holdout validation
+  MEDIUM_LOW. Voice Match: 29 genuine calibration documents, 4 comparison
+  documents, AUC 0.784 (95% 0.583-0.986): CALIBRATED_UNVALIDATED.
+  Naturalness: 25 reference documents, control AUC 0.814: VALIDATED.
+- `william-professional`: NOT BUILT. 0 attested professional documents;
+  professional writing is in native Google Docs.
+- Drive API fallback: implemented, not run; owner is setting up the OAuth
+  client (read-only Drive scope).
 
 ## Tests
 
-- Full suite after milestone 2: 1364 passed, 5 skipped, 0 failed (rerun on the
-  committed tree is recorded in the commit/handoff).
+- Full suite on the working tree before commit: 1373 passed, 0 failed,
+  0 skipped (HowlPlane installed editable in the venv, as the CI contract
+  job does; pinned howl-provider-core installed).
 
 ## Next Step
 
-1. Owner decisions on the consolidated review queue (grouped review).
-2. Optional: OAuth client + `voice google-auth`, then `voice scan --google-api`
-   to recover the 70 native Docs (most professional writing).
-3. `voice build-identity --identity william`; record calibration counts/AUCs
-   here; compare against `william_v2`; dogfood evaluation and generation.
+1. When `~/.howlwriter/credentials/google_drive_readonly_token.json` exists:
+   `howlwriter voice scan --identity william --google-api`, review the
+   recovered professional candidates, then
+   `howlwriter voice build-identity --identity william --profiles professional`.
+2. More comparison-author prose would let Voice Match reach VALIDATED (needs
+   at least 5 comparison documents and an AUC interval lower bound of 0.70).

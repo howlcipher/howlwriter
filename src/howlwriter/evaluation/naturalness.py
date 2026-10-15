@@ -30,24 +30,19 @@ percentage is worse than none.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import math
 import re
 import statistics
 from typing import Any
 
 from howlwriter.config.defaults import default_config
 from howlwriter.domain.document import Document
-from howlwriter.evaluation.empirical import (
-    describe,
-    midrank_percentile,
-    quantile,
-    separation,
-    survival,
-)
+from howlwriter.evaluation.empirical import describe, quantile, separation
 from howlwriter.linting.engine import LintEngine
 from howlwriter.linting import rules as lint_rules
 
 MEASUREMENT_VERSION = "naturalness-measure/v1"
-CALIBRATION_VERSION = "naturalness-calibration/v1"
+CALIBRATION_VERSION = "naturalness-calibration/v2-length-weighted"
 
 #: Below these, the dimensions are too noisy to rank against anything.
 MIN_WORDS = 250
@@ -504,29 +499,63 @@ def measure_naturalness(text: str, *, lint: bool = True) -> NaturalnessMeasureme
 
 # --- calibration ----------------------------------------------------------
 
+#: Width, in natural-log units of word count, of the length kernel. A
+#: reference document 1.8x longer or shorter carries weight e^-0.5 (0.61);
+#: one 3.3x away carries e^-2 (0.14). Chosen a priori so that a document is
+#: ranked mainly against references within about a factor of two of its
+#: length, and reported with every calibration.
+LENGTH_BANDWIDTH = 0.6
 
-def _tail(name: str, value: float, reference: list[float]) -> float:
-    """How natural `value` is on one dimension, as a reference tail share."""
+#: A score needs at least this many comparable reference documents at the
+#: document's length, counted as the sum of kernel weights (a reference of the
+#: same length counts 1, one 1.8x away counts 0.61). An absolute count, not
+#: the Kish effective sample size: Kish is scale-invariant, so thirty
+#: references all far shorter than the document would still count as ~30.
+MIN_EFFECTIVE_REFERENCE = 8.0
+
+
+def _kernel(words: int, other: int) -> float:
+    distance = math.log(max(words, 1) / max(other, 1))
+    return math.exp(-0.5 * (distance / LENGTH_BANDWIDTH) ** 2)
+
+
+def _weighted_rank(value: float, pairs: list[tuple[float, float]]) -> float:
+    """Weighted share of reference values below `value`, ties counted half."""
+    total = sum(w for _, w in pairs)
+    if total <= 0:
+        return 0.5
+    below = sum(w for v, w in pairs if v < value)
+    equal = sum(w for v, w in pairs if v == value)
+    return (below + 0.5 * equal) / total
+
+
+def _tail(name: str, value: float, pairs: list[tuple[float, float]]) -> float:
+    """How natural `value` is on one dimension, as a weighted reference tail."""
     direction = DIMENSIONS[name].direction
+    rank = _weighted_rank(value, pairs)
     if direction == HIGH_IS_MECHANICAL:
-        return survival(value, reference)
+        return 1.0 - rank
     if direction == LOW_IS_MECHANICAL:
-        return midrank_percentile(value, reference)
-    rank = midrank_percentile(value, reference)
+        return rank
     return min(1.0, 2.0 * min(rank, 1.0 - rank))
 
 
 def _index(
-    measurement: NaturalnessMeasurement, reference: dict[str, list[float]]
+    measurement: NaturalnessMeasurement, reference: list[dict], skip: int | None = None
 ) -> tuple[float, dict[str, float]]:
+    """Mean dimension tail against length-weighted reference documents."""
     tails: dict[str, float] = {}
     for name in DIMENSIONS:
         if not measurement.applicable.get(name):
             continue
-        values = reference.get(name) or []
-        if len(values) < 3:
+        pairs = [
+            (float(doc["values"][name]), _kernel(measurement.words, int(doc["words"])))
+            for position, doc in enumerate(reference)
+            if position != skip and (doc.get("applicable") or {}).get(name)
+        ]
+        if len(pairs) < 3:
             continue
-        tails[name] = _tail(name, measurement.values[name], values)
+        tails[name] = _tail(name, measurement.values[name], pairs)
     if not tails:
         return 0.5, tails
     return statistics.mean(tails.values()), tails
@@ -536,36 +565,63 @@ def _index(
 class NaturalnessCalibration:
     """A reference set, reduced to numbers, and the score mapping it implies.
 
-    Holds per-dimension reference values and the leave-one-out index of every
-    reference document. No text, no titles, no paths.
+    Holds each reference document's word count and dimension values, and its
+    leave-one-out index. Every percentile is length-weighted: a document is
+    ranked against reference documents of comparable length, because on a
+    real corpus document length (and the genre that comes with it) correlated
+    with the unweighted index at rho -0.67. No text, no titles, no paths.
     """
 
     context: str
     source: str
-    reference: dict[str, list[float]] = field(default_factory=dict)
-    loo_indices: list[float] = field(default_factory=list)
+    reference_docs: list[dict] = field(default_factory=list)
+    loo: list[dict] = field(default_factory=list)
     documents: int = 0
     validation: dict[str, Any] = field(default_factory=dict)
     version: str = CALIBRATION_VERSION
     measurement_version: str = MEASUREMENT_VERSION
 
     @property
-    def usable(self) -> bool:
-        return (
-            self.documents >= MIN_REFERENCE_DOCUMENTS
-            and len(self.loo_indices) >= MIN_REFERENCE_DOCUMENTS
-        )
+    def reference(self) -> dict[str, list[float]]:
+        """Unweighted per-dimension values, for descriptive display."""
+        out: dict[str, list[float]] = {name: [] for name in DIMENSIONS}
+        for doc in self.reference_docs:
+            for name in DIMENSIONS:
+                if (doc.get("applicable") or {}).get(name):
+                    out[name].append(float(doc["values"][name]))
+        return out
 
-    def score_index(self, index: float) -> float:
-        return 100.0 * midrank_percentile(index, self.loo_indices)
+    @property
+    def loo_indices(self) -> list[float]:
+        return [float(item["index"]) for item in self.loo]
+
+    @property
+    def usable(self) -> bool:
+        return self.documents >= MIN_REFERENCE_DOCUMENTS and len(self.loo) >= MIN_REFERENCE_DOCUMENTS
+
+    def effective_reference(self, words: int) -> float:
+        """Kernel-weighted count of reference documents comparable in length."""
+        return sum(_kernel(words, int(item["words"])) for item in self.loo)
+
+    def score_index(self, index: float, words: int) -> float:
+        pairs = [(float(item["index"]), _kernel(words, int(item["words"]))) for item in self.loo]
+        return 100.0 * _weighted_rank(index, pairs)
 
     def to_dict(self) -> dict:
         return {
             "context": self.context,
             "source": self.source,
-            "reference": {k: [round(v, 5) for v in vals] for k, vals in self.reference.items()},
-            "loo_indices": [round(v, 5) for v in self.loo_indices],
+            "reference_docs": [
+                {
+                    "words": int(doc["words"]),
+                    "values": {k: round(float(v), 5) for k, v in doc["values"].items()},
+                    "applicable": dict(doc.get("applicable") or {}),
+                }
+                for doc in self.reference_docs
+            ],
+            "loo": [{"words": int(i["words"]), "index": round(float(i["index"]), 5)} for i in self.loo],
             "documents": self.documents,
+            "length_bandwidth": LENGTH_BANDWIDTH,
             "validation": self.validation,
             "version": self.version,
             "measurement_version": self.measurement_version,
@@ -576,10 +632,8 @@ class NaturalnessCalibration:
         return cls(
             context=str(data.get("context", "")),
             source=str(data.get("source", "")),
-            reference={
-                k: [float(v) for v in vals] for k, vals in (data.get("reference") or {}).items()
-            },
-            loo_indices=[float(v) for v in data.get("loo_indices") or []],
+            reference_docs=list(data.get("reference_docs") or []),
+            loo=list(data.get("loo") or []),
             documents=int(data.get("documents", 0)),
             validation=dict(data.get("validation") or {}),
             version=str(data.get("version", CALIBRATION_VERSION)),
@@ -587,17 +641,12 @@ class NaturalnessCalibration:
         )
 
 
-def _reference_values(
-    measurements: list[NaturalnessMeasurement], skip: int | None = None
-) -> dict[str, list[float]]:
-    reference: dict[str, list[float]] = {name: [] for name in DIMENSIONS}
-    for position, item in enumerate(measurements):
-        if position == skip:
-            continue
-        for name in DIMENSIONS:
-            if item.applicable.get(name):
-                reference[name].append(item.values[name])
-    return reference
+def _doc_record(measurement: NaturalnessMeasurement) -> dict:
+    return {
+        "words": measurement.words,
+        "values": dict(measurement.values),
+        "applicable": dict(measurement.applicable),
+    }
 
 
 def build_calibration(
@@ -615,25 +664,34 @@ def build_calibration(
     reference's own leave-one-out scores is reported as an AUC.
     """
     usable = [m for m in measurements if m.sufficient]
-    reference = _reference_values(usable)
-    loo = [_index(item, _reference_values(usable, skip=i))[0] for i, item in enumerate(usable)]
+    reference = [_doc_record(m) for m in usable]
+    loo = [
+        {"words": item.words, "index": _index(item, reference, skip=i)[0]}
+        for i, item in enumerate(usable)
+    ]
     calibration = NaturalnessCalibration(
-        context=context,
-        source=source,
-        reference=reference,
-        loo_indices=loo,
-        documents=len(usable),
+        context=context, source=source, reference_docs=reference, loo=loo, documents=len(usable),
     )
 
-    reference_scores = [calibration.score_index(i) for i in loo]
+    # Each reference document's own score, leave-one-out: its index ranked
+    # against the other documents' LOO indices.
+    reference_scores = []
+    for position, item in enumerate(loo):
+        others = [o for i, o in enumerate(loo) if i != position]
+        pairs = [(float(o["index"]), _kernel(int(item["words"]), int(o["words"]))) for o in others]
+        reference_scores.append(100.0 * _weighted_rank(float(item["index"]), pairs))
+    words = [m.words for m in usable]
     validation: dict[str, Any] = {
         "reference_scores": describe(reference_scores),
+        "length_bandwidth": LENGTH_BANDWIDTH,
+        "length_correlation": _spearman(words, reference_scores) if len(words) >= 5 else None,
         "controls": {},
     }
     pooled: list[float] = []
     for family, items in sorted((controls or {}).items()):
         scores = [
-            calibration.score_index(_index(item, reference)[0]) for item in items if item.sufficient
+            calibration.score_index(_index(item, reference)[0], item.words)
+            for item in items if item.sufficient
         ]
         pooled.extend(scores)
         validation["controls"][family] = {
@@ -646,6 +704,20 @@ def build_calibration(
     validation["validated"] = bool(interval and interval[0] >= VALIDATED_AUC_FLOOR)
     calibration.validation = validation
     return calibration
+
+
+def _spearman(x: list[float], y: list[float]) -> float | None:
+    def ranks(values: list[float]) -> list[float]:
+        order = sorted(range(len(values)), key=lambda i: values[i])
+        out = [0.0] * len(values)
+        for rank, i in enumerate(order):
+            out[i] = float(rank)
+        return out
+
+    try:
+        return round(statistics.correlation(ranks(list(x)), ranks(list(y))), 3)
+    except statistics.StatisticsError:
+        return None
 
 
 # --- scoring ---------------------------------------------------------------
@@ -689,11 +761,15 @@ class NaturalnessReport:
     locations: list[Location] = field(default_factory=list)
     suggestions: list[str] = field(default_factory=list)
     words: int = 0
+    #: Points one comparable reference document is worth: the score cannot be
+    #: more precise than this, and small edits can move it by a few steps.
+    resolution: float | None = None
     disclaimer: str = DISCLAIMER
 
     def to_dict(self) -> dict:
         return {
             "metric": "human_naturalness",
+            "resolution": None if self.resolution is None else round(self.resolution, 1),
             "status": self.status,
             "score": None if self.score is None else round(self.score, 1),
             "context": self.context,
@@ -729,11 +805,16 @@ def score_naturalness(
     )
     reference = calibration.reference if calibration else {}
 
+    docs = calibration.reference_docs if calibration else []
     for name, spec in DIMENSIONS.items():
         if not measurement.applicable.get(name):
             continue
         values = reference.get(name) or []
-        tail = _tail(name, measurement.values[name], values) if len(values) >= 3 else None
+        pairs = [
+            (float(d["values"][name]), _kernel(measurement.words, int(d["words"])))
+            for d in docs if (d.get("applicable") or {}).get(name)
+        ]
+        tail = _tail(name, measurement.values[name], pairs) if len(pairs) >= 3 else None
         report.dimensions.append(
             DimensionScore(
                 name=name,
@@ -784,8 +865,18 @@ def score_naturalness(
         report.evidence = "insufficient_reference"
         return report
 
-    index, _tails = _index(measurement, calibration.reference)
-    report.score = calibration.score_index(index)
+    effective = calibration.effective_reference(measurement.words)
+    if effective < MIN_EFFECTIVE_REFERENCE:
+        report.reason = (
+            f"the reference set has too few documents of comparable length ({effective:.1f} "
+            f"comparable documents at {measurement.words} words; a score needs "
+            f"{MIN_EFFECTIVE_REFERENCE:.0f})"
+        )
+        report.evidence = "insufficient_reference_at_length"
+        return report
+    index, _tails = _index(measurement, calibration.reference_docs)
+    report.score = calibration.score_index(index, measurement.words)
+    report.resolution = 100.0 / effective
     report.status = STATUS_SCORED
     report.evidence = "sufficient" if calibration.documents >= 25 else "limited"
 

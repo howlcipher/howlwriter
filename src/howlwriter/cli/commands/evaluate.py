@@ -83,7 +83,8 @@ def _read(path: str) -> str:
 
 def _score_line(label: str, block: dict, extra: str = "") -> str:
     if block["status"] == "SCORED":
-        return f"{label:22} {block['score']:5.1f} / 100   {extra}{block['confidence']}"
+        step = f"  (±{block['resolution']:.0f}-point steps)" if block.get("resolution") else ""
+        return f"{label:22} {block['score']:5.1f} / 100   {extra}{block['confidence']}{step}"
     return f"{label:22}   n/a         {block['reason']}"
 
 

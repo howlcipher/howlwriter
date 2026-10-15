@@ -25,6 +25,7 @@ meaning, numbers, units, citations, or qualifications however it scores.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -61,8 +62,13 @@ MODE_PROFILE_CONTEXT = {
     "article": "professional",
 }
 
+#: In-text citations: author-date with any author form -- one surname, "et
+#: al.", or a multi-word organisation ("Office of Management and Budget,
+#: 2020") -- plus "n.d." and numeric [n] styles. Bounded so a long
+#: parenthetical aside is not mistaken for a citation.
 _CITATION = re.compile(
-    r"\(\s*[A-Z][\w'’-]+(?:\s+et\s+al\.?)?,?\s*(?:\d{4}[a-z]?|n\.d\.)[^)]*\)|\[\d{1,3}(?:[,–-]\s*\d{1,3})*\]"
+    r"\(\s*[A-Z][^()]{0,90}?,?\s+(?:\d{4}[a-z]?|n\.d\.)(?:[,;][^()]{0,40})?\)"
+    r"|\[\d{1,3}(?:[,–-]\s*\d{1,3})*\]"
 )
 
 
@@ -437,8 +443,10 @@ def compare_texts(
         "factual_integrity": fidelity.to_dict(),
         "citations": {
             "status": "CHANGED" if citations_changed else "PRESERVED",
-            "removed": sorted(set(citations_before) - set(citations_after)),
-            "added": sorted(set(citations_after) - set(citations_before)),
+            # Multiset differences: dropping one of several occurrences of a
+            # citation is still a dropped citation.
+            "removed": sorted((Counter(citations_before) - Counter(citations_after)).elements()),
+            "added": sorted((Counter(citations_after) - Counter(citations_before)).elements()),
         },
         "requirements": req,
         "verdict": "REVISION_CHANGES_SUBSTANCE" if integrity_problems else "SUBSTANCE_PRESERVED",

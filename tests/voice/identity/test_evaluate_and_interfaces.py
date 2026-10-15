@@ -256,3 +256,19 @@ def test_uncalibrated_voices_keep_the_omit_dont_fake_rule(tmp_path):
     attach_voice_match(report, "Jane Doe", author_a(951))
     assert report.voice_match is None and report.voice_match_basis is None
     assert "Voice match" not in report.render_text()
+
+
+def test_multiword_citation_removal_is_flagged(built):
+    original = author_a(960) + "\n\nThe framework was revised (Office of Management and Budget, 2020)."
+    revised = original.replace(" (Office of Management and Budget, 2020)", "")
+    report = compare_texts(original, revised, identity="william", mode="academic")
+    assert report["citations"]["status"] == "CHANGED"
+    assert report["verdict"] == "REVISION_CHANGES_SUBSTANCE"
+
+
+def test_scores_state_their_resolution(built):
+    report = evaluate_text(author_a(961), identity="william", mode="academic")
+    if report["voice_match"]["status"] == "SCORED":
+        assert report["voice_match"]["resolution"] > 0
+    if report["naturalness"]["status"] == "SCORED":
+        assert report["naturalness"]["resolution"] > 0

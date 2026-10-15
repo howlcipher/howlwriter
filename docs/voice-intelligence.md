@@ -241,8 +241,10 @@ being removed. The review queue marks documents a legacy profile trained on.
 
 The holdout split is family-aware. Documents linked by the scanner's duplicate
 grouping, by SimHash within 16 bits, by a shared base name once
-draft/final/version/copy markers are removed, by the same assignment or
-paper number, or by a shared worksheet series always land on the same side,
+draft/final/version/copy markers are removed, by the same numbered paper,
+project or deliverable, or by a shared worksheet series always land on the
+same side (generic "A3"/"Assignment 3" numbering does not link by itself: on
+the real corpus it joined unrelated documents from different courses),
 so a held-out document never has a revision or template sibling in training.
 
 ## 6. Private storage and Git protection
@@ -312,11 +314,27 @@ redundancy, repetitive conclusions, verbosity, readability for the context,
 and sentence-to-sentence cohesion.
 
 Each dimension is ranked against a **reference set of human writing in the
-same context**, in its mechanical direction only: more variation than every
-reference document is not a fault, less is. The overall score is the
-percentile of the combined index among the reference documents' own
-leave-one-out indices: **70 means less mechanical than 70% of the reference**;
-50 is a typical reference document.
+same context and of comparable length**, in its mechanical direction only:
+more variation than every reference document is not a fault, less is. The
+overall score is the percentile of the combined index among the reference
+documents' own leave-one-out indices: **70 means less mechanical than 70% of
+comparable reference documents**; 50 is a typical one.
+
+Length weighting. On the real academic corpus, document length correlated
+with the unweighted index at Spearman rho -0.67: repeated openings and
+padding rise with length, and short discussion responses differ in genre
+from long papers. Every percentile is therefore weighted by a log-length
+kernel (bandwidth 0.6 natural-log units: a reference 1.8x longer or shorter
+counts 0.61, one 3.3x away counts 0.14). After weighting the correlation was
+-0.12. A document with fewer than 8 comparable reference documents (the sum
+of kernel weights) gets no score, with that reason -- which is what happens
+to very short documents and to a single paper much longer than every
+reference. Every calibration records its length correlation.
+
+Resolution. Each report states how many points one comparable reference
+document is worth (`resolution`). With about 25 reference documents a single
+document moves a percentile by about 4 points, so a small edit that crosses a
+few references can move the score by 10-20 points; read scores in that light.
 
 * Formal is not mechanical: passive voice, long words and academic register
   are not dimensions, and academic documents are ranked against academic
@@ -360,6 +378,15 @@ documents attested as AI-generated, and the same author's documents from the
 other context. Their separation from the genuine distribution is reported as
 an AUC with a Hanley-McNeil 95% interval.
 
+Each report states its `resolution` (100 / genuine calibration documents).
+Short documents are noisier: the calibration's sample-size curve records the
+scores of genuine documents truncated to 300, 600 and 1000 words.
+
+Known blind spot: Voice Match compares feature distributions, so it barely
+separates the author from copies of their own documents re-chunked into
+uniform paragraphs (diagnostic AUC 0.43 on the real profile). Naturalness
+covers that axis.
+
 Withheld, with the reason, when the profile has fewer than 8 genuine
 calibration documents, the document is under 300 words, the document is a
 training document or a near-duplicate of one (SimHash within 8 bits), or the
@@ -398,7 +425,10 @@ howlwriter evaluate original.md --compare revised.md --identity william --auto-v
 Both versions are scored against the same profile. The report shows both
 scores and deltas, changed dimensions, remaining drift, meaning preservation
 (the existing `MeaningPreservationReviewer`), factual integrity (the existing
-unit-aware `native.fidelity.compare`), citation preservation, and stated
+unit-aware `native.fidelity.compare`), citation preservation (author-date
+citations with any author form, including multi-word organisations, "n.d."
+and numeric `[n]` styles, compared as multisets so dropping one of several
+occurrences is detected), and stated
 requirements (`min_words`, `max_words`, `required_terms`,
 `required_sections`). Any integrity problem makes the verdict
 `REVISION_CHANGES_SUBSTANCE` (exit code 3) whatever the scores say.
