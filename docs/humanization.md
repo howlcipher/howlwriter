@@ -162,6 +162,13 @@ to three representative examples in the prompt. It never synthesizes a fake
 'Voice match: 92%' score. If `voice_profile` is not a file path, it is
 treated as an author label and no profile is injected.
 
+An identity profile (see [voice-intelligence.md](voice-intelligence.md)) may
+carry `supporting_evidence.json` -- tendencies from the author's informal
+chat messages. It is rendered last, labelled low weight, and the prompt
+states that it never overrides the mode's rules, the context traits, or
+formality, and must not introduce casual phrasing. The report's voice match
+is filled only from a calibrated profile, as a percentile with its basis.
+
 ## Over-polish handling
 
 The Humanizer should often move *away* from unnecessary polish. It must not

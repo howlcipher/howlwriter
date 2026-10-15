@@ -1020,6 +1020,9 @@ def _run_academic_pipeline(
         materials_summary=material_scan.ledger.counts() if material_scan else None,
         research_diagnostics=research_summary if researcher.diagnostics else None,
     )
+    from howlwriter.evaluation.personal import attach_voice_match
+
+    attach_voice_match(report, cfg.voice_profile, final_document.text)
 
     # 11. RECORD DOGFOOD DIAGNOSTIC ARTIFACT
     record = RunRecord(

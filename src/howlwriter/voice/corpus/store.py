@@ -398,6 +398,21 @@ class StagedBuild:
             sort_keys=False, default_flow_style=False,
         ))
 
+    def write_extra(self, filename: str, content: str) -> None:
+        """An additional private file committed atomically with the profile.
+
+        Restricted to a plain filename so a caller cannot write outside the
+        voice directory or replace one of the core files.
+        """
+        reserved = {PROFILE_FILE, SOURCES_FILE, FEATURES_FILE, OVERRIDES_FILE, BUILD_FILE}
+        if (
+            not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,63}", filename)
+            or ".." in filename
+            or filename in reserved
+        ):
+            raise ValueError(f"invalid extra profile file name {filename!r}")
+        self._write(filename, content)
+
     def _write(self, filename: str, content: str) -> None:
         if self.path is None:
             raise RuntimeError("staged build is not open")

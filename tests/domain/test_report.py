@@ -15,7 +15,7 @@ def test_render_text_includes_voice_match_when_present():
     report = WritingReport(status="READY", voice_match=0.91)
     text = report.render_text()
     assert "Voice match" in text
-    assert "91%" in text
+    assert "91/100 percentile" in text
 
 
 def test_render_text_shows_status_line():

@@ -10,13 +10,16 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import xml.etree.ElementTree as ET
+import io
 import zipfile
 
 from howlwriter.voice.corpus.extract import (
     STATUS_EMPTY,
     STATUS_FAILED,
     STATUS_OK,
+    ArchiveLimitError,
     ExtractionResult,
+    read_archive_member,
     read_bytes,
 )
 
@@ -33,25 +36,30 @@ def _node_text(node: ET.Element) -> str:
     return "".join(node.itertext())
 
 
-def extract_odt(path: Path) -> ExtractionResult:
-    raw, failure = read_bytes(path)
+def extract_odt(path: Path, data: bytes | None = None) -> ExtractionResult:
+    raw, failure = (data, None) if data is not None else read_bytes(path)
     if failure is not None:
         failure.parser = "odt"
         return failure
 
     try:
-        with zipfile.ZipFile(path) as archive:
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
             if "content.xml" not in archive.namelist():
                 return ExtractionResult(
                     parser="odt", status=STATUS_FAILED,
                     reason="archive has no content.xml body part",
                 )
-            content = archive.read("content.xml")
+            content = read_archive_member(archive, "content.xml")
         root = ET.fromstring(content)
     except (zipfile.BadZipFile, KeyError) as error:
         return ExtractionResult(
             parser="odt", status=STATUS_FAILED,
             reason=f"not a readable odt archive: {error}",
+        )
+    except ArchiveLimitError as error:
+        return ExtractionResult(
+            parser="odt", status=STATUS_FAILED,
+            reason=f"refused to inflate the document body: {error}",
         )
     except ET.ParseError as error:
         return ExtractionResult(

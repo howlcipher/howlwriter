@@ -538,6 +538,9 @@ def _run(
             actual_body_words=actual_words,
             word_count_status=wc_status,
         )
+        from howlwriter.evaluation.personal import attach_voice_match
+
+        attach_voice_match(report, config.voice_profile, final_document.text)
 
         record = RunRecord(
             run_id=active_run_id,

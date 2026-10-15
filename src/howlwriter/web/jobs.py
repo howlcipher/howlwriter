@@ -15,12 +15,13 @@ from howlwriter.web.models import (
     JobResponse,
     StageDto,
     VoiceBuildResultDto,
+    VoiceIntelJobResultDto,
 )
 
 #: Result payloads a job can carry. Academic papers were the first; voice
 #: builds are the second, and both flow through the same progress machinery
 #: rather than each growing its own.
-JobResult = AcademicResultDto | VoiceBuildResultDto
+JobResult = AcademicResultDto | VoiceBuildResultDto | VoiceIntelJobResultDto
 
 
 STANDARD_ACADEMIC_STAGES = [

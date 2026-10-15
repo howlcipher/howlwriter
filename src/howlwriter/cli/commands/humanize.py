@@ -238,6 +238,9 @@ def run(args: argparse.Namespace) -> int:
             changes=list(humanize_res.changes),
             change_count=len(humanize_res.changes),
         )
+        from howlwriter.evaluation.personal import attach_voice_match
+
+        attach_voice_match(report, config.voice_profile, transformed_doc.text)
 
         out_path = (
             Path(args.out)

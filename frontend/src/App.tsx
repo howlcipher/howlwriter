@@ -19,6 +19,7 @@ import { SourceDetailModal } from './components/academic/SourceDetailModal';
 import { ApaReferencesPanel } from './components/academic/ApaReferencesPanel';
 import { RunsLedger } from './components/runs/RunsLedger';
 import { VoicesPanel } from './components/voices/VoicesPanel';
+import { VoiceIntelligencePanel } from './components/voices/VoiceIntelligencePanel';
 import { ProviderMatrix } from './components/providers/ProviderMatrix';
 import { StartScreen } from './components/dialogs/StartScreen';
 import { OpenFileModal } from './components/dialogs/OpenFileModal';
@@ -73,7 +74,7 @@ const DEFAULT_SPEC: AssignmentSpec = {
 export const App: React.FC = () => {
   // Theme & Navigation
   const [theme, setTheme] = React.useState<'light' | 'dark'>('light');
-  const [activeTab, setActiveTab] = React.useState<'workspace' | 'academic' | 'voices' | 'runs' | 'providers'>('workspace');
+  const [activeTab, setActiveTab] = React.useState<'workspace' | 'academic' | 'voices' | 'intel' | 'runs' | 'providers'>('workspace');
   const [isEcoDrawerOpen, setIsEcoDrawerOpen] = React.useState(false);
   const [isStartOpen, setIsStartOpen] = React.useState(false);
   const [isOpenFileOpen, setIsOpenFileOpen] = React.useState(false);
@@ -474,6 +475,10 @@ export const App: React.FC = () => {
         )}
 
         {/* RUNS TAB */}
+        {activeTab === 'intel' && (
+          <VoiceIntelligencePanel />
+        )}
+
         {activeTab === 'voices' && (
           <VoicesPanel />
         )}

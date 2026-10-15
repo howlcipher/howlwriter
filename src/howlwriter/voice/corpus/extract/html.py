@@ -83,8 +83,8 @@ class _ProseParser(HTMLParser):
         self._flush()
 
 
-def extract_html(path: Path) -> ExtractionResult:
-    raw, failure = read_bytes(path)
+def extract_html(path: Path, data: bytes | None = None) -> ExtractionResult:
+    raw, failure = (data, None) if data is not None else read_bytes(path)
     if failure is not None:
         failure.parser = "html"
         return failure

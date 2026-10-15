@@ -523,6 +523,23 @@ def render_profile(
             lines.append(f"  - note: {overrides.notes}")
         lines.append("")
 
+    # --- supporting evidence from other registers, lowest priority ---
+    evidence = getattr(profile, "supporting_evidence", None) or {}
+    tendencies = [t for t in evidence.get("tendencies", []) if isinstance(t, str)]
+    if tendencies:
+        lines.append(
+            "SUPPORTING EVIDENCE (from the author's informal communication; low weight, "
+            f"{evidence.get('status', 'unvalidated')}):"
+        )
+        for item in tendencies[:6]:
+            lines.append(f"  - {item}")
+        lines.append(
+            "  These are cross-context tendencies, not features of this register. They "
+            "never override the mode's rules, the context traits above, or formality, "
+            "and they must not introduce casual phrasing, fragments, or shorthand."
+        )
+        lines.append("")
+
     # --- honesty about the evidence ---
     summary = profile.corpus_summary
     validation = profile.validation

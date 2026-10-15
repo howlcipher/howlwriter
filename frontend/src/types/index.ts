@@ -483,3 +483,174 @@ export interface GenerationProvenance {
   draft_sha256: string;
   artifact_sha256: string;
 }
+
+// --- Voice Intelligence ---------------------------------------------------
+
+export interface VoiceIntelIdentities {
+  identities: string[];
+  preferred_identity: string | null;
+}
+
+export interface VoiceIntelProfileState {
+  profile: string;
+  voice: string;
+  context: string;
+  state: 'BUILT' | 'NOT_BUILT';
+  built_at?: string;
+  training_documents?: number;
+  holdout_documents?: number;
+  training_words?: number;
+  sufficiency?: string;
+  confidence?: string;
+  validation_bands?: Record<string, string>;
+  characteristics?: Array<{ name: string; value: string; confidence: number }>;
+  sources_by_authorship?: Record<string, number>;
+  voice_match?: {
+    status: string;
+    genuine_documents: number;
+    auc: number | null;
+    interval_95: [number, number] | null;
+    controls: number | null;
+  };
+  drift_windows?: number;
+}
+
+export interface VoiceIntelStatus {
+  identity: string;
+  display_name: string;
+  scanned: boolean;
+  mounts: Array<{ source_index: number; root_exists: boolean; listable: boolean; filesystem: string; error: string }>;
+  exclusions: string[];
+  scan: Record<string, any>;
+  review: { pending: number; decisions: number; reopened: number; by_authorship: Record<string, number> };
+  profiles: VoiceIntelProfileState[];
+  chat_evidence: { status: string; source: string; tendencies: number } | null;
+}
+
+export interface VoiceIntelReviewItem {
+  doc_id: string;
+  title: string;
+  path?: string;
+  category: string;
+  context: string;
+  words: number;
+  paragraphs: number;
+  proposed: string;
+  reasons: string[];
+  style_signals: string[];
+  priority: number;
+  reopened: boolean;
+  predates_llm_era: boolean | null;
+}
+
+export interface NaturalnessDimension {
+  name: string;
+  label: string;
+  value: number;
+  reference_median: number | null;
+  reference_p10: number | null;
+  reference_p90: number | null;
+  score: number | null;
+  direction: string;
+  measures: string;
+}
+
+export interface ScoreLocation {
+  kind: string;
+  paragraph_index: number | null;
+  sentence_index: number | null;
+  message: string;
+  excerpt: string;
+}
+
+export interface NaturalnessReport {
+  status: 'SCORED' | 'UNAVAILABLE';
+  score: number | null;
+  context: string;
+  reason: string;
+  calibration_version: string;
+  calibration_source: string;
+  reference_documents: number;
+  evidence: string;
+  confidence: string;
+  confidence_basis: string;
+  dimensions: NaturalnessDimension[];
+  strengths: string[];
+  weaknesses: string[];
+  locations: ScoreLocation[];
+  suggestions: string[];
+  words: number;
+  disclaimer: string;
+}
+
+export interface VoiceMatchDimension {
+  name: string;
+  label: string;
+  distance: number;
+  typical_distance: number | null;
+  features: Record<string, { value: number; profile_median: number; z: number }>;
+}
+
+export interface DriftFinding {
+  first_paragraph: number;
+  last_paragraph: number;
+  span: string;
+  metric: string;
+  observed: number;
+  direction: string;
+  severity: string;
+  confidence: string;
+  message: string;
+  suggestion: string;
+}
+
+export interface VoiceMatchReport {
+  status: 'SCORED' | 'UNAVAILABLE';
+  score: number | null;
+  band: string;
+  profile: string;
+  context: string;
+  reason: string;
+  calibration_version: string;
+  calibration_status: string;
+  evidence: string;
+  confidence: string;
+  confidence_basis: string;
+  distance: number | null;
+  comparison_share_as_close: number | null;
+  dimensions: VoiceMatchDimension[];
+  differences: string[];
+  drift: DriftFinding[];
+  words: number;
+  disclaimer: string;
+}
+
+export interface PersonalEvaluation {
+  version: string;
+  mode: string;
+  context: string;
+  profile_selection: { voice: string | null; identity: string | null; reason: string; document_category: string };
+  words: number;
+  naturalness: NaturalnessReport;
+  voice_match: VoiceMatchReport;
+  drift: { status: string; reason?: string; findings: DriftFinding[]; note?: string };
+  independence_note: string;
+}
+
+export interface PersonalComparison {
+  context: string;
+  profile_selection: PersonalEvaluation['profile_selection'];
+  original: PersonalEvaluation;
+  revised: PersonalEvaluation;
+  naturalness: { original: number | null; revised: number | null; delta: number | null };
+  voice_match: { original: number | null; revised: number | null; delta: number | null };
+  changed_dimensions: Array<{ family: string; dimension: string; label: string; delta?: number; direction?: string }>;
+  remaining_drift: DriftFinding[];
+  meaning_preservation: { status: string; differences: Array<{ kind: string; description: string }> };
+  factual_integrity: { status: string; findings: Array<{ code: string; message: string }> };
+  citations: { status: string; removed: string[]; added: string[] };
+  requirements: { status: string; reason?: string; problems?: string[] };
+  verdict: string;
+  integrity_problems: string[];
+  policy: string;
+}

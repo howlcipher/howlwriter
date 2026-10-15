@@ -40,6 +40,13 @@ class WritingReport(DataClassSerializationMixin):
     meaning_reviewer_provider: str | None = None
     reviewer_independence: str | None = None
     voice_match: float | None = None
+    #: Set together with `voice_match` when the voice is an identity profile
+    #: with a calibration. `voice_match` is then a 0-1 percentile against the
+    #: author's held-out writing (never an authorship probability); the band
+    #: and basis say what it is. When the score was withheld, `voice_match`
+    #: stays None and the basis says why.
+    voice_match_band: str | None = None
+    voice_match_basis: str | None = None
     unsupported_claims: int | None = None
     contradicted_claims: int | None = None
     verified_claims: int | None = None
@@ -408,8 +415,16 @@ class WritingReport(DataClassSerializationMixin):
             for label, value in metrics:
                 if value is None:
                     continue
-                rendered = f"{value:.0%}" if label == "Voice match" else str(value)
+                if label == "Voice match":
+                    band = f" {self.voice_match_band}" if self.voice_match_band else ""
+                    rendered = f"{value * 100:.0f}/100 percentile{band}"
+                else:
+                    rendered = str(value)
                 lines.append(f"{label:<28}{rendered}")
+        if self.voice_match_basis:
+            if self.voice_match is None:
+                lines.append(f"{'Voice match':<28}unavailable")
+            lines.append(f"  {self.voice_match_basis}")
 
         if self.semantic_meaning_status is not None:
             lines.append("Meaning Preservation:")

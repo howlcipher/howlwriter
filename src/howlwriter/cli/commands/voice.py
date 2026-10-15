@@ -121,6 +121,11 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
     )
     remove_parser.set_defaults(handler=run_remove)
 
+    # --- identity workflow: scan, review, build-identity, sync, status ---
+    from howlwriter.cli.commands.voice_identity import add_identity_subparsers
+
+    add_identity_subparsers(voice_subparsers)
+
     return parser
 
 
@@ -363,6 +368,8 @@ def render_inspection(
         for name, value in sorted(overrides.traits.items()):
             lines.append(f"  {name}: {value}")
 
+    lines += _calibration_section(store)
+
     if verbose:
         lines += _verbose_sections(profile, store)
 
@@ -372,6 +379,43 @@ def render_inspection(
             lines.append(f"  - {warning}")
 
     return "\n".join(lines)
+
+
+def _calibration_section(store: VoiceStore) -> list[str]:
+    """Identity-built profiles carry a scoring calibration; summarise it."""
+    import json
+
+    path = store.directory / "calibration.json"
+    if not path.is_file():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ["", "Calibration: unreadable calibration.json"]
+    identity = payload.get("identity") or {}
+    vm = payload.get("voice_match") or {}
+    validation = vm.get("validation") or {}
+    pooled = validation.get("pooled_separation") or {}
+    genuine = len(vm.get("genuine_distances") or [])
+    sources = payload.get("sources") or {}
+    lines = [
+        "",
+        f"Identity: {identity.get('display_name') or identity.get('identity')} "
+        f"({identity.get('context')} profile, personal voice)",
+        f"  Attested sources: {sources.get('documents', 0)} "
+        + ", ".join(f"{k}={v}" for k, v in (sources.get("by_authorship") or {}).items()),
+        "Voice Match calibration",
+        f"  Genuine calibration documents: {genuine} "
+        f"({validation.get('genuine_loo_n', 0)} leave-one-out, {validation.get('genuine_holdout_n', 0)} holdout)",
+        f"  Comparison documents:          {pooled.get('control_n', 0)}",
+        f"  Separation AUC:                {pooled.get('auc')} {pooled.get('interval_95') or ''}",
+        "  Status:                        "
+        + ("VALIDATED" if validation.get("validated") else
+           "CALIBRATED, discrimination not established" if genuine >= 8 else
+           "INSUFFICIENT for a score"),
+        f"  Drift baseline windows:        {(payload.get('drift') or {}).get('windows', 0)}",
+    ]
+    return lines
 
 
 def _verbose_sections(profile: VoiceProfile, store: VoiceStore) -> list[str]:

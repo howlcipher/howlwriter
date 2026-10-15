@@ -14,6 +14,7 @@ honest outcome.
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 import re
 
@@ -31,6 +32,10 @@ from howlwriter.voice.corpus.extract import (
 #: header stamp, so zero is too strict a threshold to be useful.
 _MIN_TEXT_LAYER_CHARS = 200
 
+#: A PDF longer than this is a book or a manual, not a document a person
+#: wrote in one piece, and parsing it would dominate a scan's runtime.
+MAX_PDF_PAGES = 400
+
 _INSTALL_HINT = (
     "PDF extraction needs the optional 'corpus' extra: pip install 'howlwriter[corpus]'"
 )
@@ -44,7 +49,7 @@ def pypdf_available() -> bool:
         return False
 
 
-def extract_pdf(path: Path) -> ExtractionResult:
+def extract_pdf(path: Path, data: bytes | None = None) -> ExtractionResult:
     try:
         import pypdf
     except ImportError:
@@ -52,13 +57,13 @@ def extract_pdf(path: Path) -> ExtractionResult:
             parser="pdf", status=STATUS_UNAVAILABLE, reason=_INSTALL_HINT,
         )
 
-    raw, failure = read_bytes(path)
+    raw, failure = (data, None) if data is not None else read_bytes(path)
     if failure is not None:
         failure.parser = "pdf"
         return failure
 
     try:
-        reader = pypdf.PdfReader(path)
+        reader = pypdf.PdfReader(io.BytesIO(raw))
         if getattr(reader, "is_encrypted", False):
             # An empty user password is common and harmless to try; a real
             # one means the document is not ours to open.
@@ -73,6 +78,15 @@ def extract_pdf(path: Path) -> ExtractionResult:
                     parser="pdf", status=STATUS_UNAVAILABLE,
                     reason="document is encrypted and could not be opened",
                 )
+        total_pages = len(reader.pages)
+        if total_pages > MAX_PDF_PAGES:
+            return ExtractionResult(
+                parser="pdf", status=STATUS_FAILED,
+                reason=(
+                    f"{total_pages} pages exceeds the {MAX_PDF_PAGES}-page limit; "
+                    "a document this long is not read in full"
+                ),
+            )
         pages = [(page.extract_text() or "") for page in reader.pages]
     except Exception as error:
         return ExtractionResult(
