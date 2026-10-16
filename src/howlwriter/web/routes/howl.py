@@ -25,6 +25,8 @@ def execute_howl_pipeline(req: HowlPipelineRequest) -> HowlPipelineResponse:
     config = ConfigLoader().load(
         project_config_path=req.config_path, mode=parse_mode(req.mode)
     )
+    if req.voice_examples:
+        config.voice_examples = req.voice_examples
     try:
         apply_selection(
             config,

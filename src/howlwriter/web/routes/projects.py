@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import threading
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -73,6 +73,8 @@ class DraftRequest(BriefRequest):
     allow_generic: bool = False
     allow_remote: bool = False
     instructions: str = Field(default="", max_length=4000)
+    voice_examples: Literal["auto", "on", "off"] = "auto"
+    voice_revision: bool = True
 
 
 class ValidateRequest(BaseModel):
@@ -325,6 +327,8 @@ async def post_draft(project_id: str, request: DraftRequest) -> dict:
                 mode=request.mode,
                 instructions=request.instructions,
                 allow_remote=request.allow_remote,
+                voice_examples=request.voice_examples,
+                revise=request.voice_revision,
             )
         except PermissionError as error:
             return {"error": str(error), "needs_authorization": True}

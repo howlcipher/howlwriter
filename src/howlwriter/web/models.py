@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -93,6 +93,7 @@ class HumanizeRequest(BaseModel):
     deterministic_only: bool = False
     apply_safe_rewrites: bool = False
     config_path: Optional[str] = None
+    voice_examples: Optional[Literal["auto", "on", "off"]] = None
     cwd: Optional[str] = None
     voice_profile: Optional[str] = None
     #: Name of a personal voice in the local registry. An alternative to
@@ -139,6 +140,7 @@ class HowlPipelineRequest(BaseModel):
     deterministic_only: bool = False
     apply_safe_rewrites: bool = False
     config_path: Optional[str] = None
+    voice_examples: Optional[Literal["auto", "on", "off"]] = None
     cwd: Optional[str] = None
     voice_profile: Optional[str] = None
     #: Name of a personal voice in the local registry. An alternative to

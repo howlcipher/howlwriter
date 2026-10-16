@@ -63,6 +63,13 @@ def add_subparser(
     )
     add_selection_arguments(parser)
     parser.add_argument(
+        "--voice-examples",
+        choices=("auto", "on", "off"),
+        default=None,
+        help="Show the model short passages of your own writing as style examples: auto = local "
+        "models only (default), on = also remote models (sends those passages), off = never.",
+    )
+    parser.add_argument(
         "--deterministic",
         action="store_true",
         help="Force deterministic-only execution without model calls.",
@@ -141,6 +148,8 @@ def run(args: argparse.Namespace) -> int:
     config = ConfigLoader().load(
         mode=mode, project_config_path=args.project_config_path
     )
+    if getattr(args, "voice_examples", None):
+        config.voice_examples = args.voice_examples
     outline_voice = outline.voice_profile if outline is not None else None
     apply_selection(
         config,

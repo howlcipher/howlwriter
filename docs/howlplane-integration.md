@@ -119,7 +119,9 @@ bound, HowlWriter asks which model to use before anything is sent:
   `--review-provider` for independent review steps) before the subcommand,
   e.g. `howlwriter --provider codex humanize draft.md`, or set
   `HOWLWRITER_PROVIDER` / `HOWLWRITER_REVIEW_PROVIDER`. Without a choice the
-  command refuses and nothing is sent.
+  command refuses and nothing is sent. `--local-model <ollama model>` (or
+  `HOWLWRITER_LOCAL_MODEL`) chooses which Ollama model "local" runs;
+  HowlPlane's default is `qwen2.5-coder:7b-instruct`.
 - **Web UI:** a model step answers HTTP 409 `model_choice_required` and the
   page shows a picker; the request is retried once with the choice in the
   `X-HowlWriter-Provider` header (`none` = continue without a model). A model

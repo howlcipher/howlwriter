@@ -320,10 +320,7 @@ def _same(a: str, b: str) -> bool:
 
 def _backend_for(provider: str) -> Any:
     """The HowlPlane backend for exactly this provider (no automatic alternates)."""
-    _ensure_howlplane_on_path()
-    from howlplane.control_plane.agent_execution import AgentBackendRegistry
-
-    return AgentBackendRegistry.get_backend(provider)
+    return provider_choice.make_backend(provider)
 
 
 _GLOBAL_BRIDGE: HowlPlaneWritingBridge | None = None

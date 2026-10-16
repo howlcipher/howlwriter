@@ -47,6 +47,7 @@ from howlwriter.evaluation import naturalness as naturalness_stage
 from howlwriter.evaluation import voice_match as vm
 from howlwriter.evaluation.perturb import PERTURBATIONS
 from howlwriter.voice.corpus.build import ArtifactContext, SelectedSource, build_voice
+from howlwriter.voice import exemplars
 from howlwriter.voice.corpus.store import VoiceStore
 from howlwriter.voice.identity import classify, privacy
 from howlwriter.voice.identity.families import assign_families
@@ -395,6 +396,13 @@ def _make_artifacts(
             "naturalness_context": spec.context,
         }
         files = {CALIBRATION_FILE: json.dumps(payload, indent=2, sort_keys=True)}
+        # Style examples: attested, selection-filtered training text only.
+        bank = exemplars.build_bank(
+            (k, context.texts[k], by_path[k].selection.weight, by_path[k].selection.authorship or "")
+            for k in context.train_keys
+            if k in context.texts and k in by_path and k not in workshop_keys
+        )
+        files[exemplars.EXEMPLARS_FILE] = json.dumps(bank, indent=1)
         evidence = store.load_chat_evidence()
         if evidence:
             from howlwriter.voice.identity.chat import supporting_evidence_for

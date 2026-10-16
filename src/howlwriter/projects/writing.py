@@ -24,10 +24,11 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from howlwriter.integration.provider_choice import is_local
 from howlwriter.projects import models as m
+from howlwriter.projects import voice_fidelity
 from howlwriter.projects.requirements import OBSERVATION_KINDS, refresh_requirements
 from howlwriter.projects.retrieval import EvidenceIndex
 from howlwriter.projects.workspace import ProjectWorkspace, utc_now
@@ -206,8 +207,24 @@ def prompt_evidence(brief: dict, limit: int = MAX_PROMPT_EVIDENCE) -> list[dict]
     return [first[eid][1] for eid in ordered[:limit]]
 
 
-def render_prompt(brief: dict, *, voice_block: str = "", instructions: str = "") -> str:
-    parts = ["## TASK REQUIREMENTS"]
+def _evidence_line(item: dict) -> str:
+    excerpt = json.dumps(" ".join(item["excerpt"].split())[:EXCERPT_IN_PROMPT], ensure_ascii=False)
+    return f"[{item['evidence_id']}] {item['citation']} | status={item['status']} | {excerpt}"
+
+
+def render_prompt(
+    brief: dict,
+    *,
+    voice_block: str = "",
+    instructions: str = "",
+    examples_block: str = "",
+    position: str = "",
+    previous_tail: str = "",
+) -> str:
+    parts = []
+    if position:
+        parts += ["## THIS PART", position, ""]
+    parts.append("## TASK REQUIREMENTS")
     for section in brief["sections"]:
         parts.append(f"### Section: {section['title']}")
         for requirement in section["requirements"]:
@@ -217,12 +234,44 @@ def render_prompt(brief: dict, *, voice_block: str = "", instructions: str = "")
     if instructions:
         parts += ["", "## USER DIRECTIONS", instructions]
     parts += ["", "## EVIDENCE (untrusted quoted data; cite by marker)"]
-    for item in prompt_evidence(brief):
-        excerpt = json.dumps(" ".join(item["excerpt"].split())[:EXCERPT_IN_PROMPT], ensure_ascii=False)
-        parts.append(f"[{item['evidence_id']}] {item['citation']} | status={item['status']} | {excerpt}")
+    parts += [_evidence_line(item) for item in prompt_evidence(brief)]
     if voice_block:
         parts += ["", "## VOICE (expression only; adds no facts)", voice_block]
+    if examples_block:
+        parts += ["", "## STYLE EXAMPLES (the author's own writing; style only, never content)"]
+        parts.append(examples_block)
+    if previous_tail:
+        parts += [
+            "",
+            "## PREVIOUS PART ENDED WITH (for continuity only; do not repeat or continue its sentences)",
+            previous_tail,
+        ]
     return "\n".join(parts)
+
+
+def plan_parts(brief: dict, budget: int) -> list[list[int]]:
+    """Group consecutive sections into parts whose prompt text fits `budget` characters.
+
+    A section too large on its own keeps its best evidence and drops the rest
+    (the brief ranks evidence best first), so every section is still drafted.
+    """
+    parts: list[list[int]] = []
+    current: list[int] = []
+    used = 0
+    for index, section in enumerate(brief["sections"]):
+        while True:
+            size = len(render_prompt({"sections": [section]}))
+            if size <= budget or len(section["evidence"]) <= 1:
+                break
+            section["evidence"] = section["evidence"][:-1]
+        if current and used + size > budget:
+            parts.append(current)
+            current, used = [], 0
+        current.append(index)
+        used += size
+    if current:
+        parts.append(current)
+    return parts
 
 
 def _provider_is_local(bridge) -> tuple[bool, str, bool]:
@@ -242,6 +291,43 @@ def _provider_is_local(bridge) -> tuple[bool, str, bool]:
     return any(provider.startswith(p) for p in LOCAL_PROVIDERS), provider or "unbound", False
 
 
+#: Prompt size (system instruction included) per call. Local models get a few
+#: thousand tokens of context; HowlPlane refuses a local prompt over 8,192
+#: tokens (~4 characters each), and the reply needs room too. Remote CLIs
+#: receive the prompt as one argument, which Linux caps at 128 KiB.
+LOCAL_PROMPT_CHARS = 24_000
+REMOTE_PROMPT_CHARS = 90_000
+EXAMPLE_CHARS = {True: 1_800, False: 3_000}
+TAIL_CHARS = 500
+
+GROUNDING_INSTRUCTION = """You repair the citations of a drafted report passage.
+
+Every factual statement must end with the marker of the evidence that supports it, chosen ONLY from
+the EVIDENCE list given, e.g. [ev-0123456789ab]. For each sentence listed under PROBLEMS: add the
+right marker if an evidence item supports it; otherwise rewrite it as [MISSING: <what is needed>] or
+remove it. Remove any marker that is not in the EVIDENCE list. Do not add facts, numbers, or results.
+Keep the ## headings and the wording of everything else. Return only the repaired Markdown passage."""
+
+#: Problems worth one repair pass: claims without support and invented or misused citations.
+GROUNDING_PROBLEMS = (
+    "unsupported_claim",
+    "fabricated_citation",
+    "number_not_in_evidence",
+    "instruction_cited_as_observation",
+)
+
+REVISE_INSTRUCTION = """You revise a drafted report passage so it reads like one specific author.
+
+Change expression only. Keep every evidence marker such as [ev-0123456789ab] and every
+[MISSING: ...] placeholder exactly as written, attached to the same claims. Keep every ## heading.
+Do not add, remove, or change facts, numbers, names, results, or citations. Return only the revised
+Markdown passage."""
+
+
+def _voice_name(config) -> str:
+    return Path(config.voice_profile).parent.name if config.voice_profile else ""
+
+
 def draft(
     workspace: ProjectWorkspace,
     brief: dict,
@@ -251,19 +337,32 @@ def draft(
     instructions: str = "",
     custom_backend: Any | None = None,
     allow_remote: bool = False,
+    voice_examples: str = "auto",
+    revise: bool = True,
+    progress: Callable[[str], None] | None = None,
 ) -> dict:
-    """Write the report through the writer role with the selected voice."""
+    """Write the report through the writer role with the selected voice.
+
+    Sections are drafted in parts sized for the chosen model, so a large lab
+    fits a small local model. Each part is measured against the profile and
+    revised once when it reads unlike the person; a revision is kept only if
+    it preserves every evidence marker, placeholder, heading, and number.
+    ``voice_examples``: "auto" shows passages of the person's own writing to
+    local models only; "on" also to remote models; "off" never.
+    """
     from howlwriter.domain.modes import parse_mode
     from howlwriter.humanize.rewriter import _load_voice_profile
     from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
     from howlwriter.integration.model_role import WritingRole
+    from howlwriter.voice import exemplars
     from howlwriter.voice.application import render_profile
     from howlwriter.voice.selection import provenance_record, require_loaded
 
+    if voice_examples not in ("auto", "on", "off"):
+        raise ValueError("voice_examples must be auto, on, or off")
+    say = progress or (lambda message: None)
     profile = _load_voice_profile(config.voice_profile) if config.voice_profile else None
     require_loaded(config, profile)
-    voice_block = render_profile(profile, parse_mode(mode)) if profile is not None else ""
-    prompt = render_prompt(brief, voice_block=voice_block, instructions=instructions)
     bridge = get_howlplane_bridge()
     meta = workspace.load_meta()
     if custom_backend is not None:
@@ -278,28 +377,187 @@ def draft(
             "Authorize once with `howlwriter project authorize-remote <project>` or pass --allow-remote; "
             "or use `project draft --skeleton` for a model-free draft."
         )
-    result = bridge.execute_writing_role(
-        role=WritingRole.WRITER,
-        prompt=prompt,
-        system_instruction=SYSTEM_INSTRUCTION,
-        context={"project_id": workspace.project_id, "mode": mode, "grounded": True},
-        timeout_seconds=900,
-        custom_backend=custom_backend,
-    )
-    if not result.success:
-        raise RuntimeError(f"writer failed: {result.error_message or 'unknown error'}")
-    body = ((result.structured_output or {}).get("body_markdown") or result.raw_output or "").strip()
+
+    full_voice = render_profile(profile, parse_mode(mode)) if profile is not None else ""
+    voice_block = voice_fidelity.compact_voice_block(full_voice) if local else full_voice
+    voice = _voice_name(config) if profile is not None else ""
+    use_examples = profile is not None and (voice_examples == "on" or (voice_examples == "auto" and local))
+    bank = exemplars.load_bank(Path(config.voice_profile).parent) if use_examples else []
+    example_chars = EXAMPLE_CHARS[local] if bank else 0
+    total = LOCAL_PROMPT_CHARS if local else REMOTE_PROMPT_CHARS
+    fixed = len(SYSTEM_INSTRUCTION) + len(voice_block) + example_chars + len(instructions)
+    fixed += TAIL_CHARS + 1_500  # headings, part position, requirement labels
+    budget = max(total - fixed, 4_000)
+    plan = plan_parts(brief, budget)
+
+    outputs: list[str] = []
+    prompts: list[str] = []
+    providers: list[str] = []
+    revisions: list[dict] = []
+    repairs: list[dict] = []
+    examples_used = 0
+    for number, indices in enumerate(plan, start=1):
+        part = {"sections": [brief["sections"][i] for i in indices]}
+        titles = [section["title"] for section in part["sections"]]
+        position = ""
+        if len(plan) > 1:
+            position = (
+                f"This is part {number} of {len(plan)} of one report. Write ONLY these sections, each under "
+                f"its own ## heading: {'; '.join(titles)}. No introduction or conclusion unless it is one "
+                "of these sections."
+            )
+        query = " ".join(titles + [r["text"] for s in part["sections"] for r in s["requirements"]])
+        examples = exemplars.choose(bank, query, max_chars=example_chars) if bank else []
+        examples_used += len(examples)
+        examples_block = exemplars.render(examples)
+        tail = outputs[-1].strip().split("\n\n")[-1][-TAIL_CHARS:] if outputs else ""
+        prompt = render_prompt(
+            part,
+            voice_block=voice_block,
+            instructions=instructions,
+            examples_block=examples_block,
+            position=position,
+            previous_tail=tail,
+        )
+        prompts.append(prompt)
+        say(f"Drafting part {number} of {len(plan)} ({len(titles)} section(s))...")
+        result = bridge.execute_writing_role(
+            role=WritingRole.WRITER,
+            prompt=prompt,
+            system_instruction=SYSTEM_INSTRUCTION,
+            context={"project_id": workspace.project_id, "mode": mode, "grounded": True, "part": number},
+            timeout_seconds=900,
+            custom_backend=custom_backend,
+        )
+        if not result.success:
+            raise RuntimeError(f"writer failed on part {number}: {result.error_message or 'unknown error'}")
+        providers.append(getattr(result, "provider", ""))
+        text = _unfenced((result.structured_output or {}).get("body_markdown") or result.raw_output or "")
+
+        problems = _grounding_problems(workspace, text)
+        if problems:
+            say(f"Repairing citations in part {number} ({len(problems)} problem(s))...")
+            allowed = {item["evidence_id"] for item in prompt_evidence(part)}
+            lines = ["## PROBLEMS", *[f"- ({p['type']}) {p['sentence']}" for p in problems[:25]], "",
+                     "## EVIDENCE (the only markers you may use)"]
+            lines += [_evidence_line(item) for item in prompt_evidence(part)]
+            lines += ["", "## PASSAGE TO REPAIR", text]
+            repaired = bridge.execute_writing_role(
+                role=WritingRole.WRITER,
+                prompt="\n".join(lines),
+                system_instruction=GROUNDING_INSTRUCTION,
+                context={"project_id": workspace.project_id, "mode": mode, "grounding_repair": number},
+                timeout_seconds=900,
+                custom_backend=custom_backend,
+            )
+            candidate = _unfenced(repaired.raw_output or "") if repaired.success else ""
+            after = _grounding_problems(workspace, candidate) if candidate else problems
+            kept, reason = _repair_acceptable(text, candidate, allowed, problems, after)
+            repairs.append(
+                {"part": number, "problems_before": len(problems), "problems_after": len(after),
+                 "applied": kept, "rejected_because": reason}
+            )
+            if kept:
+                text = candidate
+
+        feedback = voice_fidelity.style_feedback(text, voice, mode) if (revise and voice) else []
+        if feedback:
+            say(f"Revising part {number} toward your voice ({len(feedback)} difference(s))...")
+            lines = ["## MEASURED DIFFERENCES FROM THE AUTHOR'S WRITING", *[f"- {line}" for line in feedback]]
+            lines += ["", "## VOICE", voice_block]
+            if examples_block:
+                lines += ["", "## STYLE EXAMPLES (style only, never content)", examples_block]
+            lines += ["", "## PASSAGE TO REVISE", text]
+            revise_prompt = "\n".join(lines)
+            revised = bridge.execute_writing_role(
+                role=WritingRole.WRITER,
+                prompt=revise_prompt,
+                system_instruction=REVISE_INSTRUCTION,
+                context={"project_id": workspace.project_id, "mode": mode, "revision": number},
+                timeout_seconds=900,
+                custom_backend=custom_backend,
+            )
+            candidate = _unfenced(revised.raw_output or "") if revised.success else ""
+            kept, reason = voice_fidelity.revision_preserved(text, candidate)
+            before = voice_fidelity.style_distance(text, voice, mode)
+            after = voice_fidelity.style_distance(candidate, voice, mode) if kept else None
+            if kept and before is not None and (after is None or after >= before):
+                kept, reason = False, "the revision did not read measurably closer to your writing"
+            revisions.append(
+                {"part": number, "differences": feedback, "applied": kept, "rejected_because": reason,
+                 "distance_before": before, "distance_after": after}
+            )
+            if kept:
+                text = candidate
+        outputs.append(text)
+
+    body = "\n\n".join(outputs).strip()
+    scores = voice_fidelity.draft_scores(body, voice, mode) if voice else {}
+    from howlwriter.projects.validate import check_draft
+
+    checked = check_draft(workspace, body)
+    validation = {"verdict": checked["verdict"], "issue_counts": checked["issue_counts"]}
     record = {
         "created_at": utc_now(),
         "mode": mode,
-        "provider": getattr(result, "provider", ""),
+        "provider": providers[0] if len(set(providers)) == 1 else ",".join(providers),
+        "local_model": local,
+        "parts": len(plan),
         "voice": provenance_record(config, loaded=profile is not None),
         "voice_block_sha256": hashlib.sha256(voice_block.encode("utf-8")).hexdigest() if voice_block else "",
-        "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+        "voice_block_form": "compact" if voice_block != full_voice else "full",
+        "voice_examples": {"setting": voice_examples, "shown": examples_used},
+        "grounding_repairs": repairs,
+        "voice_revisions": revisions,
+        "scores": scores,
+        "validation": validation,
+        "prompt_sha256": [hashlib.sha256(p.encode("utf-8")).hexdigest() for p in prompts],
         "evidence_ids": sorted({e["evidence_id"] for s in brief["sections"] for e in s["evidence"]}),
     }
     path = save_draft(workspace, body, record)
-    return {"text": body, "path": str(path), "provenance": record, "prompt": prompt}
+    return {"text": body, "path": str(path), "provenance": record, "prompt": prompts[0] if prompts else ""}
+
+
+def _unfenced(text: str) -> str:
+    """Model output without a wrapping ``` fence (small models often add one)."""
+    text = text.strip()
+    if text.startswith("```") and text.endswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+        text = text[: text.rfind("```")]
+    return text.strip()
+
+
+def _grounding_problems(workspace: ProjectWorkspace, text: str) -> list[dict]:
+    from howlwriter.projects.validate import check_draft
+
+    if not text.strip():
+        return []
+    return [i for i in check_draft(workspace, text)["issues"] if i["type"] in GROUNDING_PROBLEMS]
+
+
+def _repair_acceptable(
+    original: str, repaired: str, allowed: set[str], before: list[dict], after: list[dict]
+) -> tuple[bool, str]:
+    """A citation repair replaces the part only if it is strictly better grounded and invents nothing."""
+    import re
+
+    if not repaired.strip():
+        return False, "the repair was empty"
+    heading = re.compile(r"^\s*#{1,6}\s", re.MULTILINE)
+    if len(heading.findall(repaired)) != len(heading.findall(original)):
+        return False, "the repair changed the section headings"
+    if len(repaired.split()) < 0.25 * len(original.split()):
+        return False, "the repair removed most of the passage"
+    markers = set(re.findall(r"\[(ev-[0-9a-f]+)\]", repaired))
+    if markers - allowed:
+        return False, "the repair used markers that were not offered"
+    if len(after) >= len(before):
+        return False, "the repair did not reduce the problems"
+    number = re.compile(r"(?<![\w.])\d+(?:[.,:]\d+)*(?![\w])")
+    strip = re.compile(r"\[ev-[0-9a-f]+\]")
+    if set(number.findall(strip.sub("", repaired))) - set(number.findall(strip.sub("", original))):
+        return False, "the repair introduced new numbers"
+    return True, ""
 
 
 def save_draft(workspace: ProjectWorkspace, text: str, record: dict) -> Path:

@@ -20,6 +20,8 @@ from typing import Callable, TextIO
 
 ENV_PROVIDER = "HOWLWRITER_PROVIDER"
 ENV_REVIEW_PROVIDER = "HOWLWRITER_REVIEW_PROVIDER"
+#: Which Ollama model "local" means (HowlPlane's default is a coding model).
+ENV_LOCAL_MODEL = "HOWLWRITER_LOCAL_MODEL"
 
 
 @dataclass(frozen=True)
@@ -56,7 +58,7 @@ HEADER_CONFIRMED = "x-howlwriter-send-confirmed"
 
 
 #: Process-wide choices from the CLI (--provider, environment, whether it may ask).
-PROCESS_DEFAULTS: dict = {"writer": None, "reviewer": None, "interactive": False}
+PROCESS_DEFAULTS: dict = {"writer": None, "reviewer": None, "interactive": False, "local_model": None}
 
 
 class ProviderChoiceCancelled(RuntimeError):
@@ -88,19 +90,37 @@ def is_local(provider: str | None) -> bool:
     return (provider or "").lower().startswith(("ollama", "local", "llama"))
 
 
+def local_model() -> str | None:
+    """The Ollama model chosen with --local-model or HOWLWRITER_LOCAL_MODEL, if any."""
+    return PROCESS_DEFAULTS.get("local_model") or os.environ.get(ENV_LOCAL_MODEL, "").strip() or None
+
+
+def make_backend(provider: str):
+    """HowlPlane's backend for exactly this provider; "local" uses the chosen Ollama model."""
+    from howlwriter.integration.howlplane_bridge import _ensure_howlplane_on_path
+
+    _ensure_howlplane_on_path()
+    from howlplane.control_plane.agent_execution import AgentBackendRegistry, OllamaLocalBackend
+
+    model = local_model()
+    if provider == "local_ollama" and model:
+        return OllamaLocalBackend(model=model)
+    return AgentBackendRegistry.get_backend(provider)
+
+
 def availability() -> list[tuple[ProviderOption, bool, str]]:
     """Each option, whether it can run now, and why not."""
     from howlwriter.integration.howlplane_bridge import _ensure_howlplane_on_path
 
     _ensure_howlplane_on_path()
     try:
-        from howlplane.control_plane.agent_execution import AgentBackendRegistry
+        import howlplane.control_plane.agent_execution  # noqa: F401
     except ImportError:
         return [(o, False, "HowlPlane is not installed") for o in OPTIONS]
     rows = []
     for option in OPTIONS:
         try:
-            backend = AgentBackendRegistry.get_backend(option.provider)
+            backend = make_backend(option.provider)
             if option.local and hasattr(backend, "diagnose"):
                 diagnosis = backend.diagnose()
                 ready = bool(diagnosis.available)

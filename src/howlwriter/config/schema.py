@@ -49,3 +49,6 @@ class HowlWriterConfig(DataClassSerializationMixin):
     provider_preferences: dict[str, list[str]] = field(default_factory=dict)
     review_requirements: list[str] = field(default_factory=list)
     apply_safe_rewrites: bool = False
+    #: Short passages of the person's own writing shown to the model as a
+    #: style pattern: "auto" = local models only, "on" = remote too, "off".
+    voice_examples: str = "auto"

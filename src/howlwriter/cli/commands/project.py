@@ -122,6 +122,19 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
         "--allow-remote", action="store_true", help="Send evidence excerpts to a remote model this once."
     )
     p.add_argument("--instructions", default="")
+    p.add_argument(
+        "--voice-examples",
+        choices=("auto", "on", "off"),
+        default="auto",
+        help="Show the model short passages of your own writing as style examples: auto = local models "
+        "only (default), on = also remote models (sends those passages), off = never.",
+    )
+    p.add_argument(
+        "--no-voice-revision",
+        dest="voice_revision",
+        action="store_false",
+        help="Skip the measured revision pass that brings each part closer to your voice.",
+    )
     p.add_argument("--out", default=None, help="Also write the draft to this file.")
     p = add("validate", "Validate a draft.")
     p.add_argument("draft")
@@ -448,11 +461,59 @@ def _draft(args, workspace) -> int:
             mode=args.mode,
             instructions=args.instructions,
             allow_remote=args.allow_remote,
+            voice_examples=args.voice_examples,
+            revise=args.voice_revision,
+            progress=lambda message: print(message, file=sys.stderr),
         )
+        _print_draft_report(result["provenance"])
     if args.out:
         Path(args.out).write_text(result["text"], encoding="utf-8")
     print(f"draft saved privately: {result['path']}", file=sys.stderr)
     return _out(args, {k: v for k, v in result.items() if k != "prompt"}, result["text"])
+
+
+def _print_draft_report(record: dict) -> None:
+    """How the draft was written and how close it came to the person's voice (stderr)."""
+    out = sys.stderr
+    print(
+        f"parts: {record.get('parts')}  voice: {record.get('voice_block_form')} description, "
+        f"{(record.get('voice_examples') or {}).get('shown', 0)} style example(s) shown",
+        file=out,
+    )
+    for repair in record.get("grounding_repairs") or []:
+        state = "applied" if repair["applied"] else f"not applied ({repair['rejected_because']})"
+        print(
+            f"part {repair['part']}: citation repair {state}; problems "
+            f"{repair['problems_before']} -> {repair['problems_after']}",
+            file=out,
+        )
+    for revision in record.get("voice_revisions") or []:
+        state = "applied" if revision["applied"] else f"not applied ({revision['rejected_because']})"
+        print(f"part {revision['part']}: voice revision {state}", file=out)
+    scores = record.get("scores") or {}
+    if scores.get("voice_match") or scores.get("naturalness"):
+        match, natural = scores.get("voice_match") or {}, scores.get("naturalness") or {}
+
+        def shown(report: dict) -> str:
+            return str(report.get("score") if report.get("score") is not None else report.get("status"))
+
+        band = f" ({match['band']})" if match.get("band") else ""
+        print(
+            f"Voice Match: {shown(match)}{band}; Naturalness: {shown(natural)}; "
+            f"style differences left: {scores.get('drift_findings')}",
+            file=out,
+        )
+        print(scores.get("note", ""), file=out)
+    validation = record.get("validation") or {}
+    if validation:
+        issues = ", ".join(f"{k} {v}" for k, v in sorted((validation.get("issue_counts") or {}).items()))
+        print(f"Validator: {validation.get('verdict')}{' (' + issues + ')' if issues else ''}", file=out)
+        if validation.get("verdict") in ("BLOCKED", "INCOMPLETE"):
+            print(
+                "This draft is not ready: run `project validate` for the sentences, fix or cite them, "
+                "or redraft with a stronger model.",
+                file=out,
+            )
 
 
 def _browse(args, workspace) -> int:

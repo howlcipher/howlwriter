@@ -235,6 +235,35 @@ def _render_voice_profile(
     return render_profile(profile, mode, realization=realization)
 
 
+def _style_examples(config, bridge, role, text: str, custom_backend: Any | None) -> str:
+    """Passages of the person's own writing for this rewrite, if they may go to this model.
+
+    Local models get them by default (config.voice_examples "auto"); a remote
+    model only when the setting is "on", because they are private writing.
+    """
+    from howlwriter.integration.provider_choice import is_local
+    from howlwriter.voice import exemplars
+
+    setting = getattr(config, "voice_examples", "auto")
+    if setting == "off" or not config.voice_profile:
+        return ""
+    if custom_backend is not None:
+        provider = getattr(custom_backend, "agent_id", "")
+    else:
+        provider = ""
+        if hasattr(bridge, "chosen_provider"):
+            provider = bridge.chosen_provider(role) or ""
+        if not provider and getattr(bridge, "registry", None) is not None:
+            binding = bridge.registry.get_binding("writing", role.value)
+            provider = getattr(binding, "provider", "") or ""
+    local = is_local(provider)
+    if not (setting == "on" or local):
+        return ""
+    bank = exemplars.load_bank(Path(config.voice_profile).parent)
+    chosen = exemplars.choose(bank, text[:4000], max_chars=1_800 if local else 3_000)
+    return exemplars.render(chosen)
+
+
 class ModelHumanizerRewriter:
     """Real model-backed Humanizer executor wired through HowlPlane."""
 
@@ -282,6 +311,7 @@ class ModelHumanizerRewriter:
 
         require_loaded(config, voice_profile)
         voice_text = _render_voice_profile(voice_profile, document.mode, realization=realization)
+        examples_text = _style_examples(config, bridge, self.role, document.text, custom_backend)
 
         mode_label = (
             document.mode.value
@@ -368,6 +398,8 @@ class ModelHumanizerRewriter:
             f"- Transformation Strength: {config.humanization_strength}",
             "- Voice Profile:",
             voice_text,
+            *(["- Style Examples (the author's own writing; imitate style only, never content):",
+               examples_text] if examples_text else []),
             f"- {banned_summary}",
             "- Detected Style Issues:",
             issues_text,
