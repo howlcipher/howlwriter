@@ -83,6 +83,12 @@ def build_parser() -> argparse.ArgumentParser:
         "Without it you are asked when a step first needs a model (or set HOWLWRITER_PROVIDER).",
     )
     parser.add_argument(
+        "--local-model",
+        metavar="OLLAMA_MODEL",
+        help="Which Ollama model 'local' runs, e.g. qwen2.5:7b-instruct (or set HOWLWRITER_LOCAL_MODEL). "
+        "HowlPlane's default is a coding model.",
+    )
+    parser.add_argument(
         "--review-provider",
         metavar="MODEL",
         help="Model for independent review steps (must differ from the writer to be independent). "
@@ -118,7 +124,7 @@ def _configure_model_choice(args: argparse.Namespace) -> None:
     # Read when the bridge is first created, so commands that never need a
     # model never import HowlPlane.
     provider_choice.PROCESS_DEFAULTS.update(
-        writer=writer, reviewer=reviewer, interactive=sys.stdin.isatty()
+        writer=writer, reviewer=reviewer, interactive=sys.stdin.isatty(), local_model=args.local_model
     )
 
 

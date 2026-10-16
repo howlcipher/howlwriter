@@ -42,6 +42,20 @@ DRIVE_READONLY_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 TOKEN_FILE = "google_drive_readonly_token.json"
 GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
 MAX_EXPORT_BYTES = 10 * 1024 * 1024
+#: Bump when the exported text's layout changes; older copies are fetched again.
+EXPORT_FORMAT = 2
+
+
+def paragraph_text(text: str) -> str:
+    """One Google Docs paragraph per blank-line-separated block.
+
+    Both the Docs API and the text/plain export end each paragraph with a
+    single line break, while every analysis here splits paragraphs on blank
+    lines: without this, a whole Doc reads as two or three huge paragraphs.
+    """
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").replace("\v", "\n").split("\n")
+    return "\n\n".join(line.strip() for line in lines if line.strip())
+
 
 DISCLOSURE = (
     "Reading native Google Docs through the Drive API with a read-only token. "
@@ -280,7 +294,13 @@ def fetch_native_documents(
         and (
             e.get("status") == "native_unavailable"
             # Exported before private copies were kept: fetch again so profiles can read it.
-            or (e.get("parser") == EXPORT_PARSER and not Path(e.get("content_path") or "").is_file())
+            or (
+                e.get("parser") == EXPORT_PARSER
+                and (
+                    not Path(e.get("content_path") or "").is_file()
+                    or e.get("export_format") != EXPORT_FORMAT
+                )
+            )
             # Names the mount cannot even stat (e.g. containing ':') are
             # still native documents the API can supply.
             or (e.get("status") == "unreadable" and not e.get("suffix"))
@@ -337,7 +357,9 @@ def fetch_native_documents(
             counts["failed"] += 1
             entry["reason"] = "exported text exceeds the size limit"
             continue
-        text = data.decode("utf-8", errors="replace").lstrip("﻿")
+        # The hash below stays on the raw export, so authorship decisions keyed
+        # by it survive layout changes; analysis and the private copy use paragraphs.
+        text = paragraph_text(data.decode("utf-8", errors="replace").lstrip("﻿"))
         try:
             modified = datetime.fromisoformat(
                 str(found.get("modifiedTime", "")).replace("Z", "+00:00")
@@ -372,6 +394,7 @@ def fetch_native_documents(
         if entry.get("status") == "extracted":
             # Profile builds read text from a file; the mount only holds a stub.
             entry["content_path"] = str(store.save_export(entry["doc_id"], text))
+            entry["export_format"] = EXPORT_FORMAT
         history = _revisions(service, found["id"])
         provenance = entry.setdefault("provenance", {})
         provenance.update(history)

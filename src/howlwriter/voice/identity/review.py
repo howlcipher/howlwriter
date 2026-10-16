@@ -108,6 +108,12 @@ def attest(
         raise ValueError("an extraction applies only to MIXED_AUTHORSHIP")
     if extraction and include_paragraphs:
         raise ValueError("use either include_paragraphs or an extraction, not both")
+    if not category and not context:
+        # Pin the category the person saw when deciding: a later classifier
+        # change must not move an attested document into another profile.
+        category = (entry.get("classification") or {}).get("category", "")
+        if category not in classify.CATEGORIES:
+            category = ""
     fingerprint = entry.get("fingerprint") or {}
     return store.record_decision(
         Decision(

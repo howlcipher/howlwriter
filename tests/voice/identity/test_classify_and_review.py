@@ -231,3 +231,25 @@ def test_preview_is_numbered_and_refuses_excluded_paths(env, drive):
     store.save_inventory(inventory)
     with pytest.raises(ValueError):
         review.preview(store, doc_id)
+
+
+def test_a_decision_pins_the_category_shown_so_reclassification_cannot_move_it(env, drive):
+    from howlwriter.voice.identity.profiles import select_sources
+
+    scan("william", sources=[str(drive)])
+    store = IdentityStore("william")
+    entries = store.load_inventory()["entries"]
+    doc_id, entry = next((k, e) for k, e in entries.items() if e["relative_path"] == "school/lab01.md")
+    shown = entry["classification"]["category"]
+    assert classify.CATEGORY_CONTEXT.get(shown) == "academic"
+    decision = review.attest(store, doc_id, "h")
+    assert decision.category == shown
+
+    inventory = store.load_inventory()
+    inventory["entries"][doc_id]["classification"]["category"] = classify.UNKNOWN  # a later classifier
+    store.save_inventory(inventory)
+    config = store.load_config()
+    chosen, _ = select_sources(
+        config, store.load_inventory()["entries"], store.load_decisions(), config.profiles["academic"]
+    )
+    assert doc_id in {c.doc_id for c in chosen}

@@ -159,6 +159,46 @@ project must be authorized once (`project authorize-remote`, recorded with a
 timestamp) or the call passes `--allow-remote`. Raw files are never sent; only
 the selected excerpts in the brief.
 
+**Drafting in parts.** Sections are packed into parts that fit the chosen
+model: about 24,000 characters per call (system instruction included) for a
+local model, whose context is 8,192 tokens, and 90,000 for a remote CLI,
+whose prompt is one command-line argument. Each part names the sections it
+must write and carries the last paragraph of the previous part for
+continuity. A section too large on its own keeps its best-ranked evidence.
+Local models get a compact voice description (measurements and short rules);
+remote models get the full one.
+
+**Sounding like you.** Three things, all local and deterministic around the
+model:
+
+- *Style examples.* Each identity profile build stores, privately beside the
+  profile, short prose paragraphs from its attested training documents (never
+  holdout documents, never unattested paragraphs, never Workshop bundles; fully
+  attested writing first). Each part shows the model up to three, from
+  different documents, as a pattern for how you write, never for content.
+  These are your private writing: `--voice-examples auto` (default) shows them
+  to local models only, `on` also to remote models, `off` never. The same
+  setting applies to `humanize` and `howl`.
+- *Citation repair.* Before any voice work, each part is checked by the
+  validator. Uncited claims, invented markers, numbers absent from the
+  evidence, or instructions cited as observations get one repair pass that
+  lists the exact sentences and the only markers allowed. The repair is kept
+  only if it reduces the problems, uses only offered markers, keeps the
+  headings, and adds no number.
+- *Measured revision.* Each drafted part is measured against your profile's
+  drift baseline (the windows `howlwriter evaluate` uses). Notable differences
+  ("uses substantially longer sentences (31 words); typical 17-24") become
+  revision instructions for one pass. The revision replaces the part only if it
+  keeps every evidence marker, every `[MISSING]` placeholder, every heading,
+  adds no number, and measures closer to your writing than the original (fewer
+  or weaker drift findings); otherwise the original stays and the reason is
+  recorded. `--no-voice-revision` skips it.
+- *Scores and verdict.* The finished draft's Voice Match, Naturalness,
+  remaining drift findings and the validator's verdict are reported and saved
+  in its provenance; a BLOCKED or INCOMPLETE draft is labelled not ready. A draft revised toward
+  your profile is not an independent sample of your writing, so these say how
+  close it came, not who wrote it.
+
 Voice selection is the existing strict layer: `--voice`, `--identity` (with
 `--mode academic` → `william-academic`), `--allow-generic`. A missing or
 unbuilt profile stops the run; nothing falls back silently. Provenance records
@@ -272,4 +312,9 @@ first transcription; media itself never leaves the machine.
 - The unsupported-claim check is a heuristic (numbers, protocol vocabulary,
   observation verbs); hedged sentences are allowed through.
 - Embeddings are not used; BM25 is enough at project scale and keeps text local.
-- Web drafting through a model requires a configured HowlPlane writer role.
+- Drafting asks which model to use (or takes `--provider`); see `docs/howlplane-integration.md`.
+- A 7B local model on CPU is slow (minutes per part), writes plainer prose,
+  and often fails to cite evidence; the validator catches it, but expect to
+  fix such drafts by hand or redraft with a larger model. `--local-model`
+  (or `HOWLWRITER_LOCAL_MODEL`) picks the Ollama model; HowlPlane's default is
+  a coding model, and a general instruct model of the same size writes better.

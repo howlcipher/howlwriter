@@ -376,6 +376,9 @@ def build_voice(
 
         report.readable_files += 1
         content_hash = dedup_stage.content_hash(extraction.text)
+        # content_hash ignores layout (it serves deduplication); measurements
+        # depend on paragraph breaks, so reuse also needs the exact text.
+        text_sha256 = hashlib.sha256(extraction.text.encode("utf-8")).hexdigest()
 
         # The credential guard runs before any derived value is computed or
         # cached, so nothing from a secret-bearing file is retained at all.
@@ -423,6 +426,7 @@ def build_voice(
             and cached.content_hash == content_hash
             and str(key) in cached_features
             and cached_features[key].get("feature_schema") == schema_fingerprint
+            and cached_features[key].get("text_sha256") == text_sha256
         )
         if unchanged:
             features = DocumentFeatures.from_dict(cached_features[key].get("features", {}))
@@ -508,6 +512,7 @@ def build_voice(
         )
         feature_cache[key] = {
             "content_hash": content_hash,
+            "text_sha256": text_sha256,
             "feature_schema": schema_fingerprint,
             "features": features.to_dict(),
             "context": context_result.context,

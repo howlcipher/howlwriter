@@ -114,3 +114,36 @@ comparison, chat evidence, Drive API fallback, CLI, web tab.
    `howlwriter voice build-identity --identity william --profiles professional`.
 2. More comparison-author prose would let Voice Match reach VALIDATED (needs
    at least 5 comparison documents and an AUC interval lower bound of 0.70).
+
+## Update 2026-10-16: Google Docs, both profiles, voice fidelity
+
+Sanitized: counts and decisions only.
+
+- Read-only Drive OAuth completed by the owner; 65 native Google Docs
+  exported and processed locally (9 native files were not single Docs).
+- All authorship decisions were made by the owner (51 recorded at that point;
+  4 new candidates surfaced later and are pending). Documents produced with
+  HowlWriter and the voice profile were recorded as mixed authorship with no
+  attested paragraphs, so they never train the profile (no feedback loop).
+- `william-professional` built from 3 documents (limited, no holdout; Voice
+  Match not usable yet). `william-academic` rebuilt: 29 train / 7 holdout.
+- Bugs found on the real corpus and fixed with tests:
+  - an unmounted FUSE drive was scanned as "everything removed" (#25);
+  - exported Google Docs were attested but never reached a profile (#25);
+  - exported Google Docs kept one line break per paragraph, so whole
+    documents read as two or three paragraphs; the profile told the model
+    "paragraphs typically 10-127 words (mean ~889)". Exports are now one
+    paragraph per block (the raw hash is unchanged, so decisions hold);
+  - the build reused cached measurements when only paragraph breaks changed
+    (its content hash ignores layout); reuse now also needs the exact text;
+  - a decision without a category followed later re-classification, which
+    moved one attested professional document out of its profile; decisions
+    now pin the category shown when decided.
+- After the fixes the academic description reads paragraphs 7-115 words
+  (mean ~77), 1-6 sentences (mean ~3.6).
+- Voice fidelity for drafting: style-example bank per profile (training
+  documents only, private), drafts in parts sized for the model, one measured
+  revision pass per part guarded by marker/number checks, scores in provenance.
+- Academic Voice Match after the rebuild: AUC 0.80, interval lower bound below
+  the 0.70 validation floor; more comparison-author prose is still the way to
+  validate it.

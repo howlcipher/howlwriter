@@ -205,6 +205,8 @@ const WriteView: React.FC<{ project: string; summary: ProjectSummary }> = ({ pro
   const [text, setText] = React.useState('');
   const [validation, setValidation] = React.useState<Validation | null>(null);
   const [identity, setIdentity] = React.useState('');
+  const [examples, setExamples] = React.useState<'auto' | 'on' | 'off'>('auto');
+  const [revision, setRevision] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [note, setNote] = React.useState<string | null>(null);
 
@@ -224,11 +226,15 @@ const WriteView: React.FC<{ project: string; summary: ProjectSummary }> = ({ pro
     try {
       const job = await waitForJob(await projectsApi.draft(project, {
         mode: 'academic', identity: identity || null, allow_remote: allowRemote,
+        voice_examples: examples, voice_revision: revision,
       }));
       const payload = (job.result as { payload?: Record<string, unknown> } | undefined)?.payload || {};
       if (job.status === 'FAILED') setNote(job.error_message || 'Drafting failed');
       else if (payload.needs_authorization) setNote(String(payload.error));
-      else { setText(String(payload.text || '')); setNote(`Draft saved privately as ${payload.path}.`); }
+      else {
+        setText(String(payload.text || ''));
+        setNote(`Draft saved privately as ${payload.path}. ${draftReport(payload.provenance)}`);
+      }
     } finally {
       setBusy(false);
     }
@@ -239,6 +245,17 @@ const WriteView: React.FC<{ project: string; summary: ProjectSummary }> = ({ pro
         <button type="button" className="btn-tech" onClick={skeleton} disabled={busy}><BookOpen size={14} /> Evidence skeleton (no model)</button>
         <input className="form-input" style={{ width: 140 }} placeholder="identity (e.g. william)" value={identity}
           onChange={(e) => setIdentity(e.target.value)} aria-label="Voice identity" />
+        <select className="form-input" style={{ width: 'auto' }} value={examples} aria-label="Style examples"
+          onChange={(e) => setExamples(e.target.value as 'auto' | 'on' | 'off')}
+          title="Short passages of your own writing shown to the model as a style pattern">
+          <option value="auto">Style examples: local models only</option>
+          <option value="on">Style examples: also remote models (sends them)</option>
+          <option value="off">Style examples: off</option>
+        </select>
+        <label style={{ ...MUTED, display: 'flex', gap: 4, alignItems: 'center' }}>
+          <input type="checkbox" checked={revision} onChange={(e) => setRevision(e.target.checked)} />
+          Revise toward my voice
+        </label>
         <button type="button" className="btn-tech btn-tech-primary" onClick={() => draft(false)} disabled={busy}><PenLine size={14} /> Draft with voice</button>
         {!summary.remote_inference_authorized && (
           <button type="button" className="btn-tech" onClick={() => draft(true)} disabled={busy}
@@ -363,6 +380,25 @@ const BrowserView: React.FC<{ project: string }> = ({ project }) => {
 };
 
 // --- panel ----------------------------------------------------------------------
+
+
+/** One line on how a draft was written and how close it came to the person's voice. */
+function draftReport(provenance: unknown): string {
+  const record = (provenance || {}) as {
+    parts?: number;
+    voice_examples?: { shown?: number };
+    voice_revisions?: Array<{ applied: boolean }>;
+    scores?: { voice_match?: { score?: number | null; status?: string }; naturalness?: { score?: number | null; status?: string } };
+    validation?: { verdict?: string };
+  };
+  const revised = (record.voice_revisions || []).filter((r) => r.applied).length;
+  const value = (r?: { score?: number | null; status?: string }) => (r?.score ?? r?.status ?? 'n/a');
+  return `Written in ${record.parts ?? 1} part(s); ${record.voice_examples?.shown ?? 0} style example(s); `
+    + `${revised} part(s) revised toward your voice. Voice Match: ${value(record.scores?.voice_match)}; `
+    + `Naturalness: ${value(record.scores?.naturalness)}. Validator: ${record.validation?.verdict ?? 'n/a'}`
+    + (record.validation?.verdict === 'BLOCKED' || record.validation?.verdict === 'INCOMPLETE'
+      ? ' (not ready: validate below to see the sentences).' : '.');
+}
 
 export const ProjectsPanel: React.FC = () => {
   const [projects, setProjects] = React.useState<ProjectSummary[]>([]);

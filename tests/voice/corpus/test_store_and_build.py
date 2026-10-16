@@ -283,7 +283,7 @@ def test_the_feature_cache_holds_vectors_not_prose(store_root, corpus_dir):
     assert "rollback" not in serialized
     for entry in cache["documents"].values():
         assert set(entry) <= {
-            "content_hash", "feature_schema", "features", "context",
+            "content_hash", "text_sha256", "feature_schema", "features", "context",
             "classification", "reused", "model_traits", "structural_labels",
         }
         assert all(isinstance(v, (int, float)) for v in entry["features"].values())
@@ -359,6 +359,19 @@ def test_unchanged_files_reuse_their_cached_features(store_root, corpus_dir, bui
     reused = sum(1 for entry in cache["documents"].values() if entry.get("reused"))
     assert reused == len(cache["documents"])
     assert reused > 0
+
+
+def test_a_change_in_paragraph_breaks_alone_is_measured_again(store_root, corpus_dir, build_corpus):
+    # The dedup content hash ignores layout; paragraph measurements do not.
+    build_corpus(12)
+    build_voice("subject", [corpus_dir], store_root=store_root, deterministic_only=True)
+    path = corpus_dir / "doc03.md"
+    path.write_text(path.read_text(encoding="utf-8").replace("\n\n", "\n"), encoding="utf-8")
+    outcome = build_voice("subject", [corpus_dir], store_root=store_root, deterministic_only=True)
+    cache = json.loads((outcome.directory / "features.json").read_text(encoding="utf-8"))
+    entry = cache["documents"][str(path.resolve())]
+    assert entry["reused"] is False
+    assert entry["features"]["paragraphs"] == 1
 
 
 def test_no_cache_forces_a_full_recompute(store_root, corpus_dir, build_corpus):

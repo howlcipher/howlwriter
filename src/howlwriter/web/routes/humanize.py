@@ -45,6 +45,8 @@ def run_humanize(req: HumanizeRequest) -> HumanizeResponse:
 
     if req.apply_safe_rewrites:
         config.apply_safe_rewrites = True
+    if req.voice_examples:
+        config.voice_examples = req.voice_examples
 
     try:
         apply_selection(

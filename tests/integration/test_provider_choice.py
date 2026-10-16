@@ -255,3 +255,45 @@ def test_the_web_server_never_prompts_on_its_terminal(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "uvicorn", None)  # stop before serving
     ui.run(type("A", (), {"host": "127.0.0.1", "port": 0, "no_browser": True})())
     assert pc.PROCESS_DEFAULTS["interactive"] is False
+
+
+def test_humanizer_shows_style_examples_to_local_models_only_unless_turned_on(tmp_path, backends):
+    import json as _json
+
+    from howlwriter.config.defaults import default_config
+    from howlwriter.humanize.rewriter import _style_examples
+    from howlwriter.voice import exemplars
+
+    voice_dir = tmp_path / "voice"
+    voice_dir.mkdir()
+    (voice_dir / "profile.json").write_text("{}", encoding="utf-8")
+    passage = "I checked the capture twice. The handshake was there the second time; the certificate was not."
+    bank = {"paragraphs": [{"doc": "a", "weight": 1.0, "words": 18, "text": passage}]}
+    (voice_dir / exemplars.EXEMPLARS_FILE).write_text(_json.dumps(bank), encoding="utf-8")
+    config = default_config()
+    config.voice_profile = str(voice_dir / "profile.json")
+    bridge = _bridge()
+    bridge.use_provider("local")
+    assert passage in _style_examples(config, bridge, WritingRole.HUMANIZER, "capture handshake", None)
+    bridge.use_provider("claude")
+    assert _style_examples(config, bridge, WritingRole.HUMANIZER, "capture handshake", None) == ""
+    config.voice_examples = "on"
+    assert passage in _style_examples(config, bridge, WritingRole.HUMANIZER, "capture", None)
+    config.voice_examples = "off"
+    bridge.use_provider("local")
+    assert _style_examples(config, bridge, WritingRole.HUMANIZER, "capture", None) == ""
+
+
+def test_local_model_choice_selects_that_ollama_model(monkeypatch):
+    agent_execution = pytest.importorskip("howlplane.control_plane.agent_execution")
+    OllamaLocalBackend = getattr(agent_execution, "OllamaLocalBackend", None)
+    if OllamaLocalBackend is None:
+        pytest.skip("this HowlPlane has no Ollama backend")
+
+    monkeypatch.setitem(pc.PROCESS_DEFAULTS, "local_model", "qwen2.5:7b-instruct")
+    backend = pc.make_backend("local_ollama")
+    assert isinstance(backend, OllamaLocalBackend) and backend.model == "qwen2.5:7b-instruct"
+    monkeypatch.setitem(pc.PROCESS_DEFAULTS, "local_model", None)
+    monkeypatch.setenv(pc.ENV_LOCAL_MODEL, "llama3.1:8b")
+    assert pc.make_backend("local_ollama").model == "llama3.1:8b"
+    assert pc.make_backend("codex").agent_id == "codex"
