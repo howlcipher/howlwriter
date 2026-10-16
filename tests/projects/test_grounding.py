@@ -341,3 +341,41 @@ def test_project_work_never_touches_voice_data(lab_folder, tmp_path, private_dir
     check_draft(workspace, skeleton(build_brief(workspace)))
     assert tree_digest(private_dirs / "voices") == before_voices
     assert tree_digest(private_dirs / "identities") == before_identities
+
+
+def test_questions_are_answered_in_the_draft_not_by_evidence(project):
+    added = add_requirement(project, "What is different between the TLS 1.2 and TLS 1.3 handshakes?")
+    assert added.kind == "question" and added.status == m.PENDING
+    assert "answer it in the draft" in added.status_reason
+    reference = _ids(project, m.REFERENCE, "certificate")
+    text = (
+        "## Handshakes\n\nThe TLS 1.3 handshake differs from TLS 1.2 handshakes in certificate "
+        f"visibility [{reference}].\n"
+    )
+    row = next(
+        r
+        for r in check_draft(project, text)["requirements"]["rows"]
+        if r["requirement_id"] == added.requirement_id
+    )
+    assert row["status"] == m.SATISFIED and "confirm" in row["reason"]
+
+
+def test_bullet_markers_cover_their_own_item_only(project):
+    reference = _ids(project, m.REFERENCE, "certificate")
+    citation = project.load_evidence()[reference].citation
+    text = (f"## Notes\n\n- {citation}: “TLS 1.3 encrypts the certificate.” [{reference}]\n"
+            "- The sensor generated 12 alerts.\n")
+    issues = check_draft(project, text)["issues"]
+    assert [i["type"] for i in issues] == ["unsupported_claim"]
+    assert "12 alerts" in issues[0]["sentence"]
+
+
+def test_prompt_evidence_is_bounded_and_prefers_top_ranked_items():
+    from howlwriter.projects.writing import prompt_evidence
+
+    sections = [{"title": f"S{n}", "requirements": [], "missing": [], "evidence": [
+        {"evidence_id": f"ev-{n:04d}{k:08d}", "citation": "c", "status": m.EXTRACTED, "category": m.REFERENCE,
+         "excerpt": "x"} for k in range(6)]} for n in range(30)]
+    chosen = prompt_evidence({"sections": sections}, limit=40)
+    assert len(chosen) == 40
+    assert all(item["evidence_id"].endswith("00000000") for item in chosen[:30])

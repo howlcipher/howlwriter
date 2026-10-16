@@ -173,6 +173,21 @@ def _job_ocr(state: dict, policy: ResourcePolicy, image_path: str) -> list[dict]
     return lines
 
 
+def _read_wav(path: str):
+    """16-bit PCM WAV -> float32 samples in [-1, 1]."""
+    import wave
+
+    import numpy as np
+
+    with wave.open(path, "rb") as handle:
+        if handle.getsampwidth() != 2:
+            raise ValueError("expected 16-bit PCM audio")
+        frames = handle.readframes(handle.getnframes())
+        channels = handle.getnchannels()
+    samples = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+    return samples.reshape(-1, channels).mean(axis=1) if channels > 1 else samples
+
+
 def _job_transcribe(state: dict, policy: ResourcePolicy, audio_path: str, model: str) -> list[dict]:
     key = f"whisper:{model}"
     engine = state.get(key)
@@ -183,7 +198,9 @@ def _job_transcribe(state: dict, policy: ResourcePolicy, audio_path: str, model:
             model, device="cpu", compute_type="int8", cpu_threads=policy.threads, num_workers=1
         )
         state[key] = engine
-    segments, _info = engine.transcribe(audio_path, vad_filter=True, beam_size=1)
+    # Pass decoded samples, not a path: the audio is already 16 kHz mono PCM from ffmpeg, and
+    # faster-whisper's own file decoding depends on a PyAV API that changes between releases.
+    segments, _info = engine.transcribe(_read_wav(audio_path), vad_filter=True, beam_size=1)
     out = []
     for segment in segments:
         text = segment.text.strip()

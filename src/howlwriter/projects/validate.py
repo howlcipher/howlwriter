@@ -46,14 +46,32 @@ _HEDGE = re.compile(
 )
 
 
+_BULLET_LINE = re.compile(r"^\s*(?:[-*•]|\d{1,3}[.)])\s+")
+
+
 def sentences(text: str) -> list[str]:
+    """Claim units: prose sentences; each bullet item is one unit (its marker covers the item)."""
     out = []
     for block in re.split(r"\n\s*\n", text):
         block = block.strip()
         if not block or block.startswith("#") or block.startswith("|"):
             continue
-        out += [s.strip() for s in _SENTENCE.split(block.replace("\n", " ")) if s.strip()]
+        prose: list[str] = []
+        for line in block.splitlines():
+            if _BULLET_LINE.match(line):
+                if prose:
+                    out += _split(" ".join(prose))
+                    prose = []
+                out.append(line.strip())
+            else:
+                prose.append(line.strip())
+        if prose:
+            out += _split(" ".join(prose))
     return out
+
+
+def _split(text: str) -> list[str]:
+    return [s.strip() for s in _SENTENCE.split(text) if s.strip()]
 
 
 def _numbers(text: str) -> set[str]:
@@ -61,7 +79,9 @@ def _numbers(text: str) -> set[str]:
 
 
 def _evidence_text(item: m.EvidenceItem) -> str:
-    return " ".join([item.excerpt, item.location, str(item.observation)[:20000]])
+    # The citation and file name count: "page_04.png, lines 81-114" is where it is, not a claim.
+    parts = [item.excerpt, item.location, item.citation, item.source_path, str(item.observation)[:20000]]
+    return " ".join(parts)
 
 
 def check_draft(workspace: ProjectWorkspace, text: str) -> dict:
@@ -166,13 +186,22 @@ def coverage_check(workspace: ProjectWorkspace, text: str | None = None) -> dict
         if (
             text is not None
             and not requirement.user_status
-            and requirement.kind in ("section", "citation", "formatting", "deliverable", "other")
+            and requirement.kind in ("section", "citation", "formatting", "deliverable", "question", "other")
         ):
             wanted = set(terms(requirement.text))
             if requirement.kind == "citation":
                 ok = bool(MARKER.search(text)) or bool(re.search(r"^#+\s*references", text, re.I | re.M))
                 status = m.SATISFIED if ok else m.PENDING
                 reason = "draft cites evidence" if ok else "draft has no citations"
+            elif requirement.kind == "question":
+                shared = wanted & draft_terms
+                answered = len(shared) >= max(2, (len(wanted) + 1) // 2)
+                status = m.SATISFIED if answered else m.PENDING
+                reason = (
+                    f"appears answered (discusses {', '.join(sorted(shared)[:5])}); confirm the answer"
+                    if answered
+                    else "not answered in the draft"
+                )
             elif requirement.kind == "section":
                 in_heading = any(len(wanted & set(terms(h))) >= max(1, min(2, len(wanted))) for h in headings)
                 shared = wanted & draft_terms

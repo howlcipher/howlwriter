@@ -67,7 +67,7 @@ _KINDS = (
     ),
 )
 OBSERVATION_KINDS = ("experiment", "screenshot", "comparison", "evidence")
-DRAFT_KINDS = ("section", "citation", "formatting", "deliverable")
+DRAFT_KINDS = ("section", "citation", "formatting", "deliverable", "question")
 MIN_SHARED_TERMS = 2
 MIN_SHARE = 0.3
 #: Imperative openers that state a task even without "must" or a bullet.
@@ -106,6 +106,8 @@ def requirement_lines(text: str) -> list[str]:
 
 
 def requirement_kind(text: str) -> str:
+    if text.rstrip().endswith("?"):
+        return "question"
     for kind, pattern in _KINDS:
         if pattern.search(text):
             return kind
@@ -168,6 +170,9 @@ def assess(requirement: m.Requirement, evidence: dict[str, m.EvidenceItem]) -> N
             f"set by the user{': ' + requirement.user_note if requirement.user_note else ''}"
         )
         return
+    if requirement.kind == "question":
+        _support(requirement, evidence)
+        return
     if requirement.kind in DRAFT_KINDS or requirement.kind == "other":
         requirement.status = m.PENDING
         requirement.status_reason = "checked against a draft by `project validate`"
@@ -209,6 +214,27 @@ def assess(requirement: m.Requirement, evidence: dict[str, m.EvidenceItem]) -> N
         requirement.status_reason = (
             "no observation evidence (capture, screenshot, data, or lab observation) found"
         )
+
+
+def _support(requirement: m.Requirement, evidence: dict[str, m.EvidenceItem]) -> None:
+    """A question is answered in the draft; observations that bear on it are linked as support."""
+    wanted = set(terms(requirement.text))
+    scored = []
+    for item in evidence.values():
+        if not is_observation(item):
+            continue
+        have = set(terms(" ".join([item.excerpt, item.source_path, _flatten(item.observation)])))
+        shared = wanted & have
+        if len(shared) >= MIN_SHARED_TERMS:
+            scored.append((len(shared) / max(1, len(wanted)), item.evidence_id))
+    scored.sort(reverse=True)
+    requirement.evidence_ids = [eid for _, eid in scored[:5]]
+    requirement.status = m.PENDING
+    requirement.status_reason = (
+        f"answer it in the draft; {len(scored)} observation(s) may support the answer"
+        if scored
+        else "answer it in the draft; no observation found that bears on it"
+    )
 
 
 def _flatten(value) -> str:

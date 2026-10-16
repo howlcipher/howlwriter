@@ -12,7 +12,7 @@ from howlwriter.projects import models as m
 from howlwriter.projects.scan import Extractors, scan_project, set_category
 from howlwriter.projects.workspace import ProjectWorkspace
 
-from tests.projects.conftest import FakeOcr, Off
+from tests.projects.conftest import FakeOcr, Off, line
 from tests.projects.fixtures import make_pcap, make_png
 
 
@@ -317,3 +317,130 @@ def test_only_reextracts_the_named_file(lab_folder):
     report = _scan(workspace, extractors=again, force=True, only={"draft notes.md"})
     assert again.reads == ["draft notes.md"] and report.removed == 0
     assert len([s for s in workspace.load_sources().values() if s.present]) == 4
+
+
+def test_rules_scripts_subtitles_and_secrets(lab_folder):
+    (lab_folder / "evidence" / "local.rules").write_text(
+        'alert tls any any -> any any (msg:"SNI lab"; tls.sni; content:"lab.example.test"; sid:1000001;)\n',
+        encoding="utf-8",
+    )
+    (lab_folder / "materials" / "genca.sh").write_text(
+        "#!/bin/sh\nopenssl req -x509 -new\n", encoding="utf-8"
+    )
+    (lab_folder / "materials" / "overview.srt").write_text(
+        "1\n00:00:03,200 --> 00:00:07,900\nStart the capture on the sensor.\n\n"
+        "2\n00:01:03,000 --> 00:01:04,500\nTwo alerts fire.\n",
+        encoding="utf-8",
+    )
+    (lab_folder / "evidence" / "server.pem").write_text(
+        "-----BEGIN PRIVATE KEY-----\nAAAA\n", encoding="utf-8"
+    )
+    workspace = ProjectWorkspace.create(lab_folder)
+    _scan(workspace)
+    sources = {s.path: s for s in workspace.load_sources().values()}
+    # A rule file is the student's work product, not an observation that anything ran.
+    assert sources["evidence/local.rules"].category == m.OUTPUT_DOCUMENT
+    assert sources["materials/genca.sh"].category == m.REFERENCE
+    srt = [e for e in workspace.load_evidence().values() if e.source_path == "materials/overview.srt"]
+    assert [e.location for e in srt] == ["00:03–00:07", "01:03–01:04"]
+    pem = sources["evidence/server.pem"]
+    assert pem.status == "skipped" and "never read" in pem.status_reason and pem.sha256 == ""
+    assert "PRIVATE KEY" not in (workspace.directory / "evidence.json").read_text()
+
+
+def test_files_skipped_for_lack_of_an_adapter_are_retried(lab_folder):
+    workspace = ProjectWorkspace.create(lab_folder)
+    _scan(workspace)
+    sources = workspace.load_sources()
+    record = next(s for s in sources.values() if s.path.endswith(".log"))
+    record.status, record.status_reason, record.evidence_count = "skipped", "no adapter for .log", 0
+    workspace.save_sources(sources)
+    again = CountingExtractors()
+    _scan(workspace, extractors=again)
+    assert again.reads == ["evidence/suricata-eve.log"]
+
+
+def test_keyboard_interrupt_is_recorded_and_resumable(lab_folder):
+    workspace = ProjectWorkspace.create(lab_folder)
+
+    class Interrupting(CountingExtractors):
+        def run(self, *args):
+            if len(self.reads) == 2:
+                raise KeyboardInterrupt
+            return super().run(*args)
+
+    with pytest.raises(KeyboardInterrupt):
+        _scan(workspace, extractors=Interrupting())
+    assert workspace.load_meta()["scan_state"]["status"] == "interrupted"
+    resumed = CountingExtractors()
+    _scan(workspace, extractors=resumed)
+    assert len(resumed.reads) == 2 and workspace.load_meta()["scan_state"]["status"] == "complete"
+
+
+def test_unchanged_duplicates_are_not_reread_but_promoted_when_the_original_goes(lab_folder):
+    (lab_folder / "copy").mkdir()
+    original = (lab_folder / "materials" / "tls-reference.docx").read_bytes()
+    (lab_folder / "copy" / "same.docx").write_bytes(original)
+    workspace = ProjectWorkspace.create(lab_folder)
+    _scan(workspace)
+    again = CountingExtractors()
+    report = _scan(workspace, extractors=again)
+    assert report.new_or_changed == 0 and report.unchanged == 5
+    (lab_folder / "copy" / "same.docx").unlink()  # the extracted copy (sorted first) is deleted
+    third = CountingExtractors()
+    _scan(workspace, extractors=third)
+    assert third.reads == ["materials/tls-reference.docx"]
+    survivor = next(s for s in workspace.load_sources().values() if s.path.endswith("tls-reference.docx"))
+    assert survivor.status == "extracted"
+
+
+def test_rendered_pages_and_video_frames_are_not_observations(lab_folder):
+    for folder in ("output/rendered_pdf", "work/video_frames", "evidence"):
+        (lab_folder / folder).mkdir(parents=True, exist_ok=True)
+    make_png(lab_folder / "output" / "rendered_pdf" / "page_03.png")
+    make_png(lab_folder / "work" / "video_frames" / "overview-0170.png", 65, 33)
+    make_png(lab_folder / "evidence" / "report-shot.png", 66, 34)
+    make_png(lab_folder / "evidence" / "alerts.png", 67, 35)
+    ocr = FakeOcr({"report-shot.png": [line("Lab 3 report | Page 4 of 13")],
+                   "alerts.png": [line("alert sid 1000001")]})
+    workspace = ProjectWorkspace.create(lab_folder)
+    _scan(workspace, extractors=_extractors(ocr=ocr))
+    sources = {s.path: s for s in workspace.load_sources().values()}
+    assert sources["output/rendered_pdf/page_03.png"].category == m.OUTPUT_DOCUMENT
+    assert sources["work/video_frames/overview-0170.png"].category == m.MULTIMEDIA
+    assert sources["evidence/report-shot.png"].category == m.OUTPUT_DOCUMENT
+    assert sources["evidence/alerts.png"].category == m.SCREENSHOT
+
+
+def test_new_classification_rules_apply_without_reextraction(lab_folder):
+    make_png(lab_folder / "evidence" / "report-shot.png")
+    ocr = FakeOcr({"report-shot.png": [line("Report | Page 2 of 9")]})
+    workspace = ProjectWorkspace.create(lab_folder)
+    _scan(workspace, extractors=_extractors(ocr=ocr))
+    sources = workspace.load_sources()
+    record = next(s for s in sources.values() if s.path.endswith("report-shot.png"))
+    record.category, record.metadata["classifier"] = m.SCREENSHOT, 1  # as an older version left it
+    workspace.save_sources(sources)
+    again = CountingExtractors()
+    again._ocr = ocr
+    _scan(workspace, extractors=again)
+    assert again.reads == []
+    record = next(s for s in workspace.load_sources().values() if s.path.endswith("report-shot.png"))
+    assert record.category == m.OUTPUT_DOCUMENT
+
+
+def test_frame_dumps_page_renders_tooling_and_working_files_are_not_observations(lab_folder):
+    (lab_folder / "output" / "audit").mkdir(parents=True)
+    make_png(lab_folder / "output" / "audit" / "overview-0001.png", 61, 31)
+    make_png(lab_folder / "output" / "audit" / "google-page08.png", 62, 32)
+    (lab_folder / "output" / "audit" / "build_sections.py").write_text("print('x')\n", encoding="utf-8")
+    (lab_folder / "output" / "audit" / "verified.json").write_text('{"ok": true}\n', encoding="utf-8")
+    (lab_folder / "evidence" / "server-02.log").write_text("TLS handshake complete\n", encoding="utf-8")
+    workspace = ProjectWorkspace.create(lab_folder)
+    _scan(workspace)
+    sources = {s.path: s for s in workspace.load_sources().values()}
+    assert sources["output/audit/overview-0001.png"].category == m.MULTIMEDIA
+    assert sources["output/audit/google-page08.png"].category == m.OUTPUT_DOCUMENT
+    assert sources["output/audit/build_sections.py"].category == m.OUTPUT_DOCUMENT
+    assert sources["output/audit/verified.json"].category == m.OUTPUT_DOCUMENT
+    assert sources["evidence/server-02.log"].category == m.EXPERIMENTAL

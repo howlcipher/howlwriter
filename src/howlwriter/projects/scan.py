@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import stat
 import time
@@ -42,6 +43,7 @@ SIZE_LIMITS = {
     "pcap": 500 * 1024 * 1024,
     "media": 4 * 1024 * 1024 * 1024,
     "data": 30 * 1024 * 1024,
+    "subtitles": 10 * 1024 * 1024,
 }
 DATA_EXCERPT_LINES = 40
 #: Browser profile and cache directories: never prose or evidence, often sensitive
@@ -116,8 +118,12 @@ def _family(suffix: str) -> str:
         return "image"
     if suffix in cls.VIDEO_SUFFIXES or suffix in cls.AUDIO_SUFFIXES:
         return "media"
-    if suffix in cls.DATA_SUFFIXES:
+    if suffix in cls.SECRET_SUFFIXES:
+        return "secret"
+    if suffix in cls.DATA_SUFFIXES or suffix in cls.CODE_SUFFIXES:
         return "data"
+    if suffix in cls.SUBTITLE_SUFFIXES:
+        return "subtitles"
     if suffix in cls.DOCUMENT_SUFFIXES:
         return "document"
     return "other"
@@ -176,6 +182,25 @@ def _hash_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _reclassify(record: m.SourceRecord, relative: str, suffix: str, evidence: dict) -> None:
+    """Apply new classification rules to an unchanged file from the text already extracted."""
+    text = "\n".join(
+        (item.observation.get("text") or item.excerpt)
+        for item in evidence.values()
+        if item.source_id == record.source_id
+    )
+    record.category, record.category_reason = cls.classify(relative, suffix, text)
+    record.metadata["classifier"] = cls.CLASSIFIER_VERSION
+
+
+def _original_present(record: m.SourceRecord, sources: dict, current_ids: set[str]) -> bool:
+    """A duplicate stays a duplicate while the copy it points at still exists and is extracted."""
+    original_id = record.metadata.get("duplicate_of", "")
+    original = sources.get(original_id)
+    return (original is not None and original_id in current_ids
+            and original.status not in ("duplicate", "failed"))
+
+
 def _gained_capability(previous: m.SourceRecord, now: dict) -> bool:
     """True when an extraction step that was off last time is available now and would matter.
 
@@ -184,8 +209,11 @@ def _gained_capability(previous: m.SourceRecord, now: dict) -> bool:
     before = previous.metadata.get("options")
     if before is None:  # recorded before options were tracked: infer from the adapter that ran
         method = previous.adapter or ""
-        before = {"ocr": "ocr" in method or previous.status == "extracted", "transcribe": "whisper" in method,
-                  "frames": "frames" in method}
+        before = {
+            "ocr": "ocr" in method or previous.status == "extracted",
+            "transcribe": "whisper" in method,
+            "frames": "frames" in method,
+        }
     if previous.suffix == ".pdf" and not previous.metadata.get("visual_pages"):
         return False
     return any(enabled and not before.get(name) for name, enabled in now.items())
@@ -222,6 +250,58 @@ def _extract_data(path: Path, data: bytes) -> AdapterResult:
         )
     if len(lines) > 4000:
         result.warnings.append(f"only the first 4000 of {len(lines)} lines were indexed")
+    return result
+
+
+_CUE = re.compile(r"(\d{1,2}):(\d{2}):(\d{2})[.,](\d{3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[.,](\d{3})")
+
+
+def _seconds(h: str, m_: str, s_: str, ms: str) -> float:
+    return int(h) * 3600 + int(m_) * 60 + int(s_) + int(ms) / 1000
+
+
+def _extract_subtitles(data: bytes, suffix: str) -> AdapterResult:
+    """SRT/VTT cues as timed transcript evidence, grouped like ASR segments."""
+    from howlwriter.projects.adapters.media import _group, timestamp
+
+    text = data.decode("utf-8", errors="replace").replace("\r\n", "\n")
+    segments = []
+    for block in re.split(r"\n\s*\n", text):
+        lines = [line.strip() for line in block.strip().splitlines()]
+        cue = next((i for i, line in enumerate(lines) if _CUE.search(line)), None)
+        if cue is None:
+            continue
+        found = _CUE.search(lines[cue]).groups()
+        words = " ".join(re.sub(r"<[^>]+>", "", line) for line in lines[cue + 1:]).strip()
+        if words:
+            segments.append(
+                {
+                    "start": _seconds(*found[:4]),
+                    "end": _seconds(*found[4:]),
+                    "text": words,
+                    "no_speech_prob": 0.0,
+                    "avg_logprob": 0.0,
+                }
+            )
+    result = AdapterResult(method=f"subtitles{suffix}", text="\n".join(s["text"] for s in segments))
+    for group in _group(segments):
+        start, end = group[0]["start"], group[-1]["end"]
+        result.items.append(
+            {
+                "kind": "transcript",
+                "source_type": "subtitles",
+                "method": result.method,
+                "status": "extracted_from_source",
+                "location": f"{timestamp(start)}–{timestamp(end)}",
+                "locator": {"start": start, "end": end},
+                "excerpt": " ".join(s["text"] for s in group)[:900],
+                "observation": {"segments": group},
+                "confidence": "high",
+                "limitations": ["subtitle text as published; timing is the subtitle file's"],
+            }
+        )
+    if not segments:
+        result.status, result.reason = "failed", "no subtitle cues found"
     return result
 
 
@@ -320,6 +400,8 @@ class Extractors:
             return extract_image(path, data, ocr=self.ocr)
         if family == "data":
             return _extract_data(path, data)
+        if family == "subtitles":
+            return _extract_subtitles(data, suffix)
         if suffix == ".pdf":
             from howlwriter.projects.adapters.documents import extract_pdf
 
@@ -346,6 +428,13 @@ def scan_project(
         return _scan(
             workspace, meta, extractors, force=force, only=only, progress=progress, should_stop=should_stop
         )
+    except KeyboardInterrupt:
+        state = workspace.load_meta()
+        state["scan_state"] = {
+            **state.get("scan_state", {}), "status": "interrupted", "interrupted_at": utc_now()
+        }
+        workspace.save_meta(state)
+        raise
     finally:
         if owned:
             extractors.close()
@@ -365,9 +454,12 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
 
     files = walk(root, policy, report.skipped)
     report.files = len(files)
+    current_ids = {source_id_for(relative) for relative, _info in files}
     seen_ids: set[str] = set()
     by_hash: dict[str, str] = {
-        r.sha256: sid for sid, r in sources.items() if r.sha256 and r.status not in ("duplicate", "failed")
+        r.sha256: sid
+        for sid, r in sources.items()
+        if r.sha256 and r.status not in ("duplicate", "failed") and sid in current_ids
     }
     for relative, info in files:
         source_id = source_id_for(relative)
@@ -386,11 +478,21 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
             and previous.size == info.st_size
             and abs(previous.mtime - info.st_mtime) < 1e-6
             and previous.analysis_version == ADAPTER_VERSION
-            and previous.status not in ("pending", "duplicate")
+            and previous.status != "pending"
+            and (previous.status != "duplicate" or _original_present(previous, sources, current_ids))
+            and not (
+                previous.status == "skipped"
+                and previous.status_reason.startswith("no adapter")
+                and _family(suffix) != "other"
+            )
             and not _gained_capability(previous, extractors.options(suffix))
         )
         if unchanged:
             report.unchanged += 1
+            stale_rules = previous.metadata.get("classifier") != cls.CLASSIFIER_VERSION
+            if previous.category_source == "heuristic" and stale_rules:
+                _reclassify(previous, relative, suffix, evidence)
+                sources[source_id] = previous
             continue
         report.new_or_changed += 1
         if progress:
@@ -406,7 +508,14 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
         family = _family(suffix)
         try:
             limit = SIZE_LIMITS.get(family)
-            if family == "other":
+            if family == "secret" or cls.SECRET_NAMES.search(Path(relative).name):
+                record.status, record.status_reason, record.adapter = (
+                    "skipped",
+                    "key, certificate, or credential material is never read",
+                    "",
+                )
+                result = AdapterResult(status="skipped")
+            elif family == "other":
                 record.status, record.status_reason, record.adapter = (
                     "skipped",
                     f"no adapter for {suffix or 'this file'}",
@@ -435,6 +544,7 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
                         else:
                             record.category, record.category_reason = cls.classify(relative, suffix, "")
                     record.evidence_count = 0
+                    record.metadata = {"duplicate_of": original}
                     sources[source_id] = record
                     report.duplicates += 1
                     workspace.save_sources(sources)
@@ -452,6 +562,7 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
         record.metadata["options"] = extractors.options(suffix)
         if record.category_source != "user":
             record.category, record.category_reason = cls.classify(relative, suffix, result.text)
+        record.metadata["classifier"] = cls.CLASSIFIER_VERSION
         if record.status == "failed":
             report.failed += 1
         name = Path(relative).name

@@ -63,7 +63,10 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
             "--job-timeout", type=float, default=None, help="Seconds allowed per OCR job (default 90)."
         )
         p.add_argument(
-            "--only", action="append", default=None, metavar="PATH",
+            "--only",
+            action="append",
+            default=None,
+            metavar="PATH",
             help="Re-extract only this file (path relative to the project; repeatable).",
         )
 
