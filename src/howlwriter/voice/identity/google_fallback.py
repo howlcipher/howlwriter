@@ -31,7 +31,12 @@ from typing import Any, Callable
 
 from howlwriter.voice.identity import analysis
 from howlwriter.voice.identity.exclusions import normalize_component
-from howlwriter.voice.identity.store import IdentityConfig, IdentityStore, source_path_of
+from howlwriter.voice.identity.store import (
+    EXPORT_PARSER,
+    IdentityConfig,
+    IdentityStore,
+    source_path_of,
+)
 
 DRIVE_READONLY_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 TOKEN_FILE = "google_drive_readonly_token.json"
@@ -274,6 +279,8 @@ def fetch_native_documents(
         if e.get("present", True)
         and (
             e.get("status") == "native_unavailable"
+            # Exported before private copies were kept: fetch again so profiles can read it.
+            or (e.get("parser") == EXPORT_PARSER and not Path(e.get("content_path") or "").is_file())
             # Names the mount cannot even stat (e.g. containing ':') are
             # still native documents the API can supply.
             or (e.get("status") == "unreadable" and not e.get("suffix"))
@@ -360,8 +367,11 @@ def fetch_native_documents(
 
         entry.update(derived)
         entry["raw_sha256"] = hashlib.sha256(data).hexdigest()
-        entry["parser"] = "google_drive_api_export"
+        entry["parser"] = EXPORT_PARSER
         entry["ownership"] = ownership
+        if entry.get("status") == "extracted":
+            # Profile builds read text from a file; the mount only holds a stub.
+            entry["content_path"] = str(store.save_export(entry["doc_id"], text))
         history = _revisions(service, found["id"])
         provenance = entry.setdefault("provenance", {})
         provenance.update(history)

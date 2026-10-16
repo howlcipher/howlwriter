@@ -52,6 +52,7 @@ from howlwriter.voice.identity import classify, privacy
 from howlwriter.voice.identity.families import assign_families
 from howlwriter.voice.identity.worksheet import EXTRACTIONS
 from howlwriter.voice.identity.store import (
+    EXPORT_PARSER,
     Decision,
     IdentityConfig,
     IdentityStore,
@@ -116,6 +117,13 @@ def _absolute(config: IdentityConfig, relative: str) -> Path:
     return (Path(config.sources[index]).expanduser() / relative).resolve()
 
 
+def _content_path(config: IdentityConfig, entry: dict) -> Path:
+    """Where a document's text is read: the mount, or the private copy of a Google Docs export."""
+    if entry.get("parser") == EXPORT_PARSER and entry.get("content_path"):
+        return Path(entry["content_path"])
+    return _absolute(config, entry["relative_path"])
+
+
 def _category(entry: dict, decision: Decision | None) -> str:
     if decision is not None and decision.category:
         return decision.category
@@ -168,7 +176,7 @@ def select_sources(
         chosen.append(
             SourceChoice(
                 doc_id=doc_id,
-                absolute_path=str(_absolute(config, entry["relative_path"])),
+                absolute_path=str(_content_path(config, entry)),
                 entry=entry,
                 decision=decision,
                 selection=SelectedSource(
@@ -405,7 +413,7 @@ def _incomplete_sources(
     """Previously trained sources that are present now but were not readable."""
     if not voice.exists():
         return []
-    by_absolute = {str(_absolute(config, e["relative_path"])): e for e in entries.values()}
+    by_absolute = {str(_content_path(config, e)): e for e in entries.values()}
     problems = []
     for key, record in voice.load_sources().items():
         if record.split != "train" or record.inclusion not in ("include", "include_low_weight"):

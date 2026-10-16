@@ -108,6 +108,56 @@ def test_unavailable_mount_raises_and_leaves_inventory(env, drive, tmp_path):
     assert path.read_text(encoding="utf-8") == before
 
 
+def test_empty_mount_point_raises_instead_of_removing_everything(env, drive, tmp_path):
+    # A FUSE drive that is not running leaves an empty, listable directory.
+    scan("william", sources=[str(drive)])
+    path = IdentityStore("william").directory / "inventory.json"
+    before = path.read_text(encoding="utf-8")
+    drive.rename(tmp_path / "offline")
+    drive.mkdir()
+    with pytest.raises(MountUnavailableError, match="empty"):
+        scan("william")
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_first_scan_of_an_empty_source_is_allowed(env, tmp_path):
+    root = tmp_path / "new-drive"
+    root.mkdir()
+    assert scan("william", sources=[str(root)]).report["files_inventoried"] == 0
+
+
+def test_source_on_a_different_filesystem_than_last_scan_raises(env, drive, monkeypatch):
+    real = scanner_module.mount_status
+    monkeypatch.setattr(
+        scanner_module, "mount_status", lambda root: {**real(root), "filesystem": "fuse.drive"}
+    )
+    scan("william", sources=[str(drive)])
+    path = IdentityStore("william").directory / "inventory.json"
+    before = path.read_text(encoding="utf-8")
+    monkeypatch.setattr(scanner_module, "mount_status", lambda root: {**real(root), "filesystem": "btrfs"})
+    with pytest.raises(MountUnavailableError, match="fuse.drive"):
+        scan("william")
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_file_returning_to_a_removed_path_keeps_its_history(env, drive, tmp_path):
+    scan("william", sources=[str(drive)])
+    target = drive / "school" / "lab03.md"
+    entries = IdentityStore("william").load_inventory()["entries"]
+    doc_id, original = next((k, e) for k, e in entries.items() if e["relative_path"] == "school/lab03.md")
+    parked = tmp_path / "lab03.md"
+    target.rename(parked)
+    scan("william")
+    assert IdentityStore("william").load_inventory()["entries"][doc_id]["present"] is False
+    parked.rename(target)
+    scan("william")
+    back = IdentityStore("william").load_inventory()["entries"][doc_id]
+    assert back["present"] is True
+    assert back["change"] == "reappeared"
+    assert back["first_seen"] == original["first_seen"]
+    assert "removed_at" not in back
+
+
 def test_denied_read_is_native_unavailable_not_a_crash(env, tmp_path, monkeypatch):
     root = tmp_path / "drive"
     root.mkdir()
@@ -502,3 +552,90 @@ def test_google_fallback_also_tries_names_the_mount_cannot_stat(env, tmp_path):
     )
     assert counts["attempted"] == 1
     assert any("Lab: B7" in q for q in seen)
+
+
+class _FakeDriveMany(_FakeDrive):
+    """Every root-level name is a Google Doc whose text comes from `texts`."""
+
+    def __init__(self, texts: dict[str, str]):
+        super().__init__("")
+        self.texts = texts
+        self.exports = 0
+
+    def list(self, q, **kwargs):
+        self.queries.append(q)
+        name = q.split("name = '", 1)[1].split("'", 1)[0]
+        if name not in self.texts:
+            return _FakeRequest({"files": []})
+        return _FakeRequest(
+            {"files": [{"id": name, "name": name, "modifiedTime": "2026-02-01T00:00:00Z", "ownedByMe": True}]}
+        )
+
+    def export(self, fileId, mimeType):
+        self.exports += 1
+        return _FakeRequest(self.texts[fileId].encode("utf-8"))
+
+
+def test_exported_google_docs_reach_the_profile_build(env, tmp_path, monkeypatch):
+    # The mount holds only stubs for native Docs; the build must read the private export copy.
+    from howlwriter.voice.corpus.store import VoiceStore
+    from howlwriter.voice.identity.profiles import build_identity
+
+    from tests.voice.identity.conftest import attest_all
+
+    root = tmp_path / "drive"
+    root.mkdir()
+    texts = {f"Doc {index}": author_a(index) for index in range(10)}
+    for name in texts:
+        (root / name).write_text("x" * 97, encoding="utf-8")
+    real = Path.read_bytes
+
+    def denied(self):
+        if self.parent == root:
+            raise PermissionError(errno.EPERM, "Operation not permitted")
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", denied)
+    fake = _FakeDriveMany(texts)
+    scan("william", sources=[str(root)], google_api=True, google_service_factory=lambda: fake)
+    store = IdentityStore("william")
+    entries = store.load_inventory()["entries"]
+    for entry in entries.values():
+        path = Path(entry["content_path"])
+        assert path == store.export_path(entry["doc_id"])
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        assert path.read_text(encoding="utf-8") == texts[entry["relative_path"]]
+    assert attest_all("william", "Doc", "h", category="academic_lab") == 10
+
+    result = {r.profile: r for r in build_identity("william", profiles=["academic"])}["academic"]
+    assert result.status == "built", result.reason
+    trained = VoiceStore("william-academic").load_sources()
+    included = [r for r in trained.values() if r.inclusion in ("include", "include_low_weight")]
+    assert len(included) == 10
+    assert all(Path(key).parent == store.export_path("x").parent for key in trained)
+
+
+def test_google_docs_exported_without_a_private_copy_are_fetched_again(env, tmp_path, monkeypatch):
+    root = tmp_path / "drive"
+    root.mkdir()
+    texts = {"Doc 1": author_a(1)}
+    (root / "Doc 1").write_text("x" * 97, encoding="utf-8")
+    real = Path.read_bytes
+
+    def denied(self):
+        if self.parent == root:
+            raise PermissionError(errno.EPERM, "Operation not permitted")
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", denied)
+    fake = _FakeDriveMany(texts)
+    scan("william", sources=[str(root)], google_api=True, google_service_factory=lambda: fake)
+    scan("william", google_api=True, google_service_factory=lambda: fake)
+    assert fake.exports == 1  # unchanged and already copied: not fetched again
+    store = IdentityStore("william")
+    (entry,) = store.load_inventory()["entries"].values()
+    Path(entry["content_path"]).unlink()
+    scan("william", google_api=True, google_service_factory=lambda: fake)
+    assert fake.exports == 2
+    (entry,) = store.load_inventory()["entries"].values()
+    assert Path(entry["content_path"]).read_text(encoding="utf-8") == texts["Doc 1"]
