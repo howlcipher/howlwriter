@@ -105,6 +105,40 @@ via HowlPlane's domain-neutral role execution framework:
    - Independent review is verified and recorded with observable `IndependenceStatus`
      (`INDEPENDENT`, `SAME_PROVIDER`, `NOT_REVIEWED`, `UNAVAILABLE`).
 
+## Choosing the model at run time
+
+Role bindings are optional. When a step needs a model and its role is not
+bound, HowlWriter asks which model to use before anything is sent:
+
+- **CLI, on a terminal:** a menu offers Claude Code, Antigravity (`agy`),
+  Codex, and a local model (Ollama), marks any that cannot run now and why,
+  and offers "continue without a model" where a rule-based path exists.
+  Choosing a model that is not local shows what will be sent and needs a `y`.
+  The choice lasts for that command only; the next command asks again.
+- **CLI, non-interactive:** pass `--provider claude|agy|codex|local` (and
+  `--review-provider` for independent review steps) before the subcommand,
+  e.g. `howlwriter --provider codex humanize draft.md`, or set
+  `HOWLWRITER_PROVIDER` / `HOWLWRITER_REVIEW_PROVIDER`. Without a choice the
+  command refuses and nothing is sent.
+- **Web UI:** a model step answers HTTP 409 `model_choice_required` and the
+  page shows a picker; the request is retried once with the choice in the
+  `X-HowlWriter-Provider` header (`none` = continue without a model). A model
+  that is not local needs the "I agree to send it" box ticked
+  (`X-HowlWriter-Send-Confirmed: 1`). Nothing is remembered between runs.
+
+A review step that must be independent of the writer (`avoid_provider`) asks
+separately. It never switches to a model the person did not pick: with no
+reviewer chosen, the same model reviews and the result says `SAME_PROVIDER`.
+
+Project drafts keep their own gate for sending project evidence: an
+interactive or web confirmation authorizes that one run; `--provider` alone
+does not, so `--allow-remote` or `project authorize-remote` is still needed.
+
+Every model call runs in a new, empty, owner-only temporary directory that is
+deleted afterwards. The backends are agent CLIs (agy and Codex may edit their
+working directory in writing roles), and writing roles get their whole input
+in the prompt, so no model is ever started in the user's folder.
+
 ## Summary
 
 The separation of concerns is clean and domain-neutral:

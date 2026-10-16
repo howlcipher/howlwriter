@@ -43,6 +43,10 @@ def add_subparser(
 
 
 def run(args: argparse.Namespace) -> int:
+    from howlwriter.integration import provider_choice
+
+    # The server never waits on its terminal: the page asks which model to use.
+    provider_choice.PROCESS_DEFAULTS["interactive"] = False
     # fastapi/uvicorn are the "web" extra, not a core dependency -- every
     # other howlwriter subcommand (including --version/--help) must keep
     # working with just the core install, so these imports stay deferred

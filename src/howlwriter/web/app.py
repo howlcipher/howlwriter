@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from howlwriter import __version__
+from howlwriter.integration import provider_choice
+from howlwriter.integration.model_role import ModelRoleNotConfiguredError
 from howlwriter.web.routes.academic import router as academic_router
 from howlwriter.web.routes.documents import router as documents_router
 from howlwriter.web.routes.evaluation import router as evaluation_router
@@ -26,6 +28,11 @@ from howlwriter.web.routes.voices import router as voices_router
 from howlwriter.web.routes.voice_intelligence import router as voice_intel_router
 
 
+async def _model_choice(request: Request) -> None:
+    # Async, so the context it sets reaches sync endpoints and the jobs they start.
+    provider_choice.apply_request_headers(request.headers)
+
+
 def create_app(static_dir: Path | str | None = None) -> FastAPI:
     app = FastAPI(
         title="HowlWriter Local Web Application",
@@ -33,7 +40,16 @@ def create_app(static_dir: Path | str | None = None) -> FastAPI:
         version=__version__,
         docs_url="/api/docs",
         redoc_url="/api/redoc",
+        dependencies=[Depends(_model_choice)],
     )
+
+    @app.exception_handler(ModelRoleNotConfiguredError)
+    async def _model_needed(request: Request, error: ModelRoleNotConfiguredError) -> JSONResponse:
+        # The page asks which model to use and retries; nothing was sent.
+        return JSONResponse(
+            status_code=409,
+            content={"code": "model_choice_required", "role": error.role.value, "detail": str(error)},
+        )
 
     # Local CORS: restrict to loopback origins and disable wildcard credentials
     app.add_middleware(

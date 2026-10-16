@@ -293,6 +293,10 @@ async def post_skeleton(project_id: str, request: BriefRequest) -> dict:
 @router.post("/{project_id}/draft")
 async def post_draft(project_id: str, request: DraftRequest) -> dict:
     workspace = _ws(project_id)
+    from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
+    from howlwriter.integration.model_role import WritingRole
+
+    get_howlplane_bridge().require_decision(WritingRole.WRITER)
 
     def work() -> dict:
         from howlwriter.config.loader import ConfigLoader

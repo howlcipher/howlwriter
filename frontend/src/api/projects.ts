@@ -3,6 +3,7 @@
  */
 
 import { JobResponse } from '../types';
+import { apiFetch } from './modelChoice';
 
 const BASE = '/api/projects';
 
@@ -101,7 +102,7 @@ export interface Validation {
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await apiFetch(`${BASE}${path}`, {
     ...init,
     headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
   });
@@ -153,7 +154,7 @@ export const projectsApi = {
   browserDecide: (p: string, actionId: string, decision: 'approve' | 'deny') =>
     post<BrowserAction>(`/${id(p)}/browser/actions/${encodeURIComponent(actionId)}/${decision}`),
   job: async (jobId: string): Promise<JobResponse> => {
-    const res = await fetch(`/api/jobs/${jobId}`);
+    const res = await apiFetch(`/api/jobs/${jobId}`);
     return res.json();
   },
 };

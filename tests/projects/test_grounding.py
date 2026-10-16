@@ -293,6 +293,53 @@ def test_authorized_project_may_use_a_remote_provider(project):
     assert len(bridge.calls) == 1 and "## VOICE" not in bridge.calls[0]["prompt"]
 
 
+def _choosing_bridge(monkeypatch, answer: tuple[str, bool]):
+    """The real bridge with no role bound: it asks, and a fake backend stands in for the model."""
+    from howlwriter.integration import howlplane_bridge as bridge_module
+    from howlwriter.integration.howlplane_bridge import HowlPlaneWritingBridge
+
+    try:
+        from howlplane.control_plane.agent_execution import FakeAgentBackend
+        from howlplane.control_plane.role_binding import RoleBindingRegistry, RoleDispatcher
+    except ImportError:
+        pytest.skip("HowlPlane is not installed")
+    ran: list[str] = []
+
+    def backend_for(provider):
+        ran.append(provider)
+        return FakeAgentBackend(agent_id=provider, default_stdout="## Results\n\nDraft body.")
+
+    monkeypatch.setattr(bridge_module, "_backend_for", backend_for)
+    registry = RoleBindingRegistry()
+    bridge = HowlPlaneWritingBridge(dispatcher=RoleDispatcher(binding_registry=registry), registry=registry)
+    asked = []
+    bridge.chooser = lambda role, avoid=None: asked.append(role) or answer
+    set_howlplane_bridge(bridge)
+    return bridge, ran, asked
+
+
+def test_draft_asks_which_model_and_a_confirmed_choice_authorizes_this_run(project, monkeypatch):
+    bridge, ran, asked = _choosing_bridge(monkeypatch, ("claude_code", True))
+    result = draft(project, build_brief(project), config=_config())
+    assert len(asked) == 1 and ran == ["claude_code"]
+    assert result["provenance"]["provider"] == "claude_code"
+    assert not project.load_meta().get("remote_inference_authorized")  # one run, not the project
+
+
+def test_a_remote_model_named_without_confirmation_still_needs_authorization(project, monkeypatch):
+    bridge, ran, asked = _choosing_bridge(monkeypatch, ("codex", True))
+    bridge.use_provider("codex")  # e.g. --provider codex: chosen, but nothing shown or confirmed
+    with pytest.raises(RemoteInferenceNotAuthorized, match="codex"):
+        draft(project, build_brief(project), config=_config())
+    assert ran == [] and asked == []
+
+
+def test_a_local_model_choice_drafts_without_remote_authorization(project, monkeypatch):
+    bridge, ran, asked = _choosing_bridge(monkeypatch, ("local_ollama", False))
+    draft(project, build_brief(project), config=_config())
+    assert ran == ["local_ollama"]
+
+
 def test_missing_voice_is_refused_not_ignored(project):
     from howlwriter.voice.selection import VoiceSelectionError
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+import contextvars
 import threading
 import time
 from typing import Any, Callable, Optional
@@ -246,7 +247,9 @@ class JobManager:
             except Exception as exc:
                 job.fail(exc)
 
-        thread = threading.Thread(target=_target, daemon=True)
+        # The job keeps the request's context (e.g. the model chosen in the web UI).
+        context = contextvars.copy_context()
+        thread = threading.Thread(target=context.run, args=(_target,), daemon=True)
         thread.start()
 
 

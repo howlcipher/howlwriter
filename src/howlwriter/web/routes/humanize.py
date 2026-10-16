@@ -63,6 +63,8 @@ def run_humanize(req: HumanizeRequest) -> HumanizeResponse:
     lint_before = LintEngine().run(document, config)
 
     bridge = get_howlplane_bridge()
+    if not req.deterministic_only:
+        bridge.require_decision(WritingRole.HUMANIZER)
     can_use_model = not req.deterministic_only and bridge.is_role_configured(WritingRole.HUMANIZER)
 
     changes_dtos: list[ChangeRecordDto] = []

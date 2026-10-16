@@ -24,6 +24,7 @@ import { ProjectsPanel } from './components/projects/ProjectsPanel';
 import { ProviderMatrix } from './components/providers/ProviderMatrix';
 import { StartScreen } from './components/dialogs/StartScreen';
 import { OpenFileModal } from './components/dialogs/OpenFileModal';
+import { ModelPickerModal } from './components/dialogs/ModelPickerModal';
 import { api } from './api/client';
 import {
   AcademicResult,
@@ -524,6 +525,7 @@ export const App: React.FC = () => {
         onProviders={() => setActiveTab('providers')}
       />
 
+      <ModelPickerModal />
       <OpenFileModal
         isOpen={isOpenFileOpen}
         onClose={() => setIsOpenFileOpen(false)}

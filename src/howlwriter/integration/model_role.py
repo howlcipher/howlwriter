@@ -34,9 +34,14 @@ class WritingRole(enum.Enum):
 class ModelRoleNotConfiguredError(RuntimeError):
     """Raised when a model-backed capability is invoked with no implementation wired in."""
 
-    def __init__(self, role: WritingRole):
+    def __init__(self, role: WritingRole, detail: str = ""):
         self.role = role
+        if detail:
+            super().__init__(f"{role.value}: {detail}")
+            return
         super().__init__(
+            f"{role.value} needs a model. Run interactively to be asked which one, or pass "
+            f"--provider claude|agy|codex|local (or set HOWLWRITER_PROVIDER). "
             f"{role.value} is not configured. HowlWriter defines the contract; "
             f"provide an implementation (e.g. via HowlPlane model execution) "
             f"to enable this capability. Install HowlPlane in the same Python "
