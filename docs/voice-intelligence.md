@@ -1,0 +1,586 @@
+# Personal Voice Intelligence
+
+One person, several context profiles, two calibrated scores.
+
+`voice build` (see [voice-corpus.md](voice-corpus.md)) turns a set of folders
+into one profile. Personal Voice Intelligence sits on top of it for the case
+where a person wants their writing understood the way they actually produce
+it: a mounted drive inventoried once, every document classified and given a
+provenance decision, separate **academic** and **professional** profiles built
+only from documents the person has confirmed are theirs, and two independent,
+empirically calibrated scores for any new document.
+
+```bash
+howlwriter voice scan --identity william --source "/path/to/mounted-drive/"
+howlwriter voice review --identity william --interactive
+howlwriter voice build-identity --identity william --profiles academic,professional
+howlwriter voice inspect william-academic
+howlwriter evaluate paper.md --mode academic --voice william-academic
+howlwriter evaluate draft.md --compare revised.md --identity william --auto-voice
+howlwriter voice sync --identity william
+```
+
+Nothing here replaces the corpus pipeline. Profiles are still built by
+`build_voice`, stored by `VoiceStore`, and consumed by the Humanizer and
+Writer through the existing `--voice` seam.
+
+---
+
+## 1. Mounted drive setup
+
+The scanner reads a locally mounted drive (a cloud-drive FUSE client, rclone mount, a synced
+folder). No Google OAuth is required to scan.
+
+What was found on a real the cloud-drive client mount, and how it is handled:
+
+| What the mount exposes | Handling |
+| --- | --- |
+| Regular files (`.docx`, `.pdf`, `.md`, ...) | read once, in binary, read-only |
+| Native Google Docs/Sheets/Slides | small extensionless entries whose read is refused (`EPERM`). Recorded as `native_unavailable`, inventoried, not counted as read |
+| Names the mount cannot stat (e.g. containing `:`) | recorded as `unreadable` |
+| Small readable extensionless files (`LICENSE`, `release`) | non-prose (`no_extension`), not mistaken for placeholders |
+| No extended attributes, session-assigned inode numbers | identity is relative path plus content fingerprint |
+
+Coverage is reported honestly. When native documents cannot be read the scan
+says `complete: false` and gives the share of eligible files whose content was
+actually read. The report's `accounting` block lists every present file once
+by format family and outcome (`extracted`, `sensitive_excluded`,
+`too_small`, `unsupported_format`, `native_unavailable`, `unreadable`,
+`nonprose_excluded`), so totals reconcile line by line.
+
+### Optional: the Drive API fallback for native Google Docs
+
+```bash
+howlwriter voice google-auth          # one time; needs an OAuth Desktop client file
+howlwriter voice scan --identity william --google-api
+```
+
+Why it is needed: on the mounted cloud drive, native Google Docs appear as small
+extensionless entries whose read is refused (`EPERM`), and its drive
+configuration offers no export-as-Office option. Names containing `:` cannot
+even be statted by the mount.
+
+Off unless the flag is passed. It uses a separate token with the
+`drive.readonly` scope only (the Docs API accepts that scope for reading, so
+no second scope is requested), reads every tab of a Doc through the official
+Docs API (`includeTabsContent`), falls back to a plain-text Drive export,
+follows list pagination, retries rate limits and transient 5xx errors with
+exponential backoff, and analyses the text locally exactly like a mounted
+file. Placeholders the mount refused and extensionless names it could not
+stat are both attempted. Nothing is sent to any model. Paths
+are checked against the exclusions before any lookup, shared drives are not
+queried, and a name that matches zero or several Docs is reported rather than
+guessed. Drive revision history (count and span) is recorded as provenance.
+Without the client file and token it refuses with an explanation; it never
+prompts for authorization in the middle of a scan.
+
+If your sync client can expose Google Docs as Office files instead, the
+scanner will simply read those.
+
+## 2. Directory exclusions
+
+An identity carries an exclusion policy in its private `identity.yaml`. The
+identity `william` is created with the three directories its owner asked
+never to be traversed:
+
+```
+gemini gems, retroarchsaves, shared drives
+```
+
+Enforcement:
+
+* checked **before** a directory is entered, so nothing inside is listed,
+  statted, read, classified, cached, or reported;
+* at every depth, on whole path components, case-insensitively, after NFKC
+  normalization and with `_`, `-`, `.` and whitespace treated as one
+  separator (`Gemini Gems`, `GEMINI_GEMS`, `GeminiGems` all match);
+* never as a substring: `My Gemini Gems Notes.docx` is a file, not the
+  directory;
+* symlinks are never followed, and a directory whose real path leaves the
+  root is refused;
+* re-checked on every path that arrives from somewhere other than the walker
+  (an old ledger, an edited worksheet, a preview request).
+
+Add more with `--exclude NAME` (remembered). Version-control and dependency
+directories (`.git`, `node_modules`, ...) are pruned as noise and counted.
+
+## 3. Supported formats
+
+Reused from the corpus pipeline, hardened for an untrusted drive:
+
+`.docx` `.odt` `.rtf` `.txt` `.md` `.html` `.htm` `.pdf` (text layer, via the
+optional `pypdf`), plus native Google Docs through the optional fallback.
+`.doc` is reported as unsupported. Images, audio/video, archives,
+executables, databases, game saves, logs, source code, configuration and
+spreadsheets are inventoried and excluded with a stated reason.
+
+Each file is read **once**; the same buffer is hashed, parsed, and inspected
+for metadata, so a file changing mid-scan cannot produce a hash that describes
+one version and text from another (a size/mtime change during the read is
+retried, then recorded as `changed_during_read`). Office archive members are
+inflated through a bounded reader (64 MB, at most 200:1 compression), PDFs
+are capped at 400 pages, nothing is executed, and one malformed document
+costs that document (`extraction_failed` / `analysis_failed`), never the scan.
+
+## 4. Classification
+
+Two separate axes.
+
+**Category** (purpose and genre, from content): academic paper, discussion,
+lab, research analysis, technical documentation, professional engineering
+document, professional article, LinkedIn/public commentary, personal
+writing, informal communication, notes and outlines, template, assignment
+instructions, copied reference (including software licences), third-party,
+AI-generated and mixed-authorship documents, résumé, administrative record,
+non-prose, confidential, unknown. Built on the corpus pipeline's quality and
+context classifiers, which treat folder names as a small capped prior only.
+When the context classifier abstains, lab and citation markers get a second,
+low-confidence look so that coursework is not silently kept out of review.
+
+**Authorship** (provenance, not style):
+
+| State | Use in a personal profile |
+| --- | --- |
+| `CONFIRMED_HUMAN_AUTHORED` | primary evidence, weight 1.0 |
+| `HUMAN_AUTHORED_LIGHT_AI_EDITING` | weight 0.5 |
+| `MIXED_AUTHORSHIP` | only the paragraphs the person lists |
+| `SUBSTANTIALLY_AI_GENERATED` | never |
+| `THIRD_PARTY` | never |
+| `UNKNOWN_AUTHORSHIP` | never; held for review |
+
+## 5. AI-assisted documents and the review workflow
+
+A document's presence in someone's drive, or their name on it, is not
+evidence that its wording is theirs. The scanner therefore only **proposes**
+an authorship, with reasons drawn from evidence it can actually see:
+
+* a name/author field naming the identity, or someone else;
+* "shared with me" ownership;
+* creation by a document-generation library (python-docx, ReportLab, pandoc);
+* Word's recorded editing time far below typing time ("arrived by paste");
+* modification before public LLM tools (30 Nov 2022), which makes substantial
+  generation implausible and says nothing about who wrote it;
+* the template owner recorded as the file's creator, reported as exactly that
+  and never as "written by someone else";
+* Drive revision history, when the fallback is used.
+
+Style signals (dense formulaic phrasing, stock connectives) **raise review
+priority only**. No stylometric signal can tell a person's unaided writing
+from their AI-assisted drafts, and nothing here claims to.
+
+`CONFIRMED_HUMAN_AUTHORED` is reachable only by attestation:
+
+```bash
+howlwriter voice review --identity william                 # list, with reasons
+howlwriter voice review --identity william --interactive   # answer one by one
+howlwriter voice review --identity william --preview DOC_ID
+howlwriter voice review --identity william --set DOC_ID h
+howlwriter voice review --identity william --set DOC_ID m --paragraphs "1-4,7"
+howlwriter voice review --identity william --set DOC_ID m --use-proposed-extraction
+howlwriter voice review --identity william --groups
+howlwriter voice review --identity william --group GROUP_ID --decide h
+howlwriter voice review --identity william --apply ~/.howlwriter/identities/william/review_queue.yaml
+```
+
+**Ordering.** The queue is sorted by expected corpus value: independent
+discussion responses, lab analysis and professional writing first, then
+papers, with eligible word count (log-scaled), a byline, and earlier drafts
+raising value, and worksheets lowered. The second and later members of a
+document family sink, so the first questions cover independent documents.
+Each item shows the eligible word count, the proposal and its reasons, whether
+it is mixed, whether revision history exists, and whether a legacy profile
+trained on it. `?` in interactive review explains each authorship category.
+
+**Groups.** `--groups` lists pending documents by family, publisher worksheet
+series, course code, context and month. `--group ID --decide VALUE` prints
+every member and requires a typed `yes` (or `--yes`); the web view requires a
+confirmation tick. The decision is applied only if the members are still
+exactly the ones shown -- a group that changed is refused. Groups never decide
+anything by similarity.
+
+**Publisher worksheets.** Lab-manual worksheets repeat a running header on
+every page and carry numbered publisher prompts; on the real corpus only
+4-48% of their words were the student's answers. They are detected
+structurally (several numbered prompts, a header line on three or more
+pages) and proposed as `MIXED_AUTHORSHIP` with the `worksheet_answers`
+extraction. Attesting that (`--use-proposed-extraction`, `[w]`
+interactively, or "my answer lines only" on the web) lets only the answer
+lines into a profile; a worksheet with under 150 answer words is not queued.
+
+The queue lists only documents that would affect a profile; routine
+exclusions (someone else's shared file, a licence text) do not interrupt.
+The worksheet `review_queue.yaml` is regenerated each scan; decisions live in
+`decisions.json` with an append-only `decisions.log.jsonl`, keyed by a stable
+document id so a renamed file keeps its decision. Each attestation stores the
+document's content fingerprint: a light edit carries it forward, a material
+change reopens it. The web UI offers the same review.
+
+Proceeding while reviews are pending is the normal case: profiles are built
+from whatever has been attested and say how many relevant documents still
+await a decision.
+
+## 5a. Legacy corpus recovery
+
+```bash
+howlwriter voice legacy-reconcile --identity william
+```
+
+Profiles built before authorship review (`william`, `william_v2`) are frozen:
+this reads their `sources.json` and never writes into a voice directory. Each
+historical source is matched to the current inventory by path, then by the
+raw-text hash both builds record (so moved or renamed files are found), and
+receives a recommendation: `candidate` (attested), `candidate_answers_only`
+(a worksheet with separable answers), `pending_review`, `exclude` (with the
+reason: institutional record, instructor instructions, template, licence,
+résumé or profile export, duplicate, unreadable) or `missing`. The result is a
+private `legacy_reconciliation.json`; legacy feature measurements are never
+reused, because they were computed on whole documents including the text
+being removed. The review queue marks documents a legacy profile trained on.
+
+## 5b. Holdout integrity
+
+The holdout split is family-aware. Documents linked by the scanner's duplicate
+grouping, by SimHash within 16 bits, by a shared base name once
+draft/final/version/copy markers are removed, by the same numbered paper,
+project or deliverable, or by a shared worksheet series always land on the
+same side (generic "A3"/"Assignment 3" numbering does not link by itself: on
+the real corpus it joined unrelated documents from different courses),
+so a held-out document never has a revision or template sibling in training.
+
+## 6. Private storage and Git protection
+
+```
+~/.howlwriter/identities/<identity>/      HOWLWRITER_IDENTITIES_DIR overrides
+    identity.yaml  inventory.json  decisions.json  decisions.log.jsonl
+    review_queue.yaml  scan_report.json  profile_changes.jsonl
+    chat_evidence.json  calibration/naturalness-<context>.json
+~/.howlwriter/voices/<identity>-academic/       HOWLWRITER_VOICES_DIR overrides
+~/.howlwriter/voices/<identity>-professional/
+    profile.json  sources.json  features.json  overrides.yaml  build.json
+    calibration.json  supporting_evidence.json
+```
+
+* Directories 0700, files 0600 (profile directories and the voices registry
+  directory are tightened after each build). Legacy profile files that were
+  0644 were tightened to 0600 without content change, logged in the
+  identity's `privacy_actions.jsonl`.
+* Before anything is written, the target is checked: inside a Git worktree it
+  must be ignored by Git (`git check-ignore`), or the write is refused.
+* `.gitignore` covers identity ledgers, voices, worksheets, chat exports,
+  Google tokens and client files, and private evaluation output, with
+  narrow patterns that leave `frontend/src/components/voices/` and all source
+  and tests tracked. A test asserts both directions and that nothing private
+  is tracked.
+* No document text is stored: inventories and calibrations hold hashes,
+  numbers, labels and counts. Extracted text lives in memory during a scan or
+  build. Scan reports, run records and the web status payload carry no file
+  names. Previews re-read the source on demand and are never cached.
+* `.gitignore` does not remove anything from history; this feature never
+  committed private data, and the repository test checks tracked files.
+
+## 7. Informal chat evidence
+
+```bash
+howlwriter voice chat-import --identity william --export ~/Downloads/chatgpt-export/
+howlwriter voice chat-import --identity william --provisional   # no export available
+```
+
+From a ChatGPT data export (`conversations.json`), only user-authored message
+text is read. Assistant, system, developer and tool messages are skipped by
+role and hidden context by content type. Code blocks, log lines and quoted
+lines are removed; a long heading-structured message that reads like a system
+prompt, or one that repeats a 12-word run of the assistant's reply, is
+excluded; repeated requests are deduplicated. What is stored is aggregate
+statistics and a short list of tendencies, never message text.
+
+It is supporting evidence only: it never sets a score baseline, never raises
+profile confidence, and is attached to profiles as a separately attributed,
+low-weight note rendered below the mode's rules. The academic profile receives
+only formal-safe tendencies (concrete detail, low tolerance for filler,
+explicit qualification). Without an export nothing is fabricated: the owner's
+own observations are recorded as `provisional_unvalidated`.
+
+## 7a. Voice Workshop
+
+```bash
+howlwriter voice workshop --identity jane                 # interactive: prompt, answer, approve, resume later
+howlwriter voice workshop --identity jane prompt --context technical --subject "our deploy script"
+howlwriter voice workshop --identity jane answer --prompt-id tec-s1 --subject "our deploy script" \
+    --text "..." --self-written --approve
+howlwriter voice workshop --identity jane list            # no text unless --show-text
+howlwriter voice workshop --identity jane coverage        # evidence per profile, with gaps
+howlwriter voice workshop --identity jane approve|exclude|remove SAMPLE_ID
+howlwriter voice workshop --identity jane reclassify SAMPLE_ID professional
+howlwriter voice workshop --identity jane revise SAMPLE_ID --text "how I'd prefer it to read"
+```
+
+The web UI's **Workshop** tab does the same; with no identity yet, it asks
+for a short name and opens directly. No scan or other setup is needed.
+
+Short prompts (1-3 sentences) and paragraph exercises cover academic,
+professional, technical and casual writing. They come from a template bank in
+`voice/identity/workshop.py`: **no model is called**, so the Workshop is
+local-only by construction. You may supply your own subject. Without a
+chosen context, the next prompt targets the context whose profile has the
+least evidence (no documents first); a follow-up reuses your last subject in
+the context with the largest gap. A prompt is never offered again for the
+same subject.
+
+What is stored, privately (`<identity>/workshop/samples.json`, 0600): your
+answer exactly as typed (no spelling, grammar or structure correction; the
+web form disables autocorrect), the prompt id and text as metadata, the
+subject, your "I wrote this myself, without AI help" declaration, the
+classifier's view of its context, and a history of what happened to it. An
+optional preferred revision is stored separately and is never evidence.
+
+Rules that keep samples from skewing a profile:
+
+* nothing counts until you approve it, and only self-written answers can be
+  approved;
+* each approved sample is assigned once, by its own hash, to training (about
+  three quarters) or calibration, and never moves;
+* only one answer per prompt and subject counts, and exact or near-duplicate
+  answers count once -- earliest approval wins, recomputed every time, so
+  excluding an answer lets a later one count;
+* casual answers are kept and shown in coverage but never train the academic
+  or professional profiles;
+* approved samples join a build as bundles of about 300 words at weight 0.5,
+  with their sides fixed, and when the profile has documents the training
+  bundles are capped at 25% of its training words;
+* bundles never enter Voice Match centres, the Naturalness reference, the
+  drift baseline or contamination fingerprints: scoring stays
+  document-based. Calibration-side bundles are measured against the profile
+  and reported as the `workshop_calibration_samples` diagnostic;
+* a profile with no documents is built from samples only with at least 10
+  samples and 3,000 words, and is labelled workshop-only.
+
+Coverage shows evidence -- documents, words, samples by side -- with a
+sufficiency label and named gaps ("no attested documents in this context",
+"no paragraph-length workshop answers"), never a completion percentage.
+`remove` deletes the answer's text, keeping a text-free record that it
+existed.
+
+## 8. The two scores
+
+Both are **empirical percentiles**, computed independently from different
+measurements, and both are withheld when the evidence cannot support them.
+
+### Human Naturalness (0-100)
+
+Eleven deterministic dimensions: sentence variation, paragraph variation,
+repeated sentence openings, formulaic language (the existing lint and
+humanization rule families), mechanical transitions, structural uniformity,
+redundancy, repetitive conclusions, verbosity, readability for the context,
+and sentence-to-sentence cohesion.
+
+Each dimension is ranked against a **reference set of human writing in the
+same context and of comparable length**, in its mechanical direction only:
+more variation than every reference document is not a fault, less is. The
+overall score is the percentile of the combined index among the reference
+documents' own leave-one-out indices: **70 means less mechanical than 70% of
+comparable reference documents**; 50 is a typical one.
+
+Length weighting. On the real academic corpus, document length correlated
+with the unweighted index at Spearman rho -0.67: repeated openings and
+padding rise with length, and short discussion responses differ in genre
+from long papers. Every percentile is therefore weighted by a log-length
+kernel (bandwidth 0.6 natural-log units: a reference 1.8x longer or shorter
+counts 0.61, one 3.3x away counts 0.14). After weighting the correlation was
+-0.12. A document with fewer than 8 comparable reference documents (the sum
+of kernel weights) gets no score, with that reason -- which is what happens
+to very short documents and to a single paper much longer than every
+reference. Every calibration records its length correlation.
+
+Resolution. Each report states how many points one comparable reference
+document is worth (`resolution`). With about 25 reference documents a single
+document moves a percentile by about 4 points, so a small edit that crosses a
+few references can move the score by 10-20 points; read scores in that light.
+
+* Formal is not mechanical: passive voice, long words and academic register
+  are not dimensions, and academic documents are ranked against academic
+  references.
+* The reference set is the identity's attested writing for that context
+  (or any folder passed with `--naturalness-reference`).
+* Validation: deterministic mechanical perturbations of the reference texts
+  (stock connectives, recap closers, uniform paragraphs, restated sentences)
+  plus any documents the person attested were AI-generated. The calibration
+  records the AUC separating them from the reference; a score is labelled
+  `VALIDATED` only when the 95% interval's lower bound clears 0.65.
+* Unavailable below 250 words or 12 sentences, without a calibration, or with
+  fewer than 12 reference documents.
+
+It is not the probability that a human wrote the document and not an AI
+detector, and it is not tuned against any third-party detector.
+
+### Personal Voice Match (0-100)
+
+Thirty-one features in eleven dimensions (cadence, sentence-length
+distribution, paragraph structure, punctuation, word choice and diversity,
+technical vocabulary, register and person, hedging and directness,
+transitions, structure, reading level), compared to the profile through
+floored robust z-scores, each dimension weighted equally.
+
+The score is the percentile against **the author's own unseen writing**:
+training documents measured leave-one-out, holdout documents against the full
+profile. **40 means at least as close as 40% of the author's own held-out
+documents.** A genuine document is as likely to score 20 as 80; that spread
+is how much one person's documents differ. Bands make it usable:
+`WITHIN_RANGE` (>= 25), `EDGE_OF_RANGE` (10-25), `ATYPICAL` (< 10).
+
+Mechanically style-altered copies of the author's own held-out documents are
+measured as diagnostics: their separation is reported, but they are never
+pooled into the discrimination AUC that decides `VALIDATED`.
+
+The report also gives the share of comparison-author documents at least as
+close. Comparison documents are prose by other people found in the corpus
+(third-party documents and assignment instructions, never licence texts),
+documents attested as AI-generated, and the same author's documents from the
+other context. Their separation from the genuine distribution is reported as
+an AUC with a Hanley-McNeil 95% interval.
+
+Each report states its `resolution` (100 / genuine calibration documents).
+Short documents are noisier: the calibration's sample-size curve records the
+scores of genuine documents truncated to 300, 600 and 1000 words.
+
+Known blind spot: Voice Match compares feature distributions, so it barely
+separates the author from copies of their own documents re-chunked into
+uniform paragraphs (diagnostic AUC 0.43 on the real profile). Naturalness
+covers that axis.
+
+Withheld, with the reason, when the profile has fewer than 8 genuine
+calibration documents, the document is under 300 words, the document is a
+training document or a near-duplicate of one (SimHash within 8 bits), or the
+profile failed to separate the author from comparison documents (interval
+upper bound below 0.60). `VALIDATED` requires a lower bound of 0.70 with at
+least five comparison documents; otherwise the score is
+`CALIBRATED_UNVALIDATED` and says why.
+
+It is a similarity measure, not authorship detection.
+
+### Confidence labels
+
+Statistical statements (percentiles, AUCs, intervals, sample counts) are
+reported as such. Heuristic labels (profile `overall_confidence`, review
+priority, drift confidence by passage length) are named as heuristic.
+
+## 9. Voice drift
+
+The document is split into windows of at least 80 words and 3 sentences and
+each window is compared with the same measurements over windows of the
+profile's training documents (sentence length, long-word share, stock
+transitions, padding, hedging, first person, passive constructions, commas,
+repeated openings). A finding names the span, the observed value, the
+reference passages' typical and 90% ranges, severity, and confidence;
+adjacent windows departing the same way are merged. Windows under 120 words
+only report extreme departures, at LOW confidence. Findings never say how a
+passage was written.
+
+## 10. Before-and-after comparison
+
+```bash
+howlwriter evaluate original.md --compare revised.md --identity william --auto-voice \
+  --requirements reqs.yaml
+```
+
+Both versions are scored against the same profile. The report shows both
+scores and deltas, changed dimensions, remaining drift, meaning preservation
+(the existing `MeaningPreservationReviewer`), factual integrity (the existing
+unit-aware `native.fidelity.compare`), citation preservation (author-date
+citations with any author form, including multi-word organisations, "n.d."
+and numeric `[n]` styles, compared as multisets so dropping one of several
+occurrences is detected), and stated
+requirements (`min_words`, `max_words`, `required_terms`,
+`required_sections`). Any integrity problem makes the verdict
+`REVISION_CHANGES_SUBSTANCE` (exit code 3) whatever the scores say.
+Evaluation never rewrites; keeping the original is always a valid outcome.
+
+## 11. Automatic profile selection
+
+```yaml
+# ~/.howlwriter/preferences.yaml   (HOWLWRITER_PREFERENCES_FILE overrides)
+preferred_identity: william
+```
+
+`humanize`, `howl` and `paper` accept `--identity`, `--auto-voice` and
+`--allow-generic`; `evaluate` accepts `--identity` and `--auto-voice`.
+`--auto-voice` uses that identity; `--identity` names one directly; `--voice`
+names a profile. Routing: `--mode academic` → the academic profile;
+`professional`, `linkedin`, `technical`, `documentation`, `email`, `article`
+→ the professional profile; with no mode the document's own content
+category decides. A missing or unvalidated profile produces a stated reason,
+never a silently substituted profile. No identity is hardcoded into generic
+behaviour. For writing commands an unavailable context profile is an error;
+`--allow-generic` permits writing without one and records the fallback.
+
+### Voice activation and provenance
+
+Every way of requesting a voice -- `--voice`, `--voice-profile`, a spec's or
+an outline's `voice_profile`, a project config, the web routes, automatic
+selection -- goes through one resolver (`howlwriter.voice.selection`):
+
+* a registry name resolves through the voice registry; an explicit path loads
+  that file; a value that is both is refused as ambiguous;
+* an explicitly requested name or path that does not exist, or a profile file
+  that does not parse, stops the run with an error naming the available
+  voices -- it never writes generic prose instead;
+* a free-text value such as `"Jane Doe"` keeps its legacy meaning: an author
+  label with no profile, recorded as such;
+* a selected profile that then fails to load stops the run;
+* generation provenance records `requested`, `source`, `kind`, `applied`,
+  `profile_applied`, `profile_loaded` and any allowed `fallback`, with no
+  local paths. The old placeholder `configured_voice_profile` is gone.
+
+Before this, `paper` passed a spec's bare name to a path-only loader (no voice
+applied), an outline's voice reached the spec only after the config was fixed
+(never applied), and the web academic route never forwarded the spec's voice.
+`writer` and `native` have no voice path and do not claim one.
+
+## 12. Incremental rescanning
+
+`voice scan` and `voice sync` (scan, then rebuild) compare each file's size
+and modification time with the last scan and re-read only what changed.
+Added, modified, removed and renamed files are reported; renames are matched
+by content and keep their decisions. Scans checkpoint as they go, so an
+interrupted scan resumes. A mount that is down fails the scan and leaves the
+inventory untouched.
+
+Profiles are never overwritten by worse evidence: a build is refused (and the
+existing profile kept) when fewer than three attested documents qualify, or
+when documents the profile was trained on are present but unreadable
+(`--allow-shrink` overrides). Builds are atomic, and each one appends to
+`profile_changes.jsonl`. No scan is ever scheduled automatically.
+
+## 13. Models
+
+Everything above is deterministic and local. `build-identity --model-traits`
+additionally runs the existing HowlPlane `voice_analyst` trait analysis, which
+sends cleaned document text to the configured provider; it requires
+`--allow-remote-content`. Reading the drive and sending its contents to a
+third party are separate permissions.
+
+## 14. Web UI
+
+The **Voice Intelligence** tab has four views: Corpus (mount status, counts,
+coverage, rescan of configured sources), Review (pending documents with
+reasons, one-click decisions, mixed-paragraph selection, on-demand preview),
+Profiles (both context profiles with source counts, holdout counts,
+calibration and validation status, characteristics), and Evaluate (both
+scores side by side, dimension breakdown, drift, before-and-after). It cannot
+choose new folders to read, it never shows a number the evidence does not
+support, and it shows document text only in a requested preview.
+
+## 15. Limitations
+
+* Native Google Docs are invisible to the mount; without the Drive API
+  fallback a corpus kept mostly in Docs cannot be read.
+* Authorship cannot be inferred from style. Profiles are only as authentic
+  as the attestations behind them.
+* The Naturalness reference is the person's own attested writing unless
+  another reference folder is supplied, so it measures "mechanical relative
+  to this person's real writing in this context".
+* Perturbation controls are a sensitivity test, not a model of AI writing.
+* Comparison-author controls come from the same drive and may be few, so
+  Voice Match discrimination is often `CALIBRATED_UNVALIDATED`.
+* Small corpora make both percentiles coarse: with 12 reference documents
+  each step is about eight points.
+* Category and context classification are heuristic and correctable in review.

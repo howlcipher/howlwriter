@@ -13,6 +13,7 @@ later. Everything else (styling, revision marks, comments) is dropped.
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 import re
 import xml.etree.ElementTree as ET
@@ -22,7 +23,9 @@ from howlwriter.voice.corpus.extract import (
     STATUS_EMPTY,
     STATUS_FAILED,
     STATUS_OK,
+    ArchiveLimitError,
     ExtractionResult,
+    read_archive_member,
     read_bytes,
 )
 
@@ -69,26 +72,33 @@ def _paragraph_prefix(paragraph: ET.Element) -> str:
     return ""
 
 
-def extract_docx(path: Path) -> ExtractionResult:
-    raw, failure = read_bytes(path)
+def extract_docx(path: Path, data: bytes | None = None) -> ExtractionResult:
+    raw, failure = (data, None) if data is not None else read_bytes(path)
     if failure is not None:
         failure.parser = "docx"
         return failure
 
     try:
-        with zipfile.ZipFile(path) as archive:
+        # Parse the bytes already read rather than reopening the path: on a
+        # cloud mount the file can change between two reads.
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
             if "word/document.xml" not in archive.namelist():
                 return ExtractionResult(
                     parser="docx",
                     status=STATUS_FAILED,
                     reason="archive has no word/document.xml body part",
                 )
-            body_xml = archive.read("word/document.xml")
+            body_xml = read_archive_member(archive, "word/document.xml")
         root = ET.fromstring(body_xml)
     except (zipfile.BadZipFile, KeyError) as error:
         return ExtractionResult(
             parser="docx", status=STATUS_FAILED,
             reason=f"not a readable docx archive: {error}",
+        )
+    except ArchiveLimitError as error:
+        return ExtractionResult(
+            parser="docx", status=STATUS_FAILED,
+            reason=f"refused to inflate the document body: {error}",
         )
     except ET.ParseError as error:
         return ExtractionResult(

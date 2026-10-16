@@ -35,13 +35,27 @@ The following capabilities are implemented, tested, and active on `main`:
 | 26 | Empirical Evaluation & Benchmarking | Done -- Durable evaluation framework (`howlwriter.evaluation`), 36-case dataset across 11 categories, 8 independent metric families (requirement satisfaction, factuality, citation integrity, source quality, meaning preservation, multidimensional voice fidelity without fake percentages, structural diversity CV, writing quality signals), blinded pairwise judging with position-bias mitigation and provider independence auditing, fair baselines (`raw_model`, `strong_prompt`, `howlwriter_minimal`, `howlwriter_full`) and architectural ablations, bootstrap 95% CIs and exact sign tests with `INSUFFICIENT EVIDENCE` guards, cost/latency transparency (2.5x-3.9x token multiplier), regression baseline tracking, CLI commands (`howlwriter benchmark run/list/report/compare`), and web API routes |
 | 26.1 | Evaluation Validity, Calibration & Ablation Integrity | Done -- Evaluator calibration suite (positive & negative controls with empirical sensitivity gaps), semantic entailment engine (clause/number/polarity/hedge matching for factuality), multidimensional distribution distance for voice fidelity (reference human author features, guarded with `NO_DEMONSTRATED_VOICE_EFFECT`), true pipeline stage bypassing with execution manifests and stage timing provenance, bounded structural diversity scoring (distance from natural human distribution, separating raw CV from [0, 1] normalized score), strict denominator disclosure ($N$, $n$, failures, exclusions), pairwise judge position-swap symmetry and hidden control calibration, strict separation of Final Output Quality vs Assurance & Verification Coverage, and `howlwriter benchmark validate` CLI |
 
+| 27 | Personal Voice Intelligence | Done -- identity ledgers under `~/.howlwriter/identities/` (owner-only, refused inside unignored worktrees); read-only mounted-drive scanner with per-component exclusions enforced before traversal, no symlink following, bounded concurrency, retries, checkpoints, rename/change detection; hardened extraction (single read per file, bounded archive inflation, PDF page cap, per-document fault isolation); content categories and provenance-based authorship proposals with attestation (CLI, worksheet, web), carry-forward and reopening; academic and professional profiles via `build_voice` with explicit attested selection; optional read-only Drive API fallback for native Docs; ChatGPT-export supporting evidence; calibrated Human Naturalness and Personal Voice Match percentiles with control validation, contamination refusal and explicit withholding; window-level drift; before/after comparison; automatic profile selection; `WritingReport.voice_match` populated from calibrated profiles; `howlwriter evaluate`, `voice scan/review/build-identity/sync/status/chat-import/google-auth`, and a Voice Intelligence web tab. See `docs/voice-intelligence.md` |
+
+| 27.1 | Voice Workshop | Done -- local prompt bank (academic, professional, technical, casual; short and paragraph), user subjects and gap-driven follow-ups, verbatim private samples with self-written declaration and explicit approval, fixed train/calibration sides, duplicate and repeated-prompt protection, capped and down-weighted bundle evidence kept out of scoring references, evidence coverage without percentages, CLI and web UI |
 
 ## Explicitly Deferred (Named, Not Half-Built)
 
 - **Alternative Citation Styles (MLA / Chicago / IEEE / Harvard).** `CitationStyle` reserves the names; APA 7 is the primary production implementation.
 - **Automated Upstream Citation Validation against Remote Registrar APIs.** `WritingRole.CITATION_VALIDATOR` is defined in the role vocabulary; live remote registrar validation is deferred.
-- **Real "Voice Match %" Similarity Metric.** `WritingReport.voice_match` stays `None` and is omitted from rendered reports rather than approximated with a fake percentage.
 - **Multi-file / Project-wide Batch Rewriting.** Every CLI command operates on one file or assignment spec at a time to ensure reviewability and human authority gating.
+
+## Known Limitations Surfaced by Milestone 27
+
+- **Native Google Docs are invisible to a FUSE mount.** the cloud-drive client lists them
+  but refuses reads; the Drive API fallback exists but needs a one-time OAuth
+  client and token.
+- **Profiles depend on attestation.** No stylometric signal separates a
+  person's unaided writing from AI-assisted drafts, so nothing is trained
+  until the person confirms it.
+- **Voice Match discrimination is usually unvalidated on a single drive.**
+  Comparison-author prose is scarce, so most scores are
+  `CALIBRATED_UNVALIDATED` and say so.
 
 ## Known Limitations Surfaced by Milestone 19-22 and 25.1
 

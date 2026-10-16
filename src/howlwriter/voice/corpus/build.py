@@ -105,6 +105,51 @@ class CorpusReport:
     sensitive_excluded: int = 0
 
 
+@dataclass(frozen=True)
+class SelectedSource:
+    """One file a caller has already decided belongs in this profile.
+
+    Used by the identity layer, which builds context profiles from documents
+    the person attested they wrote. An attestation answers the authorship
+    question the heuristic classifier can only guess at, so it replaces the
+    classifier's authorship holds. It does not replace the structural checks:
+    a file that turns out to be code, a template, or too short to measure is
+    still excluded, because no attestation makes a form into prose.
+    """
+
+    weight: float = 1.0
+    context: str = ""
+    paragraphs: frozenset[int] | None = None
+    authorship: str = ""
+    #: Maps the raw extracted text to the attested authored portion (e.g. the
+    #: answer lines of a publisher worksheet). An empty result excludes the
+    #: document rather than falling back to the whole text.
+    text_filter: Callable[[str], str] | None = None
+
+
+@dataclass
+class ArtifactContext:
+    """What an `artifacts` callback can see, while cleaned text still exists."""
+
+    profile: VoiceProfile
+    records: dict[str, SourceRecord]
+    texts: dict[str, str]
+    train_keys: list[str]
+    holdout_keys: list[str]
+
+
+#: Classifications no attestation overrides.
+_STRUCTURAL_EXCLUSIONS = frozenset({
+    quality_stage.NON_PROSE, quality_stage.SENSITIVE_CONTENT,
+    quality_stage.TEMPLATE_OR_PROMPT, quality_stage.RESUME,
+})
+
+
+def _select_paragraphs(text: str, chosen: frozenset[int]) -> str:
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    return "\n\n".join(p for i, p in enumerate(paragraphs) if i in chosen)
+
+
 @dataclass
 class BuildOutcome:
     profile: VoiceProfile
@@ -219,8 +264,21 @@ def build_voice(
     stage_callback: StageCallback | None = None,
     reuse_cache: bool = True,
     profile_type: str = "personal_voice",
+    selection: dict[str, SelectedSource] | None = None,
+    artifacts: Callable[[ArtifactContext], dict[str, str]] | None = None,
+    split_groups: dict[str, str] | None = None,
+    forced_splits: dict[str, str] | None = None,
 ) -> BuildOutcome:
-    """Build or rebuild a named personal voice from a corpus."""
+    """Build or rebuild a named personal voice from a corpus.
+
+    `selection`, when given, replaces discovery: exactly those files (keys are
+    resolved absolute paths) are read, with the caller's weight and context.
+    `roots` is then recorded for provenance only. `forced_splits` maps keys to
+    "train" or "holdout", bypassing the hash split. `split_groups` maps keys to
+    family ids that must share one side of the holdout split. `artifacts` is called once,
+    before the staged directory is committed, and may return extra files
+    (name -> content) to write into the profile directory atomically with it.
+    """
     started = time.time()
     store = VoiceStore(name, root=store_root)
     report = CorpusReport()
@@ -251,7 +309,10 @@ def build_voice(
     # --- 1. discovery ---
     notify("discovering", "RUNNING")
     stage_start = time.time()
-    discovery = discover(roots, recursive=recursive)
+    if selection is not None:
+        discovery = discover(sorted(selection), recursive=False)
+    else:
+        discovery = discover(roots, recursive=recursive)
     stage_times["discovering"] = round(time.time() - stage_start, 2)
 
     report.roots_supplied = discovery.roots_supplied
@@ -335,10 +396,30 @@ def build_voice(
             )
             continue
 
-        cleaned = clean_document(extraction.text)
+        selected = selection.get(key) if selection is not None else None
+        source_text = extraction.text
+        if selected is not None and selected.text_filter is not None:
+            source_text = selected.text_filter(extraction.text)
+            if not source_text.strip():
+                warnings.append(
+                    "an attested extraction produced no text for one document; it was excluded"
+                )
+                records[key] = SourceRecord(
+                    key=key, path=key, size=entry.size, mtime=entry.mtime,
+                    parser=extraction.parser, extraction_status=extraction.status,
+                    classification="empty_attested_extraction",
+                    inclusion=quality_stage.EXCLUDE,
+                    reason="the attested extraction produced no text",
+                )
+                continue
+        cleaned = clean_document(source_text)
+        if selected is not None and selected.paragraphs is not None:
+            cleaned.text = _select_paragraphs(cleaned.text, selected.paragraphs)
+            cleaned.kept_words = len(cleaned.text.split())
 
         unchanged = (
-            cached is not None
+            (selected is None or (selected.paragraphs is None and selected.text_filter is None))
+            and cached is not None
             and cached.content_hash == content_hash
             and str(key) in cached_features
             and cached_features[key].get("feature_schema") == schema_fingerprint
@@ -365,6 +446,28 @@ def build_voice(
         context_result = context_stage.classify_context(
             path=entry.path, text=cleaned.text, cleanup=cleaned, features=features,
         )
+        if selected is not None:
+            if assessment.classification in _STRUCTURAL_EXCLUSIONS:
+                warnings.append(
+                    "an attested document was still excluded: it reads as "
+                    f"{assessment.classification.replace('_', ' ')}"
+                )
+            else:
+                base = (
+                    assessment.weight
+                    if assessment.inclusion == quality_stage.INCLUDE_LOW_WEIGHT
+                    else 1.0
+                )
+                weight = round(max(0.0, min(1.0, selected.weight * base)), 3)
+                assessment.weight = weight
+                assessment.inclusion = (
+                    quality_stage.INCLUDE if weight >= 0.99 else quality_stage.INCLUDE_LOW_WEIGHT
+                )
+                assessment.reason = (
+                    f"attested {selected.authorship or 'by the author'}; {assessment.reason}"
+                )
+            if selected.context:
+                context_result.context = selected.context
         structural_labels = {
             "opening_class": diversity_stage.classify_opening(cleaned.text),
             "closing_class": diversity_stage.classify_closing(cleaned.text),
@@ -496,10 +599,29 @@ def build_voice(
     # --- 5. train / holdout split ---
     notify("features", "RUNNING")
     stage_start = time.time()
-    split = assign_split([
-        (doc.key, _fingerprint(Path(doc.key), records[doc.key].content_hash), doc.context)
-        for doc in evidence
-    ])
+    forced = forced_splits or {}
+    split = assign_split(
+        [
+            (doc.key, _fingerprint(Path(doc.key), records[doc.key].content_hash), doc.context)
+            for doc in evidence
+            if doc.key not in forced
+        ],
+        groups=split_groups,
+    )
+    # Sources whose side was fixed by the caller (Voice Workshop bundles: a
+    # sample is assigned to training or calibration once, when approved, and
+    # must never be used for both) bypass the hash split.
+    from howlwriter.voice.corpus.split import HOLDOUT as _HOLDOUT, SplitAssignment as _Assignment
+
+    for doc in evidence:
+        side = forced.get(doc.key)
+        if side is None:
+            continue
+        side = _HOLDOUT if side == _HOLDOUT else TRAIN
+        split.assignments[doc.key] = _Assignment(
+            key=doc.key, side=side, context=doc.context, reason="side fixed by the caller",
+        )
+        (split.holdout_keys if side == _HOLDOUT else split.train_keys).append(doc.key)
     for doc in evidence:
         records[doc.key].split = split.side_of(doc.key)
     train = [doc for doc in evidence if split.side_of(doc.key) == TRAIN]
@@ -641,12 +763,21 @@ def build_voice(
         },
     )
 
+    extra_files: dict[str, str] = {}
+    if artifacts is not None:
+        extra_files = artifacts(ArtifactContext(
+            profile=profile, records=records, texts=texts,
+            train_keys=[doc.key for doc in train], holdout_keys=[doc.key for doc in holdout],
+        )) or {}
+
     with store.stage() as staged:
         staged.write_profile(profile)
         staged.write_sources(records)
         staged.write_features(feature_cache)
         staged.write_overrides(overrides, raw=overrides_raw)
         staged.write_build(build_record)
+        for filename, content in sorted(extra_files.items()):
+            staged.write_extra(filename, content)
         directory = staged.commit()
     stage_times["saving"] = round(time.time() - stage_start, 2)
     notify("saving", "DONE", {"directory": str(directory)})

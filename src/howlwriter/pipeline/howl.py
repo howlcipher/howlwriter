@@ -80,6 +80,7 @@ from howlwriter.review.meaning import (
     RealModelMeaningReviewer,
     SemanticMeaningResult,
 )
+from howlwriter.voice.selection import provenance_record, require_loaded
 
 
 @dataclass
@@ -137,6 +138,7 @@ def _draft_from_outline(
     from howlwriter.voice.realization import derive_structural_realization
 
     profile = _load_voice_profile(config.voice_profile)
+    require_loaded(config, profile)
     realization = None
     if profile is not None:
         from howlwriter.outline.freedom import assess_freedom
@@ -197,7 +199,7 @@ def run_howl_pipeline(
         writing_mode=mode.value if mode else None,
         provenance_level=provenance_level,
         outline_present=outline is not None,
-        voice_profile=("configured_voice_profile" if config.voice_profile else None),
+        voice_profile=provenance_record(config),
     )
     stage_index = 0
 
@@ -294,6 +296,8 @@ def _run(
             from howlwriter.voice.realization import derive_structural_realization
 
             profile = _load_voice_profile(config.voice_profile)
+            require_loaded(config, profile)
+            provenance.voice_profile = provenance_record(config, loaded=profile is not None)
             if profile is not None:
                 input_words = count_body_words(original_document.text)
                 realization = derive_structural_realization(
@@ -538,6 +542,9 @@ def _run(
             actual_body_words=actual_words,
             word_count_status=wc_status,
         )
+        from howlwriter.evaluation.personal import attach_voice_match
+
+        attach_voice_match(report, config.voice_profile, final_document.text)
 
         record = RunRecord(
             run_id=active_run_id,

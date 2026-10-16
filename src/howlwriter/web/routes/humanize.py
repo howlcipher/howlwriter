@@ -29,7 +29,8 @@ from howlwriter.web.models import (
     HumanizeResponse,
     RuleMatchDto,
 )
-from howlwriter.voice.corpus.resolve import resolve_voice_option
+from howlwriter.voice.selection import apply_selection
+from howlwriter.voice.selection import require_loaded
 
 router = APIRouter(prefix="/api/humanize", tags=["humanize"])
 
@@ -46,13 +47,16 @@ def run_humanize(req: HumanizeRequest) -> HumanizeResponse:
         config.apply_safe_rewrites = True
 
     try:
-        resolved = resolve_voice_option(
-            voice=req.voice, voice_profile=req.voice_profile
+        apply_selection(
+            config,
+            voice=req.voice,
+            voice_profile=req.voice_profile,
+            spec_value=config.voice_profile,
+            spec_source="config",
+            mode=req.mode,
         )
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    if resolved:
-        config.voice_profile = resolved
 
     mode = parse_mode(req.mode)
     document = Document.parse(req.text, title=req.title or "Untitled", mode=mode)
@@ -74,6 +78,7 @@ def run_humanize(req: HumanizeRequest) -> HumanizeResponse:
         from howlwriter.voice.realization import derive_structural_realization
 
         profile = _load_voice_profile(config.voice_profile)
+        require_loaded(config, profile)
         if profile is not None:
             input_words = count_body_words(document.text)
             realization = derive_structural_realization(

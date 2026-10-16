@@ -138,6 +138,13 @@ def _load_voice_profile(value: str | None) -> VoiceProfile | None:
             if overrides_path.is_file():
                 profile.overrides = store.load_overrides()
             store.attach_structural_vectors(profile)
+            # Optional, separately attributed supporting evidence (e.g. the
+            # author's informal chat habits). Attached at load time rather
+            # than stored in profile.json so it can never change the
+            # profile's measured distributions.
+            evidence_path = path.parent / "supporting_evidence.json"
+            if evidence_path.is_file():
+                profile.supporting_evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
         except Exception:
             pass
     return profile
@@ -271,6 +278,9 @@ class ModelHumanizerRewriter:
         )
 
         voice_profile = _load_voice_profile(config.voice_profile)
+        from howlwriter.voice.selection import require_loaded
+
+        require_loaded(config, voice_profile)
         voice_text = _render_voice_profile(voice_profile, document.mode, realization=realization)
 
         mode_label = (

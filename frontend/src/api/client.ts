@@ -16,6 +16,15 @@ import {
   VoiceDetail,
   VoiceSummary,
   GenerationProvenance,
+  PersonalComparison,
+  PersonalEvaluation,
+  VoiceIntelIdentities,
+  VoiceIntelReviewGroup,
+  VoiceIntelReviewItem,
+  VoiceIntelStatus,
+  WorkshopCoverage,
+  WorkshopPrompt,
+  WorkshopSample,
 } from '../types';
 
 const API_BASE = '/api';
@@ -232,4 +241,163 @@ export const api = {
     return handleResponse<JobResponse>(res);
   },
 
+  // --- Voice Intelligence ---
+
+  async listIdentities(): Promise<VoiceIntelIdentities> {
+    return handleResponse<VoiceIntelIdentities>(await fetch(`${API_BASE}/voice-intel/identities`));
+  },
+
+  async getIdentityStatus(identity: string): Promise<VoiceIntelStatus> {
+    return handleResponse<VoiceIntelStatus>(
+      await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/status`),
+    );
+  },
+
+  async getReviewQueue(
+    identity: string,
+  ): Promise<{ summary: VoiceIntelStatus['review']; pending: VoiceIntelReviewItem[] }> {
+    return handleResponse(await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review`));
+  },
+
+  async attest(
+    identity: string,
+    docId: string,
+    body: {
+      authorship: string;
+      category?: string;
+      context?: string;
+      include_paragraphs?: string;
+      use_proposed_extraction?: boolean;
+      note?: string;
+    },
+  ): Promise<{ doc_id: string; authorship: string }> {
+    const res = await fetch(
+      `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review/${encodeURIComponent(docId)}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+    );
+    return handleResponse(res);
+  },
+
+  async getReviewGroups(
+    identity: string,
+  ): Promise<{ groups: VoiceIntelReviewGroup[]; descriptions: Record<string, string> }> {
+    return handleResponse(await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review-groups`));
+  },
+
+  async decideGroup(
+    identity: string,
+    groupId: string,
+    body: { authorship: string; doc_ids: string[]; use_proposed_extraction?: boolean },
+  ): Promise<{ recorded: number }> {
+    const res = await fetch(
+      `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review-groups/${encodeURIComponent(groupId)}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+    );
+    return handleResponse(res);
+  },
+
+  async previewDocument(identity: string, docId: string): Promise<{ paragraphs: string[] }> {
+    return handleResponse(
+      await fetch(
+        `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review/${encodeURIComponent(docId)}/preview?confirm=true`,
+      ),
+    );
+  },
+
+  async startIdentityJob(identity: string, kind: 'scan' | 'build'): Promise<JobResponse> {
+    const res = await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/${kind}`, { method: 'POST' });
+    return handleResponse<JobResponse>(res);
+  },
+
+  async evaluatePersonal(body: {
+    text: string;
+    mode?: string | null;
+    voice?: string | null;
+    identity?: string | null;
+    auto_voice?: boolean;
+  }): Promise<PersonalEvaluation> {
+    const res = await fetch(`${API_BASE}/voice-intel/evaluate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return handleResponse<PersonalEvaluation>(res);
+  },
+
+  async comparePersonal(body: {
+    original: string;
+    revised: string;
+    mode?: string | null;
+    voice?: string | null;
+    identity?: string | null;
+    auto_voice?: boolean;
+  }): Promise<PersonalComparison> {
+    const res = await fetch(`${API_BASE}/voice-intel/compare`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return handleResponse<PersonalComparison>(res);
+  },
+  // --- Voice Workshop ---
+
+  async getWorkshop(
+    identity: string,
+    showText = false,
+  ): Promise<{ coverage: WorkshopCoverage; samples: WorkshopSample[]; local_only: boolean }> {
+    const query = showText ? '?show_text=true' : '';
+    return handleResponse(await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop${query}`));
+  },
+
+  async workshopPrompt(
+    identity: string,
+    body: { context?: string | null; subject?: string | null; follow_up_of?: string | null },
+  ): Promise<WorkshopPrompt> {
+    const res = await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/prompt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return handleResponse<WorkshopPrompt>(res);
+  },
+
+  async workshopAnswer(
+    identity: string,
+    body: { prompt_id: string; subject: string; text: string; self_written: boolean; approve: boolean },
+  ): Promise<WorkshopSample> {
+    const res = await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/samples`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return handleResponse<WorkshopSample>(res);
+  },
+
+  async workshopAction(
+    identity: string,
+    sampleId: string,
+    action: 'approve' | 'exclude' | 'remove',
+  ): Promise<{ status: string }> {
+    const res = await fetch(
+      `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/samples/${encodeURIComponent(sampleId)}/actions/${action}`,
+      { method: 'POST' },
+    );
+    return handleResponse(res);
+  },
+
+  async workshopReclassify(identity: string, sampleId: string, context: string): Promise<{ context: string }> {
+    const res = await fetch(
+      `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/samples/${encodeURIComponent(sampleId)}/context`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ context }) },
+    );
+    return handleResponse(res);
+  },
+
+  async workshopRevision(identity: string, sampleId: string, text: string): Promise<unknown> {
+    const res = await fetch(
+      `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/samples/${encodeURIComponent(sampleId)}/revision`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) },
+    );
+    return handleResponse(res);
+  },
 };

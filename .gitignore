@@ -27,6 +27,31 @@ profiles/private/
 dogfood/*results*/
 dogfood/*.json
 
+# Personal Voice Intelligence. An identity's ledger (drive inventory,
+# authorship decisions, review worksheet, scan reports, calibration, chat
+# evidence) lives in ~/.howlwriter/identities/<identity>/ by default, and the
+# code refuses to write it inside a worktree unless Git ignores it. These
+# patterns are that guard's other half: they cover HOWLWRITER_IDENTITIES_DIR,
+# HOWLWRITER_VOICES_DIR, or HOME pointed into the checkout.
+.howlwriter/
+identities/
+inventory.json
+decisions.json
+decisions.log.jsonl
+review_queue.yaml
+scan_report.json
+profile_changes.jsonl
+chat_evidence.json
+supporting_evidence.json
+*.voice-eval.json
+# A ChatGPT data export is the person's whole conversation history.
+conversations.json
+chatgpt-export*/
+chat-export*/
+# Local Google credentials (publishing and the optional Drive fallback).
+google_token*.json
+*client_secret*.json
+
 # Generation provenance. A provenance record contains the user's own outline
 # text and, at full level, every prompt HowlWriter built around it. It is
 # written beside the artifact on request and is never published. Committed

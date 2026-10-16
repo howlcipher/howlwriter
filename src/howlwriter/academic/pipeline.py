@@ -96,6 +96,7 @@ from howlwriter.review.meaning import (
     RealModelMeaningReviewer,
     SemanticMeaningResult,
 )
+from howlwriter.voice.selection import provenance_record, require_loaded
 
 # A redundancy result is treated as a real deficiency (feeding NEEDS_REVIEW)
 # only once it clears one of these thresholds -- a single incidental overlap
@@ -302,7 +303,7 @@ def _run_academic_pipeline(
         workflow="paper-outline" if outline is not None else "paper",
         writing_mode="academic",
         outline_present=outline is not None,
-        voice_profile=("configured_voice_profile" if cfg.voice_profile else None),
+        voice_profile=provenance_record(cfg),
     )
     if outline is not None:
         from howlwriter.academic.outline_bridge import (
@@ -312,6 +313,15 @@ def _run_academic_pipeline(
         from howlwriter.outline.freedom import assess_freedom
 
         spec = spec_from_outline(outline, base=spec)
+    # A spec (or an outline folded into it) may name a voice that no caller
+    # resolved -- the web route and programmatic callers pass the spec as-is.
+    # Resolve it strictly here rather than letting a bare name load nothing.
+    if not cfg.voice_profile and spec.voice_profile:
+        from howlwriter.voice.selection import apply_selection
+
+        apply_selection(cfg, spec_value=spec.voice_profile, spec_source="spec", mode="academic")
+        provenance.voice_profile = provenance_record(cfg)
+    if outline is not None:
         assessment = assess_freedom(outline)
         provenance.generation_freedom = assessment.freedom.value
         provenance.outline_sha256 = prov_sha256(outline.to_json())
@@ -343,6 +353,8 @@ def _run_academic_pipeline(
         from howlwriter.voice.realization import derive_structural_realization
 
         profile = _load_voice_profile(cfg.voice_profile)
+        require_loaded(cfg, profile)
+        provenance.voice_profile = provenance_record(cfg, loaded=profile is not None)
         if profile is not None:
             realization = derive_structural_realization(
                 profile=profile,
@@ -1020,6 +1032,9 @@ def _run_academic_pipeline(
         materials_summary=material_scan.ledger.counts() if material_scan else None,
         research_diagnostics=research_summary if researcher.diagnostics else None,
     )
+    from howlwriter.evaluation.personal import attach_voice_match
+
+    attach_voice_match(report, cfg.voice_profile, final_document.text)
 
     # 11. RECORD DOGFOOD DIAGNOSTIC ARTIFACT
     record = RunRecord(

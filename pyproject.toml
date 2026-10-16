@@ -25,7 +25,23 @@ dev = [
     # Starlette TestClient prefers httpx2; keep httpx for runtime callers.
     "httpx2>=2.0.0",
     "playwright>=1.55,<2.0",
+    # Pure-Python packet parsing, so packet-capture tests run without TShark.
+    "dpkt>=1.9,<2.0",
     "howlwriter[web,corpus,publish]",
+]
+sources = [
+    # Source Intelligence adapters (`howlwriter project`). Everything runs
+    # locally; models are downloaded once and no source content is uploaded.
+    # Each is optional: without it, that format is inventoried and reported
+    # as not read, never guessed at.
+    "howlwriter[corpus]",
+    "dpkt>=1.9,<2.0",                    # packet captures when TShark is absent
+    "rapidocr-onnxruntime>=1.4,<2.0",    # OCR for screenshots, image-only PDF pages, video frames
+    "pillow>=10.0",                      # image downscaling before OCR
+    "imageio-ffmpeg>=0.5,<1.0",          # a bundled ffmpeg for audio and frame extraction
+    "av>=12.0",                          # media probing
+    "faster-whisper>=1.0,<2.0",          # local speech transcription
+    "playwright>=1.55,<2.0",             # optional browser research and lab observation
 ]
 corpus = [
     # PDF text extraction for `howlwriter voice build`. Optional on purpose:

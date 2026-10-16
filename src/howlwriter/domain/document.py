@@ -126,12 +126,10 @@ class Document(DataClassSerializationMixin):
                     current_section = "body"
 
             sentences: list[Sentence] = []
-            cursor = 0
-            for s_index, chunk in enumerate(_split_sentences(raw)):
-                start = raw.index(chunk, cursor)
-                end = start + len(chunk)
-                cursor = end
-                sentences.append(Sentence(index=s_index, text=chunk, char_start=start, char_end=end))
+            for s_index, (start, end) in enumerate(_sentence_spans(raw)):
+                sentences.append(
+                    Sentence(index=s_index, text=raw[start:end], char_start=start, char_end=end)
+                )
             paragraphs.append(
                 Paragraph(
                     index=p_index,
@@ -143,12 +141,39 @@ class Document(DataClassSerializationMixin):
         return cls(title=title, paragraphs=paragraphs, mode=mode)
 
 
-def _split_sentences(paragraph_text: str) -> list[str]:
-    pieces = [p.strip() for p in _SENTENCE_BOUNDARY.split(paragraph_text) if p.strip()]
-    merged: list[str] = []
-    for piece in pieces:
-        if merged and _ABBREVIATION_END.search(merged[-1]):
-            merged[-1] = f"{merged[-1]} {piece}"
+def _sentence_spans(paragraph_text: str) -> list[tuple[int, int]]:
+    """Character spans of each sentence in `paragraph_text`.
+
+    Pieces split after an abbreviation are re-joined by extending the span,
+    so a merged sentence keeps the original whitespace between its parts.
+    Joining the stripped pieces with a single space instead produced text
+    that was not a substring of the paragraph whenever the original break
+    was a newline or a run of spaces ("U.S.\nGovernment"), and the offset
+    lookup that followed raised for the whole document.
+    """
+    raw_spans: list[tuple[int, int]] = []
+    position = 0
+    for match in _SENTENCE_BOUNDARY.finditer(paragraph_text):
+        raw_spans.append((position, match.start()))
+        position = match.end()
+    raw_spans.append((position, len(paragraph_text)))
+
+    stripped: list[tuple[int, int]] = []
+    for start, end in raw_spans:
+        segment = paragraph_text[start:end]
+        if not segment.strip():
+            continue
+        leading = len(segment) - len(segment.lstrip())
+        stripped.append((start + leading, start + len(segment.rstrip())))
+
+    merged: list[tuple[int, int]] = []
+    for start, end in stripped:
+        if merged and _ABBREVIATION_END.search(paragraph_text[merged[-1][0]:merged[-1][1]]):
+            merged[-1] = (merged[-1][0], end)
         else:
-            merged.append(piece)
+            merged.append((start, end))
     return merged
+
+
+def _split_sentences(paragraph_text: str) -> list[str]:
+    return [paragraph_text[start:end] for start, end in _sentence_spans(paragraph_text)]

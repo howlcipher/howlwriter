@@ -23,13 +23,20 @@ src/howlwriter/
 │                 requirement extraction from instructions/rubrics, and local
 │                 sources. Reuses the voice-corpus extractors.
 ├── provenance/   Generation-provenance assembly, redaction and sidecar writers
-├── evaluation/   Benchmarking and evaluator-calibration framework
+├── evaluation/   Benchmarking and evaluator-calibration framework, plus the
+│                 calibrated personal scores: naturalness, voice_match,
+│                 drift, perturb (controls), empirical (statistics), and
+│                 personal (the `howlwriter evaluate` orchestrator)
 ├── citations/    CitationStyle registry + the APA7Formatter
 ├── voice/        Voice corpus profiling (voice/corpus/: discovery,
 │                 extraction, cleanup, quality, dedup, features, traits,
 │                 split, aggregation, validation, the private store) plus
 │                 CorpusStatsLearner and the VoiceAnalyzer Protocol.
-│                 See docs/voice-corpus.md
+│                 See docs/voice-corpus.md. voice/identity/: Personal Voice
+│                 Intelligence (drive scanner, exclusions, provenance,
+│                 categories, authorship review, context profiles, chat
+│                 evidence, Drive API fallback, private ledger). See
+│                 docs/voice-intelligence.md
 ├── review/       MeaningPreservationReviewer + WritingRole registry
 ├── output/       LocalOutputManager, safe naming, collision protection, manifests
 ├── rendering/    Multi-format renderers (Markdown, APA 7 DOCX, PDF, CombinedDocument)

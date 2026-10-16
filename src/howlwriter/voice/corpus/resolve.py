@@ -51,6 +51,36 @@ def profile_reference(name: str, *, root: Path | None = None) -> str:
     return str(store.directory / "profile.json")
 
 
+def select_voice(
+    *,
+    voice: str | None,
+    voice_profile: str | None,
+    root: Path | None = None,
+):
+    """Strictly resolve the two flags to a `VoiceSelection`.
+
+    `--voice` must name a registry voice; `--voice-profile` may be a path or,
+    for backward compatibility, a free-text author label. An explicit name or
+    path that cannot be loaded raises `VoiceSelectionError`.
+    """
+    from howlwriter.voice.selection import KIND_REGISTRY, VoiceSelectionError, resolve_reference
+
+    if voice and voice_profile:
+        raise ValueError(
+            "--voice and --voice-profile are alternatives; pass one. "
+            "--voice names a personal voice in your local registry, "
+            "--voice-profile points at a specific profile file."
+        )
+    if voice:
+        selection = resolve_reference(voice, source="flag", root=root)
+        if selection.kind != KIND_REGISTRY:
+            raise VoiceSelectionError(
+                f"--voice {voice!r} is not a voice in the local registry; use --voice-profile for a file"
+            )
+        return selection
+    return resolve_reference(voice_profile, source="flag", root=root)
+
+
 def resolve_voice_option(
     *,
     voice: str | None,
@@ -63,12 +93,4 @@ def resolve_voice_option(
     the two could point at different profiles, and quietly picking one would
     make the output impossible to explain.
     """
-    if voice and voice_profile:
-        raise ValueError(
-            "--voice and --voice-profile are alternatives; pass one. "
-            "--voice names a personal voice in your local registry, "
-            "--voice-profile points at a specific profile file."
-        )
-    if voice:
-        return profile_reference(voice, root=root)
-    return voice_profile
+    return select_voice(voice=voice, voice_profile=voice_profile, root=root).config_value

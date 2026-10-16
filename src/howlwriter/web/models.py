@@ -458,6 +458,25 @@ class VoiceBuildResultDto(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ProjectJobResultDto(BaseModel):
+    """Result of a Source Intelligence project job (scan, draft): counts and paths, no source text."""
+
+    kind: str
+    project_id: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class VoiceIntelJobResultDto(BaseModel):
+    """Result of a Voice Intelligence scan or identity build job.
+
+    Counts, states and reasons only; never document text or file names.
+    """
+
+    kind: str
+    identity: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 class JobResponse(BaseModel):
     job_id: str
     run_id: str
@@ -470,7 +489,7 @@ class JobResponse(BaseModel):
     stages: list[StageDto] = Field(default_factory=list)
     error_message: Optional[str] = None
     failure_category: Optional[str] = None
-    result: Optional[AcademicResultDto | VoiceBuildResultDto] = None
+    result: Optional[AcademicResultDto | VoiceBuildResultDto | VoiceIntelJobResultDto | ProjectJobResultDto] = None
 
 
 # Run History Models

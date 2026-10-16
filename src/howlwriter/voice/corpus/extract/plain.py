@@ -35,8 +35,8 @@ def decode_text(raw: bytes) -> str | None:
     return None
 
 
-def extract_plain(path: Path) -> ExtractionResult:
-    raw, failure = read_bytes(path)
+def extract_plain(path: Path, data: bytes | None = None) -> ExtractionResult:
+    raw, failure = (data, None) if data is not None else read_bytes(path)
     if failure is not None:
         failure.parser = "plain"
         return failure

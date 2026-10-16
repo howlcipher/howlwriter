@@ -126,6 +126,18 @@ See [docs/architecture.md](docs/architecture.md) for the full walkthrough.
   revision grouping, ~35 deterministic style features, a stable
   train/holdout split, holdout validation, and the private local voice
   registry under `~/.howlwriter/voices/`
+- Personal Voice Intelligence ([docs/voice-intelligence.md](docs/voice-intelligence.md)):
+  a read-only, resumable, incremental scanner for a mounted drive with
+  mandatory per-component directory exclusions; content-based categories and
+  provenance-based authorship proposals with an attestation workflow (CLI,
+  worksheet, web UI); separate `<identity>-academic` and
+  `<identity>-professional` profiles built only from attested documents;
+  optional ChatGPT-export evidence kept as low-weight supporting evidence; and
+  two independent, empirically calibrated scores (`howlwriter evaluate`):
+  Human Naturalness and Personal Voice Match, both percentiles that are
+  withheld when the evidence cannot support them, plus voice-drift findings
+  and before/after comparison with meaning, factual, citation and requirement
+  checks
 - Meaning-preservation review (number/attribution/hedge diffing, plus number-to-unit
   binding and scope-qualifier checks shared with the native fidelity engine)
 - Native structured copy path (`howlwriter native`): Dream-native request intake,
@@ -151,7 +163,7 @@ See [docs/architecture.md](docs/architecture.md) for the full walkthrough.
 - Drafting from nothing (`WRITER`) has no deterministic path at all
 
 **Deferred entirely, named rather than half-built:** MLA/Chicago/IEEE/
-Harvard citation styles, a real "voice match %" metric, citation *validation*, multi-file/directory-wide operations. See
+Harvard citation styles, citation *validation*, multi-file/directory-wide operations. See
 [ROADMAP.md](ROADMAP.md).
 
 ## Installation
@@ -219,6 +231,20 @@ howlwriter voice build --name jane --source ~/Documents/writing --recursive
 howlwriter voice inspect jane
 howlwriter voice rebuild jane
 howlwriter voice list
+
+# Personal Voice Intelligence: scan a mounted drive (read-only, exclusions
+# enforced before traversal), attest authorship, build context profiles, and
+# score documents. See docs/voice-intelligence.md.
+howlwriter voice scan --identity william --source "/path/to/mounted-drive/"
+howlwriter voice review --identity william --interactive
+howlwriter voice build-identity --identity william --profiles academic,professional
+howlwriter evaluate paper.md --mode academic --voice william-academic
+howlwriter evaluate original.md --compare revised.md --identity william --auto-voice
+howlwriter voice sync --identity william
+howlwriter voice legacy-reconcile --identity william      # recover sources behind old profiles
+howlwriter voice review --identity william --groups       # review related documents together
+howlwriter voice workshop --identity william              # answer short prompts to fill evidence gaps
+howlwriter humanize draft.md --mode academic --identity william   # automatic context profile
 
 # Native structured copy rewriting: Dream export -> request -> copy package.
 # The package (howlwriter.copy_package/v1) is consumed directly by
@@ -323,6 +349,9 @@ This starts a FastAPI backend and serves the React frontend at
 - Evidence-origin display (FULL_TEXT / ABSTRACT / METADATA_ONLY / OTHER)
 - Provider / reviewer status panel
 - Run history ledger
+- Voice Intelligence: corpus dashboard, authorship review, context profiles,
+  and side-by-side Naturalness / Voice Match evaluation with drift and
+  before/after comparison
 
 The web UI is localhost-only by default and does not phone home.
 

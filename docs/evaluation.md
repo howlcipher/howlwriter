@@ -171,3 +171,19 @@ Reports are automatically written to `output/evaluation/`:
 - `benchmark-summary.md` (Markdown summary)
 - `benchmark-results.json` (Machine-readable full run record)
 - `cases/{case_id}.json` (Individual case details)
+
+## 8. Personal Scores: Naturalness and Voice Match
+
+`howlwriter evaluate` computes two calibrated, per-document scores that
+complement the benchmark metrics above: **Human Naturalness** (a percentile
+against a reference set of human writing in the same context, scored only in
+each dimension's mechanical direction, validated against deterministic
+mechanical perturbations and attested AI documents) and **Personal Voice
+Match** (a percentile against the author's own held-out writing, validated
+against comparison-author documents). Both use the Mann-Whitney AUC with a
+Hanley-McNeil interval for validation, both are withheld when the reference
+set, the document length, or the validation cannot support a number, and
+neither is an authorship probability. `--compare` evaluates a revision with
+the existing meaning-preservation and factual-fidelity checks. The method,
+thresholds and limitations are in [voice-intelligence.md](voice-intelligence.md).
+

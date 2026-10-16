@@ -98,8 +98,8 @@ def _rtf_to_text(source: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text)
 
 
-def extract_rtf(path: Path) -> ExtractionResult:
-    raw, failure = read_bytes(path)
+def extract_rtf(path: Path, data: bytes | None = None) -> ExtractionResult:
+    raw, failure = (data, None) if data is not None else read_bytes(path)
     if failure is not None:
         failure.parser = "rtf"
         return failure

@@ -79,15 +79,17 @@ The CLI accepts a `--voice-profile` argument:
 howlwriter humanize post.md --mode linkedin --voice-profile ~/.howlwriter/voice.json
 ```
 
-### Why "voice match %" doesn't appear in reports yet
+### Voice match in reports
 
-Computing a defensible similarity score between a piece of generated text
-and a `VoiceProfile` needs either a validated comparison model or a
-carefully validated deterministic distance metric -- neither exists yet.
-`WritingReport.voice_match` stays `None` and is omitted from
-`render_text()` output entirely rather than showing an invented
-percentage. See [docs/architecture.md](architecture.md) for the general
-"omit, don't fake" rule this follows.
+`WritingReport.voice_match` is filled only when the voice is an identity
+profile carrying a calibration (built with `voice build-identity`). It is then
+a percentile against the author's own held-out writing, rendered as
+`41/100 percentile WITHIN_RANGE` with its basis -- never an authorship
+probability. When the evidence cannot support a number the report says
+"unavailable" and why. Hand-authored and plain corpus voices have no
+calibration, so the field stays `None` and is omitted, following the
+"omit, don't fake" rule in [docs/architecture.md](architecture.md). The
+method is in [voice-intelligence.md](voice-intelligence.md).
 
 ---
 

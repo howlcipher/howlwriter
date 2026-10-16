@@ -16,6 +16,10 @@ howlwriter voice inspect jane
 howlwriter humanize post.md --mode linkedin --voice jane
 ```
 
+For a whole mounted drive, separate academic and professional profiles built
+only from documents you have attested, and calibrated scores, see
+[voice-intelligence.md](voice-intelligence.md). It builds on everything below.
+
 ---
 
 ## Personal voice vs shared style
