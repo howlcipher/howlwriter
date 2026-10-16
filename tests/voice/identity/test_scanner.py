@@ -639,3 +639,42 @@ def test_google_docs_exported_without_a_private_copy_are_fetched_again(env, tmp_
     assert fake.exports == 2
     (entry,) = store.load_inventory()["entries"].values()
     assert Path(entry["content_path"]).read_text(encoding="utf-8") == texts["Doc 1"]
+
+
+def test_google_docs_paragraphs_become_blank_line_paragraphs():
+    from howlwriter.voice.identity.google_fallback import paragraph_text
+
+    expected = "Title\n\nFirst.\n\nSecond\n\nsoft\n\nThird"
+    assert paragraph_text("Title\nFirst.\r\nSecond\vsoft\n\n\nThird\n") == expected
+
+
+def test_old_format_exports_are_refetched_without_reopening_decisions(env, tmp_path, monkeypatch):
+    from howlwriter.voice.identity import google_fallback as gf
+
+    root = tmp_path / "drive"
+    root.mkdir()
+    one_line_paragraphs = "\n".join(author_a(3).split("\n\n")) + "\n"
+    (root / "Doc 1").write_text("x" * 97, encoding="utf-8")
+    real = Path.read_bytes
+
+    def denied(self):
+        if self.parent == root:
+            raise PermissionError(errno.EPERM, "Operation not permitted")
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", denied)
+    fake = _FakeDriveMany({"Doc 1": one_line_paragraphs})
+    scan("william", sources=[str(root)], google_api=True, google_service_factory=lambda: fake)
+    store = IdentityStore("william")
+    (entry,) = store.load_inventory()["entries"].values()
+    assert entry["export_format"] == gf.EXPORT_FORMAT
+    assert Path(entry["content_path"]).read_text(encoding="utf-8").count("\n\n") >= 3
+    assert entry["raw_sha256"] == hashlib.sha256(one_line_paragraphs.encode("utf-8")).hexdigest()
+
+    inventory = store.load_inventory()
+    inventory["entries"][entry["doc_id"]]["export_format"] = 1  # exported by an older version
+    store.save_inventory(inventory)
+    scan("william", google_api=True, google_service_factory=lambda: fake)
+    assert fake.exports == 2
+    (again,) = store.load_inventory()["entries"].values()
+    assert again["export_format"] == gf.EXPORT_FORMAT and again["raw_sha256"] == entry["raw_sha256"]
