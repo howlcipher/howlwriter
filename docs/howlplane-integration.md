@@ -135,6 +135,8 @@ reviewer chosen, the same model reviews and the result says `SAME_PROVIDER`.
 Project drafts keep their own gate for sending project evidence: an
 interactive or web confirmation authorizes that one run; `--provider` alone
 does not, so `--allow-remote` or `project authorize-remote` is still needed.
+For an AI agent driving HowlWriter, see [agents.md](agents.md): those two,
+and authorship decisions, need the owner's word (`--owner-confirmed`).
 
 Every model call runs in a new, empty, owner-only temporary directory that is
 deleted afterwards. The backends are agent CLIs (agy and Codex may edit their

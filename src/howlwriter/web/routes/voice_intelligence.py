@@ -12,6 +12,10 @@ Boundaries this module keeps, matching the existing voices endpoints:
   per-document preview with `?confirm=true`.
 * Nothing here calls a model or sends content anywhere. Evaluation is the
   same deterministic code path as `howlwriter evaluate`.
+* Owner-only changes (authorship decisions, approving or reclassifying a
+  Workshop answer as the person's writing, deleting one) are accepted only
+  from the app's own page or with the owner's word; see
+  ``howlwriter.web.owner``. Relayed decisions are recorded as relayed.
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ from __future__ import annotations
 from pathlib import PurePosixPath
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from howlwriter.evaluation.personal import compare_texts, evaluate_text, load_preferences
@@ -28,6 +32,7 @@ from howlwriter.voice.identity.profiles import build_identity
 from howlwriter.voice.identity.scanner import MountUnavailableError, scan
 from howlwriter.voice.identity.status import identity_status
 from howlwriter.voice.identity.store import IdentityStore, source_path_of, validate_identity
+from howlwriter.web import owner
 from howlwriter.web.jobs import Job, get_job_manager
 from howlwriter.web.models import VoiceIntelJobResultDto
 
@@ -115,7 +120,9 @@ async def get_review(identity: str, show_paths: bool = Query(False)) -> dict:
 
 
 @router.post("/{identity}/review/{doc_id}")
-async def post_attestation(identity: str, doc_id: str, request: AttestRequest) -> dict:
+async def post_attestation(
+    identity: str, doc_id: str, request: AttestRequest, source: str = Depends(owner.voice_source)
+) -> dict:
     store = _store(identity)
     try:
         decision = review.attest(
@@ -127,6 +134,7 @@ async def post_attestation(identity: str, doc_id: str, request: AttestRequest) -
             include_paragraphs=request.include_paragraphs,
             note=request.note,
             use_proposed_extraction=request.use_proposed_extraction,
+            source=source,
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -148,7 +156,9 @@ async def get_review_groups(identity: str) -> dict:
 
 
 @router.post("/{identity}/review-groups/{group_id}")
-async def post_group_decision(identity: str, group_id: str, request: GroupDecisionRequest) -> dict:
+async def post_group_decision(
+    identity: str, group_id: str, request: GroupDecisionRequest, source: str = Depends(owner.voice_source)
+) -> dict:
     store = _store(identity)
     try:
         decisions = review.attest_group(
@@ -158,6 +168,7 @@ async def post_group_decision(identity: str, group_id: str, request: GroupDecisi
             confirmed_doc_ids=request.doc_ids,
             use_proposed_extraction=request.use_proposed_extraction,
             note=f"bulk decision for group {group_id} (web)",
+            source=source,
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -335,8 +346,11 @@ async def post_workshop_prompt(identity: str, request: WorkshopPromptRequest) ->
 
 
 @router.post("/{identity}/workshop/samples")
-async def post_workshop_sample(identity: str, request: WorkshopAnswerRequest) -> dict:
+async def post_workshop_sample(identity: str, request: WorkshopAnswerRequest, http: Request) -> dict:
     from howlwriter.voice.identity.workshop import counting_ids
+
+    if request.self_written or request.approve:
+        owner.voice_source(http)
 
     workshop = _workshop(identity)
     try:
@@ -353,9 +367,11 @@ async def post_workshop_sample(identity: str, request: WorkshopAnswerRequest) ->
 
 
 @router.post("/{identity}/workshop/samples/{sample_id}/actions/{action}")
-async def post_workshop_action(identity: str, sample_id: str, action: str) -> dict:
+async def post_workshop_action(identity: str, sample_id: str, action: str, http: Request) -> dict:
     if action not in ("approve", "exclude", "remove"):
         raise HTTPException(status_code=404, detail=f"unknown action {action!r}")
+    if action != "exclude":  # excluding only ever removes evidence
+        owner.voice_source(http)
     workshop = _workshop(identity)
     try:
         sample = getattr(workshop, action)(sample_id)
@@ -364,7 +380,9 @@ async def post_workshop_action(identity: str, sample_id: str, action: str) -> di
     return {"sample_id": sample.sample_id, "status": sample.status, "side": sample.side}
 
 
-@router.post("/{identity}/workshop/samples/{sample_id}/context")
+@router.post(
+    "/{identity}/workshop/samples/{sample_id}/context", dependencies=[Depends(owner.voice_source)]
+)
 async def post_workshop_reclassify(
     identity: str, sample_id: str, request: WorkshopReclassifyRequest
 ) -> dict:

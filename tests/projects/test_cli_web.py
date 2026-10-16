@@ -80,6 +80,24 @@ def test_cli_model_draft_refuses_remote_without_authorization(opened, capsys):
     assert "authorize-remote" in capsys.readouterr().err
 
 
+def test_cli_remote_gates_need_the_owner_without_a_terminal(opened, capsys, monkeypatch):
+    import io
+    import sys
+
+    folder, _ = opened
+    monkeypatch.setattr(sys, "stdin", io.StringIO())  # an agent or a script: nobody to ask
+    assert main(["project", "authorize-remote", str(folder), "--json"]) == 4
+    assert "only the owner may decide" in capsys.readouterr().err
+    code, status = _json(capsys, ["project", "authorize-remote", str(folder), "--revoke", "--json"])
+    assert code == 0 and status["remote_inference_authorized"] is False  # revoking keeps it local
+    assert main(["project", "draft", str(folder), "--allow-remote"]) == 4  # refused before any model call
+    capsys.readouterr()
+    code, status = _json(
+        capsys, ["project", "authorize-remote", str(folder), "--owner-confirmed", "--json"]
+    )
+    assert code == 0 and status["remote_inference_authorized"] is True
+
+
 def test_cli_unknown_project_and_missing_voice(lab_folder, capsys):
     assert main(["project", "status", "no-such-project"]) == 1
     assert "no project" in capsys.readouterr().err
@@ -230,3 +248,17 @@ def test_web_browser_session_lifecycle(client, lab_folder):
         finally:
             client.post(f"/api/projects/{pid}/browser/stop")
     assert client.get(f"/api/projects/{pid}/browser").json()["state"] == "stopped"
+
+
+def test_web_remote_gates_need_the_page_or_the_owner(client, lab_folder):
+    pid = client.post("/api/projects", json={"folder": str(lab_folder)}).json()["project_id"]
+    refused = client.post(f"/api/projects/{pid}/authorize-remote")
+    assert refused.status_code == 403 and refused.json()["code"] == "owner_confirmation_required"
+    assert client.post(f"/api/projects/{pid}/draft", json={"allow_remote": True}).status_code == 403
+    assert client.post(f"/api/projects/{pid}/authorize-remote?allow=false").status_code == 200
+    relayed = client.post(
+        f"/api/projects/{pid}/authorize-remote", headers={"X-HowlWriter-Owner-Confirmed": "1"}
+    )
+    assert relayed.json()["remote_inference_authorized"] is True
+    page = client.post(f"/api/projects/{pid}/authorize-remote", headers={"Sec-Fetch-Site": "same-origin"})
+    assert page.status_code == 200

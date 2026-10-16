@@ -19,6 +19,10 @@
     project actions P              the browser action audit trail
 
 P is a project id or the folder it was opened from.
+
+Exit codes: 0 success; 1 error; 2 refused (remote-inference gate, browser
+policy); 3 a validated draft is not ready for review; 4 an owner-only
+decision (--allow-remote, authorize-remote) was asked for without a terminal.
 """
 
 from __future__ import annotations
@@ -28,7 +32,11 @@ import json
 from pathlib import Path
 import sys
 
+from howlwriter.cli import owner
 from howlwriter.voice.selection import add_selection_arguments
+
+# Sending private evidence off the machine is the owner's decision (see howlwriter.cli.owner).
+_SENDS = "sends private project evidence to a remote model"
 
 
 def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
@@ -121,6 +129,7 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
     p.add_argument(
         "--allow-remote", action="store_true", help="Send evidence excerpts to a remote model this once."
     )
+    owner.add_argument(p)
     p.add_argument("--instructions", default="")
     p.add_argument(
         "--voice-examples",
@@ -140,6 +149,7 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
     p.add_argument("draft")
     p = add("authorize-remote", "Allow (or --revoke) remote inference on this project's evidence.")
     p.add_argument("--revoke", action="store_true")
+    owner.add_argument(p)
     p = add("browse", "Run a controlled browser session.")
     p.add_argument("--mode", choices=("research", "observe", "interactive"), default="research")
     p.add_argument("--allow", action="append", default=[], help="Approved origin (repeatable).")
@@ -235,6 +245,8 @@ def _scan(args, workspace) -> int:
 def run(args: argparse.Namespace) -> int:
     try:
         return _run(args)
+    except owner.OwnerConfirmationRequired as error:
+        return owner.report(error)
     except PermissionError as error:  # remote-inference gate, browser policy refusals
         print(f"refused: {error}", file=sys.stderr)
         return 2
@@ -402,6 +414,8 @@ def _run(args: argparse.Namespace) -> int:
         _out(args, result, "\n".join(text))
         return 0 if result["verdict"] == "READY_FOR_HUMAN_REVIEW" else 3
     if command == "authorize-remote":
+        if not args.revoke:  # revoking only ever keeps material local
+            owner.source(args, "Authorizing remote inference", _SENDS)
         data = service.authorize_remote(workspace, not args.revoke)
         return _out(
             args,
@@ -430,6 +444,9 @@ def _run(args: argparse.Namespace) -> int:
 def _draft(args, workspace) -> int:
     from howlwriter.projects.writing import build_brief, draft, save_draft, skeleton
     from howlwriter.projects.workspace import utc_now
+
+    if args.allow_remote and not args.skeleton:
+        owner.source(args, "--allow-remote", _SENDS)
 
     brief = build_brief(workspace, sections=args.section, topic=args.topic)
     if args.skeleton:

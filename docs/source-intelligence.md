@@ -157,7 +157,10 @@ invented markers and results, and treats excerpts as untrusted data.
 model. Unless that provider is local (Ollama, llama.cpp, LM Studio), the
 project must be authorized once (`project authorize-remote`, recorded with a
 timestamp) or the call passes `--allow-remote`. Raw files are never sent; only
-the selected excerpts in the brief.
+the selected excerpts in the brief. Both are the owner's decision: without a terminal
+they exit 4 unless `--owner-confirmed` relays it, and the web API refuses them
+(403) except from HowlWriter's own page or with
+`X-HowlWriter-Owner-Confirmed: 1` ([agents.md](agents.md)).
 
 **Drafting in parts.** Sections are packed into parts that fit the chosen
 model: about 24,000 characters per call (system instruction included) for a

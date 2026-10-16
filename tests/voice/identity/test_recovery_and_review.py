@@ -257,12 +257,11 @@ def test_cli_group_decision_refuses_without_confirmation(env, drive, capsys):
 
     scan("william", sources=[str(drive)])
     group = review.groups(IdentityStore("william"))[0]
-    assert (
-        main(
-            ["voice", "review", "--identity", "william", "--group", group.group_id, "--decide", "h"]
-        )
-        == 1
-    )
+    decide = ["voice", "review", "--identity", "william", "--group", group.group_id, "--decide", "h"]
+    # No terminal and no word from the owner: refused before anything else.
+    assert main(decide) == 4
+    # The owner's word alone is not a confirmation of the listed members.
+    assert main([*decide, "--owner-confirmed"]) == 1
     assert not IdentityStore("william").load_decisions()
     assert (
         main(
@@ -276,6 +275,7 @@ def test_cli_group_decision_refuses_without_confirmation(env, drive, capsys):
                 "--decide",
                 "h",
                 "--yes",
+                "--owner-confirmed",
             ]
         )
         == 0

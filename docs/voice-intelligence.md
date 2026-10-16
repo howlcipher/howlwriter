@@ -182,6 +182,13 @@ howlwriter voice review --identity william --group GROUP_ID --decide h
 howlwriter voice review --identity william --apply ~/.howlwriter/identities/william/review_queue.yaml
 ```
 
+**Only the person decides.** Run at a terminal, these commands record the
+decision as the person's own (`user_attestation`). Without a terminal (an AI
+agent, a script) `--set`, `--apply` and `--group` exit 4 and change nothing
+unless `--owner-confirmed` relays a decision the person gave, which is then
+recorded as `owner_relayed`; `--interactive` and Workshop sessions refuse
+outright. The web API applies the same rule. See [agents.md](agents.md).
+
 **Ordering.** The queue is sorted by expected corpus value: independent
 discussion responses, lab analysis and professional writing first, then
 papers, with eligible word count (log-scaled), a byline, and earlier drafts

@@ -139,7 +139,13 @@ def test_cli_scan_review_build_status(env, drive, capsys):
     pending = json.loads(capsys.readouterr().out)["pending"]
     assert pending, "fixture should produce reviewable academic documents"
     assert (
-        main(["voice", "review", "--identity", "william", "--set", pending[0]["doc_id"], "h"]) == 0
+        main(
+            [
+                "voice", "review", "--identity", "william", "--set", pending[0]["doc_id"], "h",
+                "--owner-confirmed",
+            ]
+        )
+        == 0
     )
     capsys.readouterr()
     assert (
@@ -190,7 +196,11 @@ def test_web_status_review_and_privacy_boundaries(client):
             client.get(f"/api/voice-intel/william/review/{doc_id}/preview?confirm=true").status_code
             == 200
         )
-        bad = client.post(f"/api/voice-intel/william/review/{doc_id}", json={"authorship": "NOPE"})
+        bad = client.post(
+            f"/api/voice-intel/william/review/{doc_id}",
+            json={"authorship": "NOPE"},
+            headers={"Sec-Fetch-Site": "same-origin"},
+        )
         assert bad.status_code == 400
 
 
