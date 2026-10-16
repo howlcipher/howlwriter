@@ -211,6 +211,12 @@ async def rebuild_voice(name: str, request: VoiceRebuildRequest) -> dict:
             ),
         )
 
+    if not request.deterministic:
+        from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
+        from howlwriter.integration.model_role import WritingRole
+
+        get_howlplane_bridge().require_decision(WritingRole.VOICE_ANALYST)
+
     manager = get_job_manager()
     job = manager.create_job(job_type="voice_rebuild", stages=list(STAGES))
 

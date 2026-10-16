@@ -27,6 +27,8 @@ import {
   WorkshopSample,
 } from '../types';
 
+import { apiFetch } from './modelChoice';
+
 const API_BASE = '/api';
 
 async function handleResponse<T>(res: Response): Promise<T> {
@@ -49,7 +51,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
 
 export const api = {
   async openDocument(path: string): Promise<DocumentData> {
-    const res = await fetch(`${API_BASE}/documents/open`, {
+    const res = await apiFetch(`${API_BASE}/documents/open`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path }),
@@ -58,7 +60,7 @@ export const api = {
   },
 
   async saveDocument(path: string, content: string): Promise<DocumentData> {
-    const res = await fetch(`${API_BASE}/documents/save`, {
+    const res = await apiFetch(`${API_BASE}/documents/save`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path, content }),
@@ -67,7 +69,7 @@ export const api = {
   },
 
   async runLint(text: string, title?: string): Promise<LintResponse> {
-    const res = await fetch(`${API_BASE}/lint`, {
+    const res = await apiFetch(`${API_BASE}/lint`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, title }),
@@ -76,7 +78,7 @@ export const api = {
   },
 
   async runRedPen(text: string, title?: string, claims: any[] = []): Promise<RedPenResponse> {
-    const res = await fetch(`${API_BASE}/redpen`, {
+    const res = await apiFetch(`${API_BASE}/redpen`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, title, claims }),
@@ -92,7 +94,7 @@ export const api = {
     apply_safe_rewrites?: boolean;
     voice_profile?: string;
   }): Promise<HumanizeResponse> {
-    const res = await fetch(`${API_BASE}/humanize`, {
+    const res = await apiFetch(`${API_BASE}/humanize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -108,7 +110,7 @@ export const api = {
     apply_safe_rewrites?: boolean;
     voice_profile?: string;
   }): Promise<HowlPipelineResponse> {
-    const res = await fetch(`${API_BASE}/howl`, {
+    const res = await apiFetch(`${API_BASE}/howl`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -117,7 +119,7 @@ export const api = {
   },
 
   async validateSpec(spec: AssignmentSpec): Promise<ValidateSpecResponse> {
-    const res = await fetch(`${API_BASE}/academic/validate`, {
+    const res = await apiFetch(`${API_BASE}/academic/validate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ spec }),
@@ -126,7 +128,7 @@ export const api = {
   },
 
   async generatePaper(spec: AssignmentSpec, deterministic_only = false): Promise<JobResponse> {
-    const res = await fetch(`${API_BASE}/academic/generate`, {
+    const res = await apiFetch(`${API_BASE}/academic/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ spec, deterministic_only }),
@@ -135,7 +137,7 @@ export const api = {
   },
 
   async getJobStatus(jobId: string): Promise<JobResponse> {
-    const res = await fetch(`${API_BASE}/jobs/${jobId}`);
+    const res = await apiFetch(`${API_BASE}/jobs/${jobId}`);
     return handleResponse<JobResponse>(res);
   },
 
@@ -195,29 +197,29 @@ export const api = {
   },
 
   async listRuns(limit = 30): Promise<RunRecord[]> {
-    const res = await fetch(`${API_BASE}/runs?limit=${limit}`);
+    const res = await apiFetch(`${API_BASE}/runs?limit=${limit}`);
     return handleResponse<RunRecord[]>(res);
   },
 
   async getRun(runId: string): Promise<RunRecord> {
-    const res = await fetch(`${API_BASE}/runs/${runId}`);
+    const res = await apiFetch(`${API_BASE}/runs/${runId}`);
     return handleResponse<RunRecord>(res);
   },
 
   async getProviders(): Promise<ProvidersResponse> {
-    const res = await fetch(`${API_BASE}/providers`);
+    const res = await apiFetch(`${API_BASE}/providers`);
     return handleResponse<ProvidersResponse>(res);
   },
 
   // --- Personal voices ---
 
   async listVoices(): Promise<VoiceSummary[]> {
-    const res = await fetch(`${API_BASE}/voices`);
+    const res = await apiFetch(`${API_BASE}/voices`);
     return handleResponse<VoiceSummary[]>(res);
   },
 
   async getVoice(name: string): Promise<VoiceDetail> {
-    const res = await fetch(`${API_BASE}/voices/${encodeURIComponent(name)}`);
+    const res = await apiFetch(`${API_BASE}/voices/${encodeURIComponent(name)}`);
     return handleResponse<VoiceDetail>(res);
   },
 
@@ -225,7 +227,7 @@ export const api = {
 
   async getProvenance(runId: string, includePrompts = false): Promise<GenerationProvenance> {
     const query = includePrompts ? '?include_prompts=true' : '';
-    const res = await fetch(`${API_BASE}/provenance/${encodeURIComponent(runId)}${query}`);
+    const res = await apiFetch(`${API_BASE}/provenance/${encodeURIComponent(runId)}${query}`);
     return handleResponse<GenerationProvenance>(res);
   },
 
@@ -233,7 +235,7 @@ export const api = {
     name: string,
     params: { deterministic?: boolean; reuse_cache?: boolean } = {},
   ): Promise<JobResponse> {
-    const res = await fetch(`${API_BASE}/voices/${encodeURIComponent(name)}/rebuild`, {
+    const res = await apiFetch(`${API_BASE}/voices/${encodeURIComponent(name)}/rebuild`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deterministic: false, reuse_cache: true, ...params }),
@@ -244,19 +246,19 @@ export const api = {
   // --- Voice Intelligence ---
 
   async listIdentities(): Promise<VoiceIntelIdentities> {
-    return handleResponse<VoiceIntelIdentities>(await fetch(`${API_BASE}/voice-intel/identities`));
+    return handleResponse<VoiceIntelIdentities>(await apiFetch(`${API_BASE}/voice-intel/identities`));
   },
 
   async getIdentityStatus(identity: string): Promise<VoiceIntelStatus> {
     return handleResponse<VoiceIntelStatus>(
-      await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/status`),
+      await apiFetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/status`),
     );
   },
 
   async getReviewQueue(
     identity: string,
   ): Promise<{ summary: VoiceIntelStatus['review']; pending: VoiceIntelReviewItem[] }> {
-    return handleResponse(await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review`));
+    return handleResponse(await apiFetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review`));
   },
 
   async attest(
@@ -271,7 +273,7 @@ export const api = {
       note?: string;
     },
   ): Promise<{ doc_id: string; authorship: string }> {
-    const res = await fetch(
+    const res = await apiFetch(
       `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review/${encodeURIComponent(docId)}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
     );
@@ -281,7 +283,7 @@ export const api = {
   async getReviewGroups(
     identity: string,
   ): Promise<{ groups: VoiceIntelReviewGroup[]; descriptions: Record<string, string> }> {
-    return handleResponse(await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review-groups`));
+    return handleResponse(await apiFetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review-groups`));
   },
 
   async decideGroup(
@@ -289,7 +291,7 @@ export const api = {
     groupId: string,
     body: { authorship: string; doc_ids: string[]; use_proposed_extraction?: boolean },
   ): Promise<{ recorded: number }> {
-    const res = await fetch(
+    const res = await apiFetch(
       `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review-groups/${encodeURIComponent(groupId)}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
     );
@@ -298,14 +300,14 @@ export const api = {
 
   async previewDocument(identity: string, docId: string): Promise<{ paragraphs: string[] }> {
     return handleResponse(
-      await fetch(
+      await apiFetch(
         `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/review/${encodeURIComponent(docId)}/preview?confirm=true`,
       ),
     );
   },
 
   async startIdentityJob(identity: string, kind: 'scan' | 'build'): Promise<JobResponse> {
-    const res = await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/${kind}`, { method: 'POST' });
+    const res = await apiFetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/${kind}`, { method: 'POST' });
     return handleResponse<JobResponse>(res);
   },
 
@@ -316,7 +318,7 @@ export const api = {
     identity?: string | null;
     auto_voice?: boolean;
   }): Promise<PersonalEvaluation> {
-    const res = await fetch(`${API_BASE}/voice-intel/evaluate`, {
+    const res = await apiFetch(`${API_BASE}/voice-intel/evaluate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -332,7 +334,7 @@ export const api = {
     identity?: string | null;
     auto_voice?: boolean;
   }): Promise<PersonalComparison> {
-    const res = await fetch(`${API_BASE}/voice-intel/compare`, {
+    const res = await apiFetch(`${API_BASE}/voice-intel/compare`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -346,14 +348,14 @@ export const api = {
     showText = false,
   ): Promise<{ coverage: WorkshopCoverage; samples: WorkshopSample[]; local_only: boolean }> {
     const query = showText ? '?show_text=true' : '';
-    return handleResponse(await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop${query}`));
+    return handleResponse(await apiFetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop${query}`));
   },
 
   async workshopPrompt(
     identity: string,
     body: { context?: string | null; subject?: string | null; follow_up_of?: string | null },
   ): Promise<WorkshopPrompt> {
-    const res = await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/prompt`, {
+    const res = await apiFetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/prompt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -365,7 +367,7 @@ export const api = {
     identity: string,
     body: { prompt_id: string; subject: string; text: string; self_written: boolean; approve: boolean },
   ): Promise<WorkshopSample> {
-    const res = await fetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/samples`, {
+    const res = await apiFetch(`${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/samples`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -378,7 +380,7 @@ export const api = {
     sampleId: string,
     action: 'approve' | 'exclude' | 'remove',
   ): Promise<{ status: string }> {
-    const res = await fetch(
+    const res = await apiFetch(
       `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/samples/${encodeURIComponent(sampleId)}/actions/${action}`,
       { method: 'POST' },
     );
@@ -386,7 +388,7 @@ export const api = {
   },
 
   async workshopReclassify(identity: string, sampleId: string, context: string): Promise<{ context: string }> {
-    const res = await fetch(
+    const res = await apiFetch(
       `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/samples/${encodeURIComponent(sampleId)}/context`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ context }) },
     );
@@ -394,7 +396,7 @@ export const api = {
   },
 
   async workshopRevision(identity: string, sampleId: string, text: string): Promise<unknown> {
-    const res = await fetch(
+    const res = await apiFetch(
       `${API_BASE}/voice-intel/${encodeURIComponent(identity)}/workshop/samples/${encodeURIComponent(sampleId)}/revision`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) },
     );

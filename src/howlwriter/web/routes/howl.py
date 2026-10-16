@@ -37,6 +37,12 @@ def execute_howl_pipeline(req: HowlPipelineRequest) -> HowlPipelineResponse:
     except (ValueError, FileNotFoundError) as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
+    if not req.deterministic_only:
+        from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
+        from howlwriter.integration.model_role import WritingRole
+
+        get_howlplane_bridge().require_decision(WritingRole.HUMANIZER)
+
     # Write to a temporary file to leverage run_howl_pipeline's atomic file behavior
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as tf:
         tf.write(req.text)

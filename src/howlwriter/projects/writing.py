@@ -26,6 +26,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from howlwriter.integration.provider_choice import is_local
 from howlwriter.projects import models as m
 from howlwriter.projects.requirements import OBSERVATION_KINDS, refresh_requirements
 from howlwriter.projects.retrieval import EvidenceIndex
@@ -224,13 +225,21 @@ def render_prompt(brief: dict, *, voice_block: str = "", instructions: str = "")
     return "\n".join(parts)
 
 
-def _provider_is_local(bridge) -> tuple[bool, str]:
+def _provider_is_local(bridge) -> tuple[bool, str, bool]:
+    """(local, provider, confirmed): asks which model to use when none is bound."""
+    from howlwriter.integration.model_role import WritingRole
+
+    chosen = None
+    if hasattr(bridge, "chosen_provider"):
+        chosen = bridge.chosen_provider(WritingRole.WRITER)
+    if chosen:
+        return is_local(chosen), chosen, bridge.is_remote_confirmed(chosen)
     try:
         binding = bridge.registry.get_binding("writing", "writer") if bridge.registry is not None else None
         provider = (getattr(binding, "provider", "") or "").lower()
     except Exception:
         provider = ""
-    return any(provider.startswith(p) for p in LOCAL_PROVIDERS), provider or "unbound"
+    return any(provider.startswith(p) for p in LOCAL_PROVIDERS), provider or "unbound", False
 
 
 def draft(
@@ -257,8 +266,11 @@ def draft(
     prompt = render_prompt(brief, voice_block=voice_block, instructions=instructions)
     bridge = get_howlplane_bridge()
     meta = workspace.load_meta()
-    local, provider = _provider_is_local(bridge)
-    if custom_backend is None and not local and not (allow_remote or meta.get("remote_inference_authorized")):
+    if custom_backend is not None:
+        local, provider, confirmed = True, "custom", False
+    else:
+        local, provider, confirmed = _provider_is_local(bridge)
+    if not local and not (allow_remote or confirmed or meta.get("remote_inference_authorized")):
         raise RemoteInferenceNotAuthorized(
             f"the writer role is bound to '{provider}', which may be a remote model. Drafting sends "
             f"{sum(len(s['evidence']) for s in brief['sections'])} evidence excerpts from this project "

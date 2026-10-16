@@ -11,13 +11,16 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+import shutil
 import sys
-from typing import Any, Protocol, runtime_checkable
+import tempfile
+from typing import Any, Callable, Protocol, runtime_checkable
 
 from howlwriter.integration.model_role import (
     ModelRoleNotConfiguredError,
     WritingRole,
 )
+from howlwriter.integration import provider_choice
 from howlwriter.integration.provenance_capture import capture_call
 
 
@@ -112,15 +115,124 @@ class HowlPlaneWritingBridge:
         else:
             self.registry = registry
             self.dispatcher = dispatcher
+        # A model chosen for this process (CLI) when no role binding exists.
+        self.session_provider: str | None = None
+        self.review_provider: str | None = None
+        self.remote_confirmed: set[str] = set()
+        self.no_model = False
+        #: Asks the person which model to use: (role, avoid=None) -> (provider, confirmed).
+        self.chooser: Callable[..., tuple[str, bool]] | None = None
+        defaults = provider_choice.PROCESS_DEFAULTS
+        if defaults.get("writer"):
+            self.use_provider(defaults["writer"])
+        if defaults.get("reviewer"):
+            self.use_provider(defaults["reviewer"], review=True)
+        if defaults.get("interactive"):
+            self.chooser = provider_choice.interactive_chooser()
 
     def is_available(self) -> bool:
         return self.dispatcher is not None
 
-    def is_role_configured(self, role: WritingRole) -> bool:
+    def _bound_provider(self, role: WritingRole) -> str | None:
         if not self.is_available() or self.registry is None:
-            return False
+            return None
         binding = self.registry.get_binding("writing", role.value)
-        return binding is not None and bool(binding.provider)
+        return binding.provider if binding is not None and binding.provider else None
+
+    def is_role_configured(self, role: WritingRole) -> bool:
+        """Whether `role` can run: bound, chosen, or (on a terminal) the person picks a model now.
+
+        Callers use this to decide between a model step and a rule-based one,
+        so this is where the person is asked; "continue without a model" makes it False.
+        """
+        if self._bound_provider(role) is not None:
+            return True
+        if self.no_model or provider_choice.REQUEST_NO_MODEL.get():
+            return False
+        if provider_choice.REQUEST_PROVIDER.get() or self.session_provider:
+            return self.is_available()
+        if self.chooser is None or not self.is_available():
+            return False
+        try:
+            return self.chosen_provider(role) is not None
+        except ModelRoleNotConfiguredError:
+            if self.no_model:
+                return False
+            raise
+
+    def use_provider(self, provider: str, *, confirmed: bool = False, review: bool = False) -> str:
+        """Use `provider` for this process's writing roles (or its independent reviews)."""
+        provider = provider_choice.normalize(provider)
+        if review:
+            self.review_provider = provider
+        else:
+            self.session_provider = provider
+        if confirmed:
+            self.remote_confirmed.add(provider)
+        return provider
+
+    def chosen_provider(self, role: WritingRole, avoid_provider: str | None = None) -> str | None:
+        """The model the person chose for this call, asking if needed.
+
+        None means a HowlPlane role binding applies (unchanged behaviour).
+        Raises ModelRoleNotConfiguredError when nothing is bound or chosen.
+        """
+        provider = provider_choice.REQUEST_PROVIDER.get() or self.session_provider
+        if provider is None:
+            if self._bound_provider(role) is not None:
+                return None
+            if self.chooser is None:
+                raise ModelRoleNotConfiguredError(role)
+            if self.no_model:
+                raise ModelRoleNotConfiguredError(role, detail="you chose to continue without a model")
+            try:
+                chosen, confirmed = self.chooser(role)
+            except provider_choice.ProviderChoiceCancelled as error:
+                raise ModelRoleNotConfiguredError(role, detail=str(error)) from error
+            if chosen == provider_choice.NO_MODEL:
+                self.no_model = True
+                raise ModelRoleNotConfiguredError(role, detail="you chose to continue without a model")
+            provider = self.use_provider(chosen, confirmed=confirmed)
+        if avoid_provider and _same(provider, avoid_provider):
+            review = provider_choice.REQUEST_REVIEW_PROVIDER.get() or self.review_provider
+            if review is None and self.chooser is not None:
+                try:
+                    chosen, confirmed = self.chooser(role, avoid=avoid_provider)
+                except provider_choice.ProviderChoiceCancelled as error:
+                    raise ModelRoleNotConfiguredError(role, detail=str(error)) from error
+                review = self.use_provider(chosen, confirmed=confirmed, review=True)
+            # With no reviewer chosen the same model reviews, recorded as SAME_PROVIDER:
+            # never a silent switch to a model the person did not pick.
+            provider = review or provider
+        return provider
+
+    def require_decision(self, role: WritingRole) -> None:
+        """Web: stop (HTTP 409, the page asks) until a model or "no model" is chosen.
+
+        Nothing is sent before this passes. A bound role, or no HowlPlane at all
+        (nothing to choose), needs no decision.
+        """
+        if (
+            not self.is_available()
+            or self._bound_provider(role) is not None
+            or self.no_model
+            or self.session_provider
+            or provider_choice.REQUEST_NO_MODEL.get()
+            or provider_choice.REQUEST_PROVIDER.get()
+        ):
+            return
+        raise ModelRoleNotConfiguredError(role)
+
+    def is_remote_confirmed(self, provider: str | None) -> bool:
+        if not provider:
+            return False
+        provider = provider_choice.normalize(provider)
+        if provider_choice.REQUEST_CONFIRMED.get() and provider in (
+            provider_choice.REQUEST_PROVIDER.get(),
+            provider_choice.REQUEST_REVIEW_PROVIDER.get(),
+        ):
+            return True
+        return provider in self.remote_confirmed
 
     def execute_writing_role(
         self,
@@ -139,8 +251,10 @@ class HowlPlaneWritingBridge:
         if not self.is_available() and custom_backend is None:
             raise ModelRoleNotConfiguredError(role)
 
-        if not self.is_role_configured(role) and custom_backend is None and preferred_provider is None:
-            raise ModelRoleNotConfiguredError(role)
+        if custom_backend is None and preferred_provider is None:
+            chosen = self.chosen_provider(role, avoid_provider)
+            if chosen is not None:
+                custom_backend = _backend_for(chosen)
 
         imported = _try_import_howlplane()
         if imported is None and custom_backend is None:
@@ -150,6 +264,14 @@ class HowlPlaneWritingBridge:
         if req_cls is None:
             raise ModelRoleNotConfiguredError(role)
 
+        # Model backends are agent CLIs that may read or edit their working
+        # directory (agy and Codex may edit it in writing roles). Writing roles
+        # get everything they need in the prompt, so they always run in an
+        # empty private directory, never the user's folder or the caller's
+        # `cwd` (kept in the request context for provenance only).
+        sandbox = tempfile.mkdtemp(prefix="howlwriter-model-")
+        if cwd:
+            context = {**(context or {}), "requested_cwd": str(cwd)}
         request = req_cls(
             domain="writing",
             role=role.value,
@@ -160,14 +282,17 @@ class HowlPlaneWritingBridge:
             preferred_provider=preferred_provider,
             timeout_seconds=timeout_seconds,
             structured_output_schema=structured_schema,
-            cwd=str(cwd) if cwd else None,
+            cwd=sandbox,
         )
 
         # Captured here, and only here. This is the last point at which the
         # exact strings being sent are still in hand, so provenance never has
         # to re-render a prompt afterwards and claim it is the one that ran.
         started_at = datetime.now(timezone.utc).isoformat()
-        result = self.dispatcher.execute(request, custom_backend=custom_backend)
+        try:
+            result = self.dispatcher.execute(request, custom_backend=custom_backend)
+        finally:
+            shutil.rmtree(sandbox, ignore_errors=True)
         capture_call(
             role=role.value,
             prompt=prompt,
@@ -181,6 +306,24 @@ class HowlPlaneWritingBridge:
             raise ModelRoleNotConfiguredError(role)
 
         return result
+
+
+def _same(a: str, b: str) -> bool:
+    def canonical(value: str) -> str:
+        try:
+            return provider_choice.normalize(value)
+        except ValueError:
+            return value.strip().lower()
+
+    return canonical(a) == canonical(b)
+
+
+def _backend_for(provider: str) -> Any:
+    """The HowlPlane backend for exactly this provider (no automatic alternates)."""
+    _ensure_howlplane_on_path()
+    from howlplane.control_plane.agent_execution import AgentBackendRegistry
+
+    return AgentBackendRegistry.get_backend(provider)
 
 
 _GLOBAL_BRIDGE: HowlPlaneWritingBridge | None = None

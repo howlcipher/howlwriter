@@ -140,3 +140,11 @@ def get_providers() -> ProvidersResponse:
         reviewer_independence=indep_status,
         reviewer_independence_reason=indep_reason,
     )
+
+
+@router.get("/choices")
+def get_model_choices() -> dict:
+    """The models a run can be asked to use, and whether each can run now."""
+    from howlwriter.integration import provider_choice
+
+    return {"choices": provider_choice.choices_payload()}

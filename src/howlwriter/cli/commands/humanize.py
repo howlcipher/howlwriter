@@ -115,6 +115,14 @@ def run(args: argparse.Namespace) -> int:
     lint_before = LintEngine().run(document, config)
     findings = detect(document, config)
 
+    # Ask now (on a terminal) which model to use; "continue without a model"
+    # takes the rule-based path below instead of stopping.
+    if not (args.deterministic or args.safe_only):
+        bridge = get_howlplane_bridge()
+        if not bridge.is_role_configured(WritingRole.HUMANIZER) and bridge.no_model:
+            print("Continuing without a model: rule-based humanization only.")
+            args.deterministic = True
+
     # 1. Deterministic-only path
     if args.deterministic or args.safe_only:
         if args.apply:

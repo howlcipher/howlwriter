@@ -117,6 +117,12 @@ def start_generate_paper(req: GeneratePaperRequest) -> JobResponse:
         except VoiceSelectionError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    if not req.deterministic_only:
+        from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
+        from howlwriter.integration.model_role import WritingRole
+
+        get_howlplane_bridge().require_decision(WritingRole.WRITER)
+
     manager = get_job_manager()
     job = manager.create_job(job_type="academic_paper")
 
