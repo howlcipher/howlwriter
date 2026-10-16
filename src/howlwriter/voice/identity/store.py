@@ -45,6 +45,9 @@ SCAN_REPORT_FILE = "scan_report.json"
 PROFILE_CHANGES_FILE = "profile_changes.jsonl"
 CHAT_EVIDENCE_FILE = "chat_evidence.json"
 CALIBRATION_DIR = "calibration"
+#: Private copies of native Google Docs exported through the Drive API (the mount has no content).
+EXPORTS_DIR = "exports"
+EXPORT_PARSER = "google_drive_api_export"
 
 INVENTORY_VERSION = 1
 
@@ -386,6 +389,14 @@ class IdentityStore:
     def write_review_queue(self, text: str) -> Path:
         self.ensure()
         path = self.directory / REVIEW_QUEUE_FILE
+        privacy.write_private_text(path, text)
+        return path
+
+    def export_path(self, doc_id: str) -> Path:
+        return self.directory / EXPORTS_DIR / f"{doc_id}.txt"
+
+    def save_export(self, doc_id: str, text: str) -> Path:
+        path = self.export_path(doc_id)
         privacy.write_private_text(path, text)
         return path
 
