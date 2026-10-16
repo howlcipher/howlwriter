@@ -108,6 +108,56 @@ def test_unavailable_mount_raises_and_leaves_inventory(env, drive, tmp_path):
     assert path.read_text(encoding="utf-8") == before
 
 
+def test_empty_mount_point_raises_instead_of_removing_everything(env, drive, tmp_path):
+    # A FUSE drive that is not running leaves an empty, listable directory.
+    scan("william", sources=[str(drive)])
+    path = IdentityStore("william").directory / "inventory.json"
+    before = path.read_text(encoding="utf-8")
+    drive.rename(tmp_path / "offline")
+    drive.mkdir()
+    with pytest.raises(MountUnavailableError, match="empty"):
+        scan("william")
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_first_scan_of_an_empty_source_is_allowed(env, tmp_path):
+    root = tmp_path / "new-drive"
+    root.mkdir()
+    assert scan("william", sources=[str(root)]).report["files_inventoried"] == 0
+
+
+def test_source_on_a_different_filesystem_than_last_scan_raises(env, drive, monkeypatch):
+    real = scanner_module.mount_status
+    monkeypatch.setattr(
+        scanner_module, "mount_status", lambda root: {**real(root), "filesystem": "fuse.drive"}
+    )
+    scan("william", sources=[str(drive)])
+    path = IdentityStore("william").directory / "inventory.json"
+    before = path.read_text(encoding="utf-8")
+    monkeypatch.setattr(scanner_module, "mount_status", lambda root: {**real(root), "filesystem": "btrfs"})
+    with pytest.raises(MountUnavailableError, match="fuse.drive"):
+        scan("william")
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_file_returning_to_a_removed_path_keeps_its_history(env, drive, tmp_path):
+    scan("william", sources=[str(drive)])
+    target = drive / "school" / "lab03.md"
+    entries = IdentityStore("william").load_inventory()["entries"]
+    doc_id, original = next((k, e) for k, e in entries.items() if e["relative_path"] == "school/lab03.md")
+    parked = tmp_path / "lab03.md"
+    target.rename(parked)
+    scan("william")
+    assert IdentityStore("william").load_inventory()["entries"][doc_id]["present"] is False
+    parked.rename(target)
+    scan("william")
+    back = IdentityStore("william").load_inventory()["entries"][doc_id]
+    assert back["present"] is True
+    assert back["change"] == "reappeared"
+    assert back["first_seen"] == original["first_seen"]
+    assert "removed_at" not in back
+
+
 def test_denied_read_is_native_unavailable_not_a_crash(env, tmp_path, monkeypatch):
     root = tmp_path / "drive"
     root.mkdir()

@@ -232,6 +232,16 @@ def _ownership(relative_path: str, config: IdentityConfig) -> str:
     return "shared_with_me" if first in shared else "owned"
 
 
+def _present_under_root(entries: dict[str, dict], index: int, root_count: int) -> bool:
+    """Whether the last scan saw files under source root ``index``."""
+    for entry in entries.values():
+        if not entry.get("present", True):
+            continue
+        if root_count == 1 or entry["relative_path"].split(":", 1)[0] == str(index):
+            return True
+    return False
+
+
 def _format_status(file: WalkedFile) -> tuple[str, str, str]:
     """(family, status, reason) decided from metadata alone."""
     suffix = Path(file.relative_path).suffix.lower()
@@ -303,11 +313,13 @@ def scan(
     started = time.time()
     previous = store.load_inventory()
     previous_entries: dict[str, dict] = previous.get("entries", {})
+    # A file that comes back at a path recorded as removed keeps its history;
+    # a present entry wins when both exist.
     by_path = {
         e["relative_path"]: (doc_id, e)
-        for doc_id, e in previous_entries.items()
-        if e.get("present", True)
+        for doc_id, e in sorted(previous_entries.items(), key=lambda item: item[1].get("present", True))
     }
+    last_filesystems: dict[str, str] = (previous.get("scans") or [{}])[-1].get("filesystems", {})
 
     # --- 1. mount check (all roots must be reachable) ---
     roots: list[tuple[Path, dict]] = []
@@ -318,6 +330,14 @@ def scan(
             raise MountUnavailableError(
                 f"source {source} is not available ({status['error'] or 'not listable'}); "
                 "the previous inventory was left unchanged"
+            )
+        recorded = last_filesystems.get(source)
+        if recorded and status["filesystem"] and status["filesystem"] != recorded:
+            # A FUSE drive that is not running leaves its empty mount point
+            # on the parent filesystem: same path, different filesystem.
+            raise MountUnavailableError(
+                f"source {source} is on {status['filesystem']} but was on {recorded} at the last scan; "
+                "is the drive mounted? The previous inventory was left unchanged"
             )
         roots.append((root, status))
     # Persist the configuration now, not at the end: a scan interrupted
@@ -330,6 +350,11 @@ def scan(
     walk_totals = WalkResult()
     for index, (root, _status) in enumerate(roots):
         result = walk(root, config.exclusions)
+        if not result.files and _present_under_root(previous_entries, index, len(roots)):
+            raise MountUnavailableError(
+                f"source {config.sources[index]} is empty but the last scan found files there; "
+                "is the drive mounted? The previous inventory was left unchanged"
+            )
         for file in result.files:
             file.source_path = file.relative_path
             if len(roots) > 1:
@@ -389,7 +414,10 @@ def scan(
         )
         if unchanged:
             carried = dict(prior)
-            carried.update({"last_seen": now, "present": True, "change": "unchanged"})
+            returned = not prior.get("present", True)
+            carried.pop("removed_at", None)
+            change = "reappeared" if returned else "unchanged"
+            carried.update({"last_seen": now, "present": True, "change": change})
             entries[doc_id] = carried
             continue
         entry["change"] = "modified" if prior else "added"
@@ -528,7 +556,13 @@ def scan(
         "entries": entries,
         "scans": [
             *previous.get("scans", [])[-19:],
-            {"at": now, "duration_seconds": round(time.time() - started, 1)},
+            {
+                "at": now,
+                "duration_seconds": round(time.time() - started, 1),
+                "filesystems": {
+                    source: status["filesystem"] for source, (_, status) in zip(config.sources, roots)
+                },
+            },
         ],
     }
     store.save_config(config)
