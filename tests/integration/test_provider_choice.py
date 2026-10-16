@@ -285,7 +285,10 @@ def test_humanizer_shows_style_examples_to_local_models_only_unless_turned_on(tm
 
 
 def test_local_model_choice_selects_that_ollama_model(monkeypatch):
-    from howlplane.control_plane.agent_execution import OllamaLocalBackend
+    agent_execution = pytest.importorskip("howlplane.control_plane.agent_execution")
+    OllamaLocalBackend = getattr(agent_execution, "OllamaLocalBackend", None)
+    if OllamaLocalBackend is None:
+        pytest.skip("this HowlPlane has no Ollama backend")
 
     monkeypatch.setitem(pc.PROCESS_DEFAULTS, "local_model", "qwen2.5:7b-instruct")
     backend = pc.make_backend("local_ollama")

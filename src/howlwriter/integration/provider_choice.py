@@ -100,10 +100,16 @@ def make_backend(provider: str):
     from howlwriter.integration.howlplane_bridge import _ensure_howlplane_on_path
 
     _ensure_howlplane_on_path()
-    from howlplane.control_plane.agent_execution import AgentBackendRegistry, OllamaLocalBackend
+    from howlplane.control_plane.agent_execution import AgentBackendRegistry
 
     model = local_model()
     if provider == "local_ollama" and model:
+        try:
+            from howlplane.control_plane.agent_execution import OllamaLocalBackend
+        except ImportError as error:
+            raise ValueError(
+                "this HowlPlane has no selectable local backend, so --local-model cannot be used"
+            ) from error
         return OllamaLocalBackend(model=model)
     return AgentBackendRegistry.get_backend(provider)
 
