@@ -1,9 +1,9 @@
 import React from 'react';
-import { BookOpen, FileText, Activity, Shield, Layers, Sun, Moon, Mic, Fingerprint } from 'lucide-react';
+import { BookOpen, FileText, Activity, Shield, Layers, Sun, Moon, Mic, Fingerprint, Library } from 'lucide-react';
 
 interface SiteHeaderProps {
-  activeTab: 'workspace' | 'academic' | 'voices' | 'intel' | 'runs' | 'providers';
-  setActiveTab: (tab: 'workspace' | 'academic' | 'voices' | 'intel' | 'runs' | 'providers') => void;
+  activeTab: 'workspace' | 'academic' | 'projects' | 'voices' | 'intel' | 'runs' | 'providers';
+  setActiveTab: (tab: 'workspace' | 'academic' | 'projects' | 'voices' | 'intel' | 'runs' | 'providers') => void;
   theme: 'light' | 'dark';
   setTheme: (theme: 'light' | 'dark') => void;
   onOpenDrawer: () => void;
@@ -80,6 +80,14 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({
         >
           <Mic size={14} />
           <span>VOICES</span>
+        </button>
+        <button
+          type="button"
+          className={`nav-tab ${activeTab === 'projects' ? 'active' : ''}`}
+          onClick={() => setActiveTab('projects')}
+        >
+          <Library size={14} />
+          <span>PROJECTS</span>
         </button>
         <button
           type="button"

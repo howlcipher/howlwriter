@@ -25,6 +25,7 @@ from howlwriter.cli.commands import (
     native,
     outline,
     paper,
+    project,
     publish,
     redpen,
     references,
@@ -58,6 +59,7 @@ _COMMAND_MODULES = (
     howl,
     native,
     outline,
+    project,
     runs,
     ui,
 )
