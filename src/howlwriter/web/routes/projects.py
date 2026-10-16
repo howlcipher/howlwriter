@@ -12,6 +12,9 @@ Boundaries:
   the policy given at start; state-changing actions are queued and need an
   explicit approve call.
 * Drafting with a model goes through the same remote-inference gate as the CLI.
+  Opening that gate (``allow_remote``, authorize-remote) is the owner's
+  decision: accepted from the app's page or with the owner's word (see
+  ``howlwriter.web.owner``).
 """
 
 from __future__ import annotations
@@ -20,13 +23,16 @@ from pathlib import Path
 import threading
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from howlwriter.projects import service
 from howlwriter.projects.workspace import ProjectWorkspace
+from howlwriter.web import owner
 from howlwriter.web.jobs import Job, get_job_manager
 from howlwriter.web.models import ProjectJobResultDto
+
+_SENDS = "sends private project evidence to a remote model"
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -293,8 +299,10 @@ async def post_skeleton(project_id: str, request: BriefRequest) -> dict:
 
 
 @router.post("/{project_id}/draft")
-async def post_draft(project_id: str, request: DraftRequest) -> dict:
+async def post_draft(project_id: str, request: DraftRequest, http: Request) -> dict:
     workspace = _ws(project_id)
+    if request.allow_remote:
+        owner.source(http, _SENDS)
     from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
     from howlwriter.integration.model_role import WritingRole
 
@@ -345,7 +353,9 @@ async def post_validate(project_id: str, request: ValidateRequest) -> dict:
 
 
 @router.post("/{project_id}/authorize-remote")
-async def post_authorize(project_id: str, allow: bool = True) -> dict:
+async def post_authorize(project_id: str, http: Request, allow: bool = True) -> dict:
+    if allow:  # revoking only ever keeps material local
+        owner.source(http, _SENDS)
     return service.authorize_remote(_ws(project_id), allow)
 
 

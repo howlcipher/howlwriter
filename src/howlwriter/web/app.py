@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from howlwriter import __version__
 from howlwriter.integration import provider_choice
 from howlwriter.integration.model_role import ModelRoleNotConfiguredError
+from howlwriter.web.owner import OwnerConfirmationRequired
 from howlwriter.web.routes.academic import router as academic_router
 from howlwriter.web.routes.documents import router as documents_router
 from howlwriter.web.routes.evaluation import router as evaluation_router
@@ -49,6 +50,13 @@ def create_app(static_dir: Path | str | None = None) -> FastAPI:
         return JSONResponse(
             status_code=409,
             content={"code": "model_choice_required", "role": error.role.value, "detail": str(error)},
+        )
+
+    @app.exception_handler(OwnerConfirmationRequired)
+    async def _owner_needed(request: Request, error: OwnerConfirmationRequired) -> JSONResponse:
+        # Authorship, Workshop, and remote-send decisions are the owner's; nothing was changed.
+        return JSONResponse(
+            status_code=403, content={"code": "owner_confirmation_required", "detail": str(error)}
         )
 
     # Local CORS: restrict to loopback origins and disable wildcard credentials

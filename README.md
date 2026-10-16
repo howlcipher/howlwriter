@@ -194,6 +194,16 @@ See [HowlPlane integration](docs/howlplane-integration.md) for other roles,
 source layouts, and setup details. Missing setup produces an actionable error
 and exit status 2.
 
+## Using HowlWriter from an AI agent
+
+Agents (Claude Code, Codex, Antigravity, scripts) can drive the CLI and the
+local web API: choose the model with `--provider`, read `--json` output and
+exit codes. Decisions that belong to the owner (who wrote a document, what
+counts as their writing, sending private evidence to a remote model) refuse
+without a terminal unless the agent relays the owner's word with
+`--owner-confirmed`. See [docs/agents.md](docs/agents.md) and
+[AGENTS.md](AGENTS.md).
+
 ## Using the CLI
 
 ```bash

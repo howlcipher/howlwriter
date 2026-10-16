@@ -79,6 +79,7 @@ def attest(
     note: str = "",
     extraction: str = "",
     use_proposed_extraction: bool = False,
+    source: str = "user_attestation",
 ) -> Decision:
     """Record a person's authorship decision for one document.
 
@@ -128,11 +129,12 @@ def attest(
             content_hash=entry.get("raw_sha256", ""),
             simhash=str(fingerprint.get("simhash", "")),
             words=int(entry.get("words") or 0),
+            source=source,
         )
     )
 
 
-def apply_worksheet(store: IdentityStore, path: Path) -> dict[str, int]:
+def apply_worksheet(store: IdentityStore, path: Path, *, source: str = "user_attestation") -> dict[str, int]:
     """Apply every non-pending decision in an edited review_queue.yaml."""
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     applied = skipped = errors = 0
@@ -151,6 +153,7 @@ def apply_worksheet(store: IdentityStore, path: Path) -> dict[str, int]:
                 context=str(item.get("context_override", "") or ""),
                 include_paragraphs=str(item.get("include_paragraphs", "") or ""),
                 note=str(item.get("note", "") or ""),
+                source=source,
             )
             applied += 1
         except (ValueError, KeyError) as error:
@@ -395,6 +398,7 @@ def attest_group(
     confirmed_doc_ids: list[str],
     use_proposed_extraction: bool = False,
     note: str = "",
+    source: str = "user_attestation",
 ) -> list[Decision]:
     """Apply one decision to every pending member of a group.
 
@@ -421,6 +425,7 @@ def attest_group(
                 note=note,
                 use_proposed_extraction=use_proposed_extraction
                 and value == classify.MIXED_AUTHORSHIP,
+                source=source,
             )
         )
     refresh_queue(store)

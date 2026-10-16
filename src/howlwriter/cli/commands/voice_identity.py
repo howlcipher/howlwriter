@@ -13,7 +13,13 @@ review workflow, where deciding about a specific document requires them, and
 document text appears only behind an explicit `--preview` for one document.
 
 Exit codes: 0 success; 1 error; 2 mount unavailable (nothing changed);
-3 completed but a profile could not be built (insufficient or refused).
+3 completed but a profile could not be built (insufficient or refused);
+4 an owner-only decision was asked for without a terminal (nothing changed).
+
+Authorship decisions and Workshop answers decide what trains the person's
+voice, so only the person may make them. Without a terminal (an AI agent, a
+script, a pipe) those commands refuse unless ``--owner-confirmed`` says the
+owner gave this exact decision; such decisions are recorded as relayed.
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ import json
 from pathlib import Path
 import sys
 
+from howlwriter.cli import owner
 from howlwriter.voice.identity import chat, review
 from howlwriter.voice.identity.classify import AUTHORSHIP_STATES, CATEGORIES
 from howlwriter.voice.identity.profiles import build_identity
@@ -31,6 +38,8 @@ from howlwriter.voice.identity.store import IdentityStore
 
 EXIT_MOUNT_UNAVAILABLE = 2
 EXIT_PROFILE_NOT_BUILT = 3
+EXIT_OWNER_REQUIRED = owner.EXIT_OWNER_REQUIRED
+_TRAINS = "changes what trains the owner's voice profile"
 
 
 def _identity(args: argparse.Namespace) -> str:
@@ -170,6 +179,7 @@ def add_identity_subparsers(voice_subparsers: argparse._SubParsersAction) -> Non
         action="store_true",
         help="With --group: confirm the listed members without an interactive prompt.",
     )
+    owner.add_argument(review_parser)
     review_parser.add_argument("--json", action="store_true")
     review_parser.set_defaults(handler=run_review)
 
@@ -249,6 +259,7 @@ def add_identity_subparsers(voice_subparsers: argparse._SubParsersAction) -> Non
         help="I wrote this myself, without AI help (required for approval).",
     )
     w_answer.add_argument("--approve", action="store_true", help="Also approve it for profile use.")
+    owner.add_argument(w_answer)
     w_answer.add_argument("--json", action="store_true")
     w_list = workshop_actions.add_parser("list", help="List samples (no text unless --show-text).")
     w_list.add_argument("--show-text", action="store_true")
@@ -260,9 +271,11 @@ def add_identity_subparsers(voice_subparsers: argparse._SubParsersAction) -> Non
     ):
         action = workshop_actions.add_parser(name, help=helptext)
         action.add_argument("sample_id")
+        owner.add_argument(action)
     w_reclass = workshop_actions.add_parser("reclassify", help="Move a sample to another context.")
     w_reclass.add_argument("sample_id")
     w_reclass.add_argument("context", choices=["academic", "professional", "technical", "casual"])
+    owner.add_argument(w_reclass)
     w_revise = workshop_actions.add_parser(
         "revise",
         help="Store how you would prefer it to read (kept separate; never used as evidence).",
@@ -413,6 +426,13 @@ def _scan_progress(stage: str, data: dict) -> None:
 
 
 def run_review(args: argparse.Namespace) -> int:
+    try:
+        return _run_review(args)
+    except owner.OwnerConfirmationRequired as error:
+        return owner.report(error)
+
+
+def _run_review(args: argparse.Namespace) -> int:
     store = IdentityStore(_identity(args))
     if not store.exists():
         raise ValueError(f"identity '{store.identity}' has not been scanned yet")
@@ -422,6 +442,7 @@ def run_review(args: argparse.Namespace) -> int:
         return 0
     if args.set:
         doc_id, authorship = args.set
+        source = owner.source(args, "An authorship decision", _TRAINS)
         decision = review.attest(
             store,
             doc_id,
@@ -431,6 +452,7 @@ def run_review(args: argparse.Namespace) -> int:
             include_paragraphs=args.paragraphs,
             note=args.note,
             use_proposed_extraction=args.use_proposed_extraction,
+            source=source,
         )
         review.refresh_queue(store)
         extra = f" (extraction: {decision.extraction})" if decision.extraction else ""
@@ -441,7 +463,8 @@ def run_review(args: argparse.Namespace) -> int:
     if args.groups:
         return _print_groups(store, args.json)
     if args.apply:
-        result = review.apply_worksheet(store, args.apply)
+        source = owner.source(args, "Applying a review worksheet", _TRAINS)
+        result = review.apply_worksheet(store, args.apply, source=source)
         print(
             f"Applied {result['applied']}, skipped {result['skipped']} pending, {result['errors']} error(s)."
         )
@@ -449,6 +472,8 @@ def run_review(args: argparse.Namespace) -> int:
             print(f"  - {problem}")
         return 1 if result["errors"] else 0
     if args.interactive:
+        # Answers piped into the prompts would be nobody's decision.
+        owner.source(args, "Interactive review", _TRAINS, relay_allowed=False)
         return _interactive(store)
 
     items = review.queue(store)
@@ -537,6 +562,7 @@ def _decide_group(store: IdentityStore, args: argparse.Namespace) -> int:
     group = next((g for g in review.groups(store) if g.group_id == args.group), None)
     if group is None:
         raise ValueError(f"no pending review group {args.group!r}; list them with --groups")
+    source = owner.source(args, "A bulk authorship decision", _TRAINS)
     value = review.normalize_authorship(args.decide)
     print(f"Apply {value} to all {len(group.doc_ids)} documents in '{group.label}'?")
     print(f"  {review.AUTHORSHIP_DESCRIPTIONS[value]}")
@@ -557,6 +583,7 @@ def _decide_group(store: IdentityStore, args: argparse.Namespace) -> int:
         confirmed_doc_ids=group.doc_ids,
         use_proposed_extraction=args.use_proposed_extraction,
         note=args.note or f"bulk decision for group {group.group_id}",
+        source=source,
     )
     print(f"Recorded {value} for {len(decisions)} documents.")
     return 0
@@ -766,6 +793,10 @@ def _print_coverage(coverage: dict) -> None:
 def run_workshop(args: argparse.Namespace) -> int:
     from howlwriter.voice.identity.workshop import Workshop
 
+    try:
+        _workshop_owner_check(args)
+    except owner.OwnerConfirmationRequired as error:
+        return owner.report(error)
     workshop = Workshop(_identity(args))
     command = getattr(args, "workshop_command", None)
     if command is None:
@@ -847,6 +878,19 @@ def run_workshop(args: argparse.Namespace) -> int:
     else:
         _print_coverage(coverage)
     return 0
+
+
+def _workshop_owner_check(args: argparse.Namespace) -> None:
+    """Workshop changes that decide what counts as the owner's own writing."""
+    command = getattr(args, "workshop_command", None)
+    if command is None:
+        owner.source(args, "A Workshop session", _TRAINS, relay_allowed=False)
+    elif command == "answer" and (args.self_written or args.approve):
+        owner.source(args, "Saving an answer as the owner's own writing", _TRAINS)
+    elif command in ("approve", "reclassify"):
+        owner.source(args, f"Workshop {command}", _TRAINS)
+    elif command == "remove":
+        owner.source(args, "Permanently deleting a Workshop answer", _TRAINS)
 
 
 def _read_answer() -> str:
