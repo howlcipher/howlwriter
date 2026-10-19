@@ -121,8 +121,11 @@ def availability() -> list[tuple[ProviderOption, bool, str]]:
     _ensure_howlplane_on_path()
     try:
         import howlplane.control_plane.agent_execution  # noqa: F401
-    except ImportError:
-        return [(o, False, "HowlPlane is not installed") for o in OPTIONS]
+    except ImportError as error:
+        why = "HowlPlane is not installed"
+        if (error.name or "").split(".")[0] != "howlplane":
+            why = f"HowlPlane was found but could not be imported: {error}"
+        return [(o, False, why) for o in OPTIONS]
     rows = []
     for option in OPTIONS:
         try:

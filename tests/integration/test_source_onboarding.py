@@ -100,3 +100,39 @@ def test_public_writer_help_explains_setup(tmp_path):
     assert result.returncode == 0
     assert "HOWLPLANE_ROLE_WRITING_WRITER" in result.stdout
     assert "HOWLPLANE_ROOT" in result.stdout
+
+
+def broken_package(root):
+    """A HowlPlane checkout that is present but needs a dependency this Python lacks."""
+    folder = root / "src/howlplane/control_plane"
+    folder.mkdir(parents=True)
+    for init in (root / "src/howlplane/__init__.py", folder / "__init__.py"):
+        init.write_text("")
+    for name in ("role_binding.py", "agent_execution.py"):
+        (folder / name).write_text("import missing_dep_for_test\n")
+
+
+def test_a_broken_howlplane_names_its_missing_dependency(tmp_path):
+    broken_package(tmp_path)
+    result = subprocess.run(
+        [sys.executable, "-m", "howlwriter.cli.main", "--provider", "claude", "writer", "Test topic"],
+        env=child_env(root=tmp_path), cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert result.returncode == 2
+    assert "missing_dep_for_test" in result.stderr
+    assert "is not configured" not in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_a_broken_howlplane_shows_in_model_availability(tmp_path):
+    broken_package(tmp_path)
+    code = """
+from howlwriter.integration import provider_choice
+reasons = {why for _, ready, why in provider_choice.availability() if not ready}
+assert len(reasons) == 1 and "missing_dep_for_test" in reasons.pop(), reasons
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code], env=child_env(root=tmp_path), cwd=tmp_path,
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr

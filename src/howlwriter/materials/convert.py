@@ -21,13 +21,56 @@ from howlwriter.materials.models import MaterialRole, MaterialScan
 
 MAX_REQUIREMENTS_PER_MATERIAL = 40
 _BULLET = re.compile(r"^\s*(?:[-*•]|\d{1,2}[.)]|\([a-z0-9]\)|[a-z][.)])\s+(.*\S)\s*$", re.I)
-_MODAL = re.compile(r"\b(must|shall|required? to|should|needs? to|is required|are required)\b", re.I)
+_MODAL = re.compile(
+    r"\b(must|shall|required? to|should|needs? to|is required|are required|"
+    r"you will (?:create|write|submit|complete|produce|prepare|develop|choose|install|use))\b",
+    re.I,
+)
 _MIN_LEN, _MAX_LEN = 12, 300
+#: A sentence rejoined from wrapped lines (slide text, PDF columns) may run longer.
+_MAX_JOINED_LEN = 600
+_HEADING = re.compile(r"^\s*#")
+#: A line ending in one of these words continues on the next line.
+_CONNECTOR_END = re.compile(
+    r"\b(and|or|nor|but|the|a|an|of|to|for|with|in|on|by|as|such|than|from)\s*$|[,;(/-]\s*$", re.I
+)
 
 
 def _clean(line: str) -> str:
     line = re.sub(r"^\s*#+\s*", "", line)
-    return re.sub(r"\s+", " ", line).strip()
+    line = re.sub(r"\s+", " ", line).strip()
+    return re.sub(r"\s+([:;,)])", r"\1", line)
+
+
+def _continues(current: str, following: str) -> bool:
+    """Whether `following` is the rest of a sentence wrapped from `current`."""
+    if not following.strip() or _BULLET.match(following) or _HEADING.match(following):
+        return False
+    if _HEADING.match(current) or _BULLET.match(current):
+        return False
+    end = current.rstrip()
+    if end.endswith((".", "!", "?")):
+        return False
+    if end.endswith(":") or _CONNECTOR_END.search(end):
+        return True
+    start = following.lstrip()
+    return start[:1].islower() or start[:1] in ":;,)"
+
+
+def logical_lines(text: str) -> list[tuple[str, bool]]:
+    """Physical lines with wrapped sentences rejoined, each with whether it was joined.
+
+    Text extracted from slides or columns breaks one sentence over several
+    lines; read line by line, an instruction loses its list or keeps only a
+    fragment. Bullets, headings and blank lines always stand alone.
+    """
+    out: list[tuple[str, bool]] = []
+    for raw in text.splitlines():
+        if out and out[-1][0] and _continues(out[-1][0], raw):
+            out[-1] = (f"{out[-1][0].rstrip()} {raw.strip()}", True)
+        else:
+            out.append((raw, False))
+    return out
 
 
 def extract_requirement_lines(text: str) -> list[str]:
@@ -35,23 +78,27 @@ def extract_requirement_lines(text: str) -> list[str]:
     found: list[str] = []
     seen: set[str] = set()
 
-    def add(candidate: str) -> None:
+    def add(candidate: str, limit: int = _MAX_LEN) -> None:
         c = _clean(candidate)
         key = c.lower()
-        if _MIN_LEN <= len(c) <= _MAX_LEN and key not in seen:
+        if _MIN_LEN <= len(c) <= limit and key not in seen:
             seen.add(key)
             found.append(c)
 
-    for raw in text.splitlines():
+    lines = logical_lines(text)
+    for index, (raw, joined) in enumerate(lines):
         if not raw.strip():
             continue
         m = _BULLET.match(raw)
         if m:
             add(m.group(1))
             continue
+        following = lines[index + 1][0] if index + 1 < len(lines) else ""
+        if raw.rstrip().endswith(":") and _BULLET.match(following):
+            continue  # a lead-in such as "You must include:"; its bullets are the requirements
         for sentence in re.split(r"(?<=[.!?])\s+", raw.strip()):
             if _MODAL.search(sentence):
-                add(sentence)
+                add(sentence, _MAX_JOINED_LEN if joined else _MAX_LEN)
     return found[:MAX_REQUIREMENTS_PER_MATERIAL]
 
 

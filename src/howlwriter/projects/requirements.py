@@ -26,7 +26,7 @@ from __future__ import annotations
 import hashlib
 import re
 
-from howlwriter.materials.convert import extract_requirement_lines
+from howlwriter.materials.convert import extract_requirement_lines, logical_lines
 from howlwriter.projects import models as m
 from howlwriter.projects.retrieval import terms
 from howlwriter.projects.workspace import ProjectWorkspace
@@ -72,7 +72,8 @@ MIN_SHARED_TERMS = 2
 MIN_SHARE = 0.3
 #: Imperative openers that state a task even without "must" or a bullet.
 _IMPERATIVE = re.compile(
-    r"^(?:\d{1,2}[.)]\s*)?(include|cite|submit|capture|take|compare|describe|explain|discuss|provide|"
+    r"^(?:\d{1,2}[.)]\s*)?(?:please\s+)?"
+    r"(include|cite|submit|capture|take|compare|describe|explain|discuss|provide|choose|select|complete|"
     r"write|run|create|configure|answer|document|record|list|identify|analy[sz]e|upload|use|ensure|show|"
     r"report|summari[sz]e|evaluate|demonstrate|attach|reflect|perform|generate|replay|observe|test|install|"
     r"enable|disable|deploy)\b",
@@ -91,7 +92,7 @@ def requirement_lines(text: str) -> list[str]:
     """Obligation lines (bullets, modal verbs) plus imperative sentences, in order."""
     found = extract_requirement_lines(text)
     seen = {line.lower() for line in found}
-    for raw in text.splitlines():
+    for raw, _ in logical_lines(text):
         for sentence in re.split(r"(?<=[.!?])\s+", raw.strip()):
             sentence = " ".join(sentence.split())
             if (
