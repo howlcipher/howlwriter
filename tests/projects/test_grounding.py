@@ -8,7 +8,12 @@ import pytest
 
 from howlwriter.integration.howlplane_bridge import set_howlplane_bridge
 from howlwriter.projects import models as m
-from howlwriter.projects.requirements import add_requirement, refresh_requirements, set_status
+from howlwriter.projects.requirements import (
+    add_requirement,
+    refresh_requirements,
+    requirement_lines,
+    set_status,
+)
 from howlwriter.projects.retrieval import EvidenceIndex
 from howlwriter.projects.scan import Extractors, scan_project
 from howlwriter.projects.validate import check_draft
@@ -426,3 +431,10 @@ def test_prompt_evidence_is_bounded_and_prefers_top_ranked_items():
     chosen = prompt_evidence({"sections": sections}, limit=40)
     assert len(chosen) == 40
     assert all(item["evidence_id"].endswith("00000000") for item in chosen[:30])
+
+
+def test_wrapped_instructions_yield_whole_imperative_requirements():
+    text = "Please choose two devices\nin your home network.\nPlease share any tools you like."
+    lines = requirement_lines(text)
+    assert "Please choose two devices in your home network." in lines
+    assert not any("in your home network." == line for line in lines)

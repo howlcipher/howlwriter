@@ -56,8 +56,31 @@ def _ensure_howlplane_on_path() -> None:
                 sys.path.insert(0, str(source_root))
 
 
+#: Why HowlPlane could not be imported although it was found (a missing dependency
+#: of its own, for instance), so the error names that instead of "not configured".
+_IMPORT_PROBLEM: str | None = None
+
+_HOWLPLANE_MODULES = ("howlplane", "src")
+
+
+def _note_import_error(error: ImportError) -> None:
+    """Remember an import that failed inside HowlPlane; an absent HowlPlane is not a problem."""
+    global _IMPORT_PROBLEM
+    name = error.name or ""
+    if name.split(".")[0] in _HOWLPLANE_MODULES:
+        return
+    _IMPORT_PROBLEM = f"HowlPlane was found but could not be imported: {error} (Python: {sys.executable})"
+
+
+def howlplane_import_problem() -> str | None:
+    """The import error from the last discovery, when HowlPlane exists but failed to load."""
+    return _IMPORT_PROBLEM
+
+
 def _try_import_howlplane() -> tuple[Any, Any, Any, Any, Any] | None:
+    global _IMPORT_PROBLEM
     _ensure_howlplane_on_path()
+    _IMPORT_PROBLEM = None
     try:
         from howlplane.control_plane.role_binding import (
             IndependenceStatus,
@@ -73,7 +96,8 @@ def _try_import_howlplane() -> tuple[Any, Any, Any, Any, Any] | None:
             get_default_role_registry,
             IndependenceStatus,
         )
-    except ImportError:
+    except ImportError as error:
+        _note_import_error(error)
         try:
             from src.control_plane.role_binding import (
                 IndependenceStatus,
@@ -89,7 +113,8 @@ def _try_import_howlplane() -> tuple[Any, Any, Any, Any, Any] | None:
                 get_default_role_registry,
                 IndependenceStatus,
             )
-        except ImportError:
+        except ImportError as error:
+            _note_import_error(error)
             return None
 
 

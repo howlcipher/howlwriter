@@ -39,6 +39,16 @@ class ModelRoleNotConfiguredError(RuntimeError):
         if detail:
             super().__init__(f"{role.value}: {detail}")
             return
+        # Imported here: the bridge imports this module.
+        from howlwriter.integration.howlplane_bridge import howlplane_import_problem
+
+        problem = howlplane_import_problem()
+        if problem:
+            super().__init__(
+                f"{role.value} cannot run: {problem}. Install the missing package in that "
+                f"Python environment and run again. See docs/howlplane-integration.md."
+            )
+            return
         super().__init__(
             f"{role.value} needs a model. Run interactively to be asked which one, or pass "
             f"--provider claude|agy|codex|local (or set HOWLWRITER_PROVIDER). "

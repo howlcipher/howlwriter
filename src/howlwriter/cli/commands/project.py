@@ -145,6 +145,13 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
         help="Skip the measured revision pass that brings each part closer to your voice.",
     )
     p.add_argument("--out", default=None, help="Also write the draft to this file.")
+    p.add_argument(
+        "--fail-if-blocked",
+        dest="fail_if_blocked",
+        action="store_true",
+        help="Exit 3 when the draft's validation verdict is not READY_FOR_HUMAN_REVIEW "
+        "(the draft is still saved and printed).",
+    )
     p = add("validate", "Validate a draft.")
     p.add_argument("draft")
     p = add("authorize-remote", "Allow (or --revoke) remote inference on this project's evidence.")
@@ -486,7 +493,11 @@ def _draft(args, workspace) -> int:
     if args.out:
         Path(args.out).write_text(result["text"], encoding="utf-8")
     print(f"draft saved privately: {result['path']}", file=sys.stderr)
-    return _out(args, {k: v for k, v in result.items() if k != "prompt"}, result["text"])
+    code = _out(args, {k: v for k, v in result.items() if k != "prompt"}, result["text"])
+    verdict = ((result.get("provenance") or {}).get("validation") or {}).get("verdict")
+    if args.fail_if_blocked and not args.skeleton and verdict != "READY_FOR_HUMAN_REVIEW":
+        return 3
+    return code
 
 
 def _print_draft_report(record: dict) -> None:

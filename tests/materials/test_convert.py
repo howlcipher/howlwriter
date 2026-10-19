@@ -17,6 +17,43 @@ def test_requirement_extraction_is_deterministic_and_bounded():
     assert extract_requirement_lines(text) == lines
 
 
+#: Slide-style text: sentences wrapped over several lines, as slide extraction leaves them.
+WRAPPED_SLIDE = """## slide2
+Lab Report - Home Network Audit
+For this lab, you will create a short audit of your home network.
+Your audit MUST INCLUDE:
+A DIAGRAM OF THE NETWORK and
+A LIST OF DEVICES as the first item (router, laptop,
+or phone), each with its owner.
+NOTE
+: You will need to follow the
+audit checklist
+ and record every finding.
+In this course you will learn about networks.
+"""
+
+
+def test_wrapped_sentences_are_rejoined_into_whole_requirements():
+    lines = extract_requirement_lines(WRAPPED_SLIDE)
+    assert lines == [
+        "For this lab, you will create a short audit of your home network.",
+        "Your audit MUST INCLUDE: A DIAGRAM OF THE NETWORK and A LIST OF DEVICES as the first item "
+        "(router, laptop, or phone), each with its owner.",
+        "NOTE: You will need to follow the audit checklist and record every finding.",
+    ]
+    assert not any(line.startswith(":") for line in lines)
+
+
+def test_a_lead_in_before_bullets_is_not_a_requirement_of_its_own():
+    text = "You must include:\n- A diagram of the network\n- A list of the devices"
+    assert extract_requirement_lines(text) == ["A diagram of the network", "A list of the devices"]
+
+
+def test_headings_and_titles_are_not_joined_to_the_sentence_after_them():
+    text = "## Lab Two\nHome Network Audit\nYou must submit one report per person."
+    assert extract_requirement_lines(text) == ["You must submit one report per person."]
+
+
 def test_derived_requirements_skip_duplicates_and_are_ledgered(tmp_path):
     build_package(tmp_path / "p")
     scan = scan_materials(tmp_path / "p")

@@ -262,3 +262,38 @@ def test_web_remote_gates_need_the_page_or_the_owner(client, lab_folder):
     assert relayed.json()["remote_inference_authorized"] is True
     page = client.post(f"/api/projects/{pid}/authorize-remote", headers={"Sec-Fetch-Site": "same-origin"})
     assert page.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("verdict", "flag", "expected"),
+    [
+        ("BLOCKED", True, 3),
+        ("BLOCKED", False, 0),  # the documented default: the verdict is in the output
+        ("READY_FOR_HUMAN_REVIEW", True, 0),
+    ],
+)
+def test_cli_draft_fail_if_blocked_exits_3_on_a_not_ready_verdict(
+    opened, capsys, monkeypatch, verdict, flag, expected
+):
+    from howlwriter.projects import writing
+    from howlwriter.voice import selection
+
+    folder, _ = opened
+    seen = []
+
+    def fake_draft(workspace, brief, **kwargs):
+        seen.append(kwargs)
+        provenance = {"validation": {"verdict": verdict}}
+        return {"text": "## Results\n\nBody.", "path": "draft.md", "provenance": provenance}
+
+    monkeypatch.setattr(writing, "draft", fake_draft)
+    monkeypatch.setattr(selection, "apply_selection", lambda config, **kwargs: None)
+    argv = ["project", "draft", str(folder), "--json"] + (["--fail-if-blocked"] if flag else [])
+    assert main(argv) == expected
+    assert len(seen) == 1
+    assert json.loads(capsys.readouterr().out)["provenance"]["validation"]["verdict"] == verdict
+
+
+def test_cli_skeleton_ignores_fail_if_blocked(opened, capsys, private_dirs, tmp_path):
+    folder, _ = opened
+    assert main(["project", "draft", str(folder), "--skeleton", "--fail-if-blocked"]) == 0
