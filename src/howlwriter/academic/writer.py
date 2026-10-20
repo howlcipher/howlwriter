@@ -16,6 +16,7 @@ from howlwriter.domain.document import Document
 from howlwriter.domain.modes import WritingMode
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.domain.source import Source
+from howlwriter.integration.envelope import writer_envelope
 from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import WritingRole
 
@@ -94,6 +95,16 @@ class ModelAcademicWriter:
             )
 
         sources_block = "\n".join(source_context_lines) if source_context_lines else "No sources available."
+        # Without sources the citation rule would ask the model to cite works that do not
+        # exist; a small model then invents authors, years and figures to satisfy it.
+        citation_rule = (
+            "2. Insert APA 7 in-text citations using the exact author/year format provided for each source\n"
+            "   (e.g. (Smith, 2024) or Smith (2024))."
+            if source_context_lines
+            else "2. NO SOURCES WERE PROVIDED. Do not insert any in-text citation, author-and-year reference,\n"
+            "   or source ID, and do not state statistics, percentages, or study findings. Write from\n"
+            "   general knowledge and qualify any claim that would need a source."
+        )
 
         outline_str = _format_outline(spec.outline)
         reqs_str = _format_requirements(spec.requirements)
@@ -133,8 +144,7 @@ RETRIEVED SOURCE EVIDENCE (ONLY USE THESE SOURCES):
 
 CRITICAL ACADEMIC WRITING RULES:
 1. Ground all factual assertions in the retrieved sources above.
-2. Insert APA 7 in-text citations using the exact author/year format provided for each source
-   (e.g. (Smith, 2024) or Smith (2024)).
+{citation_rule}
 3. DO NOT invent external sources, authors, or DOIs not provided in the source evidence list.
 4. DO NOT invent or fabricate statistics, dates, or study findings. This also applies to precise
    technical identifiers and figures (e.g. exact CVE/ATT&CK IDs, event IDs, cloud finding names,
@@ -200,10 +210,8 @@ warnings: []
             err = result.error_message or "Writer execution failed"
             raise RuntimeError(f"Writer provider '{result.provider}' failed: {err}")
 
-        structured = result.structured_output or {}
-        body = structured.get("body_markdown")
-        if not body or not isinstance(body, str) or not body.strip():
-            body = result.raw_output.strip()
+        structured = writer_envelope(result)
+        body = structured["body_markdown"]
 
         if not body or not body.strip():
             raise RuntimeError(
@@ -344,10 +352,8 @@ warnings: []
                 warnings=[f"Length correction failed: {result.error_message}"],
             )
 
-        structured = result.structured_output or {}
-        body = structured.get("body_markdown")
-        if not body or not isinstance(body, str) or not body.strip():
-            body = result.raw_output.strip()
+        structured = writer_envelope(result)
+        body = structured["body_markdown"]
 
         doc = Document.parse(body, title=spec.title, mode=WritingMode.ACADEMIC)
         words = count_body_words(body)

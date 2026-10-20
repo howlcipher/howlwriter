@@ -110,3 +110,29 @@ word_count_estimate: 25
     )
     assert "Expanded substantive academic text" in res.document.text
     assert res.word_count > 5
+
+
+def test_writer_salvages_a_reply_whose_yaml_does_not_parse():
+    spec = AssignmentSpec(title="Backups", topic="Why backups matter", target_words=40)
+    backend = FakeAgentBackend(
+        agent_id="fake_writer",
+        default_stdout=(
+            "```yaml\nbody_markdown: |\n  # Backups\n\nBackups protect data.\n"
+            "claims_made:\n  - claim: \"Backups protect data.\"\n    source_id: \"\"\nwarnings: []\n```"
+        ),
+    )
+    res = ModelAcademicWriter().draft_paper(spec, [], custom_backend=backend)
+
+    assert res.document.text.startswith("# Backups")
+    assert "claims_made" not in res.document.text and "```" not in res.document.text
+    assert res.claims_stated == [{"claim": "Backups protect data.", "source_id": ""}]
+
+
+def test_writer_without_sources_forbids_citations_instead_of_asking_for_them():
+    spec = AssignmentSpec(title="Backups", topic="Why backups matter", target_words=40)
+    backend = FakeAgentBackend(agent_id="fake_writer", default_stdout="Backups protect data.")
+    ModelAcademicWriter().draft_paper(spec, [], custom_backend=backend)
+
+    prompt = backend.executed_calls[-1]["prompt"]
+    assert "NO SOURCES WERE PROVIDED" in prompt
+    assert "Insert APA 7 in-text citations" not in prompt

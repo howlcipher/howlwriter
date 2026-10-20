@@ -26,6 +26,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
+from howlwriter.integration.envelope import unfenced as _unfenced, writer_envelope
 from howlwriter.integration.provider_choice import is_local
 from howlwriter.projects import models as m
 from howlwriter.projects import voice_fidelity
@@ -432,7 +433,7 @@ def draft(
         if not result.success:
             raise RuntimeError(f"writer failed on part {number}: {result.error_message or 'unknown error'}")
         providers.append(getattr(result, "provider", ""))
-        text = _unfenced((result.structured_output or {}).get("body_markdown") or result.raw_output or "")
+        text = _unfenced(writer_envelope(result)["body_markdown"])
 
         problems = _grounding_problems(workspace, text)
         if problems:
@@ -516,15 +517,6 @@ def draft(
     }
     path = save_draft(workspace, body, record)
     return {"text": body, "path": str(path), "provenance": record, "prompt": prompts[0] if prompts else ""}
-
-
-def _unfenced(text: str) -> str:
-    """Model output without a wrapping ``` fence (small models often add one)."""
-    text = text.strip()
-    if text.startswith("```") and text.endswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else ""
-        text = text[: text.rfind("```")]
-    return text.strip()
 
 
 def _grounding_problems(workspace: ProjectWorkspace, text: str) -> list[dict]:

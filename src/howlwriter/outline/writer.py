@@ -20,6 +20,7 @@ from typing import Any
 from howlwriter.domain.document import Document
 from howlwriter.domain.modes import WritingMode, parse_mode
 from howlwriter.domain.outline import Outline
+from howlwriter.integration.envelope import writer_envelope
 from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import WritingRole
 from howlwriter.outline.freedom import FreedomAssessment, assess_freedom
@@ -101,10 +102,8 @@ class OutlineWriter:
             error = result.error_message or "writer execution failed"
             raise RuntimeError(f"Writer provider '{result.provider}' failed: {error}")
 
-        structured = result.structured_output or {}
-        body = structured.get("body_markdown")
-        if not isinstance(body, str) or not body.strip():
-            body = (result.raw_output or "").strip()
+        structured = writer_envelope(result)
+        body = structured["body_markdown"]
         if not body.strip():
             raise RuntimeError(
                 f"Writer provider '{result.provider}' returned an empty response."
