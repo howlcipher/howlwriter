@@ -121,6 +121,12 @@ experimental evidence and `extracted_from_source` in any other category (a
 rating table or a reference's figures states what someone wrote), and the
 status follows when the category changes.
 
+The classifier goes by format and folder, so it cannot tell a table someone
+derived from one a tool measured. A ratings sheet, a findings ledger, or a
+summary table written by hand is not an observation even in `evidence/`:
+classify it as `user_draft` (your own analysis) or `supporting_reference`
+(someone else's), and its lines become `extracted_from_source`.
+
 A manual category records who set it: `user` at a terminal or in
 HowlWriter's page, `owner_relayed` when an agent passes `--owner-confirmed`
 (web: `X-HowlWriter-Owner-Confirmed: 1`) to relay the owner's word, and

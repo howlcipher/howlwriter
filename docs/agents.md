@@ -81,6 +81,12 @@ it: `agent` by default without a terminal, `owner_relayed` with
 `--owner-confirmed` (or the header) when the owner told you the category,
 `user` only at a terminal or in HowlWriter's page.
 
+Do correct a data file that a person or a model derived (ratings, a findings
+ledger, a hand-written summary table) when you know it was derived, even if
+it sits in `evidence/`: `project classify <project> <file> user_draft` (or
+`supporting_reference`). Otherwise its rows count as the owner's direct
+observations. Leave the file alone if you do not know how it was made.
+
 ### Rules for agents
 
 - **Never pass `--owner-confirmed` or the owner header on your own
