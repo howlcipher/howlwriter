@@ -192,6 +192,44 @@ def test_user_category_survives_rescans(lab_folder):
     )
     with pytest.raises(ValueError):
         set_category(workspace, "draft notes.md", "not-a-category")
+    with pytest.raises(ValueError, match="category source"):
+        set_category(workspace, "draft notes.md", m.REFERENCE, by="someone")
+
+
+@pytest.mark.parametrize("by", m.MANUAL_CATEGORY_SOURCES)
+def test_every_manual_category_survives_rescans_with_its_actor(lab_folder, by):
+    workspace = ProjectWorkspace.create(lab_folder)
+    _scan(workspace)
+    set_category(workspace, "draft notes.md", m.REFERENCE, by=by)
+    _scan(workspace, force=True)
+    record = next(s for s in workspace.load_sources().values() if s.path == "draft notes.md")
+    assert (record.category, record.category_source) == (m.REFERENCE, by)
+    assert record.category_reason == m.CATEGORY_REASONS[by]
+
+
+def test_data_lines_are_directly_observed_only_in_experimental_evidence(lab_folder):
+    # A table someone wrote (a scoring sheet, a reference's figures) states things; it does not
+    # become a direct observation because it was parsed. The same lines in the user's own
+    # experimental log are what they measured.
+    (lab_folder / "materials" / "ratings.csv").write_text("device,rating\nrouter,high\n", encoding="utf-8")
+    workspace = ProjectWorkspace.create(lab_folder)
+    _scan(workspace)
+
+    def statuses(path):
+        return {e.status for e in workspace.load_evidence().values() if e.source_path == path}
+
+    log = "evidence/suricata-eve.log"
+    set_category(workspace, log, m.EXPERIMENTAL)
+    assert statuses(log) == {m.DIRECTLY_OBSERVED}
+    set_category(workspace, "materials/ratings.csv", m.REFERENCE)
+    assert statuses("materials/ratings.csv") == {m.EXTRACTED}
+
+    set_category(workspace, log, m.USER_DRAFT)
+    assert statuses(log) == {m.EXTRACTED}
+    _scan(workspace, force=True)
+    assert statuses(log) == {m.EXTRACTED} and statuses("materials/ratings.csv") == {m.EXTRACTED}
+    set_category(workspace, log, m.EXPERIMENTAL)
+    assert statuses(log) == {m.DIRECTLY_OBSERVED}
 
 
 def test_interrupted_scan_resumes_without_redoing_completed_files(lab_folder):

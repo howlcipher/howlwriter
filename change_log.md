@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+* Lines read from a data file (CSV, logs, JSON) are `directly_observed` only while the file is classified as experimental evidence; in any other category they are `extracted_from_source`, and the status follows a category change (the next scan updates an existing project). A parsed rating table or a reference's figures no longer read as the user's own measurements. Both statuses still count as fact.
+* `project classify` and the category API record who set the category: `user` at a terminal or in HowlWriter's page, `owner_relayed` with `--owner-confirmed` (or `X-HowlWriter-Owner-Confirmed: 1`), and `agent` otherwise, instead of `user` for everyone. Each survives rescans as before.
 * Name the real cause when HowlPlane is found but cannot be imported (for instance a dependency of its own is missing in the Python HowlWriter runs in): model steps and the model menu now report the failed import and the Python path instead of "not configured" or "not installed".
 * Read requirements from wrapped text, such as slide or column extraction, as whole sentences: wrapped lines are rejoined, a lead-in such as "You must include:" keeps the list after it (or gives way to its bullets), and "Please choose ..." and "you will create ..." instructions are found. Requirement IDs come from their text, so a rescan of such a project gives the changed rows new IDs and drops a status set by hand on the old ones; set those again.
 * Keep the draft when a writer reply's YAML does not parse. A small model often indents only the first line under `body_markdown: |`; the whole reply (fence, keys and claim lists) then became the draft. The writer, outline writer, length correction and project draft now recover the body, and the claim lists when they parse.

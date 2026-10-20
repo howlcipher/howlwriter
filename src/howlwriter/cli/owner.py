@@ -55,6 +55,13 @@ def source(args: argparse.Namespace, action: str, why: str, *, relay_allowed: bo
     )
 
 
+def actor(args: argparse.Namespace) -> str:
+    """Who is making a change anyone may make, for the record: the user, a relay, or an agent."""
+    if has_terminal():
+        return "user"
+    return "owner_relayed" if getattr(args, "owner_confirmed", False) else "agent"
+
+
 def report(error: OwnerConfirmationRequired) -> int:
     print(f"error: {error}", file=sys.stderr)
     return EXIT_OWNER_REQUIRED
