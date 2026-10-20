@@ -63,6 +63,13 @@ def isolate_diagnostic_runs(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def ignore_developer_howlplane_home(monkeypatch):
+    """A developer's exported HOWLPLANE_HOME / HOWLPLANE_DIR must not steer HowlPlane discovery in tests."""
+    monkeypatch.delenv("HOWLPLANE_HOME", raising=False)
+    monkeypatch.delenv("HOWLPLANE_DIR", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def reset_global_bridges():
     """Ensures each test starts with a clean, unconfigured bridge state."""
     set_howlplane_bridge(None)

@@ -102,3 +102,18 @@ def test_send_confirmation_header_applies_only_to_the_named_model(ran):
 
     assert contextvars.copy_context().run(in_request) == (True, False)
     assert pc.REQUEST_PROVIDER.get() is None  # nothing leaks out of the request
+
+
+def test_a_chosen_model_without_howlplane_answers_503_not_409(monkeypatch):
+    """Asking again cannot help when HowlPlane is missing, so the page is told why."""
+    monkeypatch.setattr(pc, "PROCESS_DEFAULTS", {"writer": None, "reviewer": None, "interactive": False})
+    monkeypatch.setattr(bridge_module, "_try_import_howlplane", lambda: None)
+    set_howlplane_bridge(HowlPlaneWritingBridge())
+    try:
+        response = TestClient(create_app()).post(
+            "/api/humanize", json={"text": TEXT}, headers={"X-HowlWriter-Provider": "claude"}
+        )
+    finally:
+        set_howlplane_bridge(None)
+    assert response.status_code == 503
+    assert response.json()["code"] == "howlplane_unavailable"

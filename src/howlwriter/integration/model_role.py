@@ -11,6 +11,8 @@ fake or empty result.
 
 from __future__ import annotations
 
+import sys
+
 import enum
 from typing import Protocol, runtime_checkable
 
@@ -59,6 +61,29 @@ class ModelRoleNotConfiguredError(RuntimeError):
             f"Explicitly select an available provider with "
             f"HOWLPLANE_ROLE_WRITING_{role.value.upper()}=<provider>. "
             f"See docs/howlplane-integration.md for setup."
+        )
+
+
+class HowlPlaneUnavailableError(RuntimeError):
+    """A model was chosen for a step, but HowlPlane, which runs it, cannot be imported.
+
+    Distinct from ModelRoleNotConfiguredError ("no model chosen"): choosing a model
+    again cannot help, and a rule-based fallback would silently ignore the choice.
+    """
+
+    def __init__(self, role: WritingRole, provider: str):
+        self.role = role
+        self.provider = provider
+        from howlwriter.integration.howlplane_bridge import howlplane_import_problem
+
+        why = howlplane_import_problem() or (
+            f"HowlPlane is not installed in this Python environment ({sys.executable})"
+        )
+        super().__init__(
+            f"{role.value}: model {provider!r} was chosen, but it runs through HowlPlane and {why}. "
+            f"Install it with `pip install 'howlwriter[plane]'` (a Howl install provides it), "
+            f"or point HOWLPLANE_ROOT (or HOWLPLANE_HOME) at a HowlPlane checkout. "
+            f"See docs/howlplane-integration.md."
         )
 
 

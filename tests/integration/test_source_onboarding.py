@@ -118,7 +118,8 @@ def test_a_broken_howlplane_names_its_missing_dependency(tmp_path):
         [sys.executable, "-m", "howlwriter.cli.main", "--provider", "claude", "writer", "Test topic"],
         env=child_env(root=tmp_path), cwd=tmp_path, capture_output=True, text=True,
     )
-    assert result.returncode == 2
+    # A model was chosen, so this is "HowlPlane cannot run it" (1), not "no model chosen" (2).
+    assert result.returncode == 1
     assert "missing_dep_for_test" in result.stderr
     assert "is not configured" not in result.stderr
     assert "Traceback" not in result.stderr

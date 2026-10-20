@@ -21,6 +21,7 @@ from howlwriter.cli.commands import (
     google,
     howl,
     humanize,
+    interop,
     lint,
     native,
     outline,
@@ -36,7 +37,7 @@ from howlwriter.cli.commands import (
     voice,
     writer,
 )
-from howlwriter.integration.model_role import ModelRoleNotConfiguredError
+from howlwriter.integration.model_role import HowlPlaneUnavailableError, ModelRoleNotConfiguredError
 
 _COMMAND_MODULES = (
     benchmark,
@@ -62,11 +63,25 @@ _COMMAND_MODULES = (
     project,
     runs,
     ui,
+    interop,
 )
 
 
+class _Parser(argparse.ArgumentParser):
+    """argparse, except a usage error exits 1.
+
+    Exit 2 means "a model step had no model chosen" (docs/agents.md). argparse's
+    own 2 for a bad flag let a caller such as HowlPlane mistake an unsupported
+    flag for a request for input.
+    """
+
+    def error(self, message: str):  # type: ignore[override]
+        self.print_usage(sys.stderr)
+        self.exit(1, f"{self.prog}: error: {message}\n")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="howlwriter",
         description="A controlled writing, editing, humanization, research, citation, "
         "provenance, and verification system.",
@@ -107,6 +122,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         _configure_model_choice(args)
         return args.handler(args)
+    except HowlPlaneUnavailableError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
     except ModelRoleNotConfiguredError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

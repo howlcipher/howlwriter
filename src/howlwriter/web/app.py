@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from howlwriter import __version__
 from howlwriter.integration import provider_choice
-from howlwriter.integration.model_role import ModelRoleNotConfiguredError
+from howlwriter.integration.model_role import HowlPlaneUnavailableError, ModelRoleNotConfiguredError
 from howlwriter.web.owner import OwnerConfirmationRequired
 from howlwriter.web.routes.academic import router as academic_router
 from howlwriter.web.routes.documents import router as documents_router
@@ -50,6 +50,14 @@ def create_app(static_dir: Path | str | None = None) -> FastAPI:
         return JSONResponse(
             status_code=409,
             content={"code": "model_choice_required", "role": error.role.value, "detail": str(error)},
+        )
+
+    @app.exception_handler(HowlPlaneUnavailableError)
+    async def _howlplane_missing(request: Request, error: HowlPlaneUnavailableError) -> JSONResponse:
+        # A model was chosen but cannot run here; asking again would not help.
+        return JSONResponse(
+            status_code=503,
+            content={"code": "howlplane_unavailable", "role": error.role.value, "detail": str(error)},
         )
 
     @app.exception_handler(OwnerConfirmationRequired)

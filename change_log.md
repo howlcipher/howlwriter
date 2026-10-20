@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+* `howlwriter interop --json` prints the `howl.interop/v1` descriptor from the Howl interop contract: every command and flag (from the live parser), the documents `native request|write` produce, and the exit codes. HowlPlane and `howl doctor` use it to check the commands they run.
+* A model chosen with `--provider` (or `HOWLWRITER_PROVIDER`, or the page) when HowlPlane cannot be imported now fails with exit 1 and names the missing package (web: HTTP 503 `howlplane_unavailable`). Before, it reported "needs a model" with exit 2, and steps with a rule-based path silently ran that path instead of the chosen model.
+* A usage error (unknown flag or subcommand) exits 1 instead of argparse's 2, so 2 means only "a model step had no model chosen" (or the remote gate) and a caller such as HowlPlane cannot mistake an unsupported flag for a request for input.
+* `HOWLPLANE_HOME` and `HOWLPLANE_DIR`, HowlPlane's own names for its checkout, are a fallback when `HOWLPLANE_ROOT` is unset and no installed HowlPlane can be imported; they never shadow an installed HowlPlane. New optional extra `howlwriter[plane]` installs HowlPlane for a plain pip install.
+
 * Lines read from a data file (CSV, logs, JSON) are `directly_observed` only while the file is classified as experimental evidence; in any other category they are `extracted_from_source`, and the status follows a category change (the next scan updates an existing project). A parsed rating table or a reference's figures no longer read as the user's own measurements. Both statuses still count as fact.
 * `project classify` and the category API record who set the category: `user` at a terminal or in HowlWriter's page, `owner_relayed` with `--owner-confirmed` (or `X-HowlWriter-Owner-Confirmed: 1`), and `agent` otherwise, instead of `user` for everyone. Each survives rescans as before.
 * Document that a derived data table (ratings, a findings ledger) in `evidence/` must be classified as a draft or reference to stop counting as direct observation; the classifier goes by format and folder and cannot tell.

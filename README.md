@@ -185,14 +185,16 @@ Runtime `httpx` remains available for existing integrations.
 ## Configure model roles
 
 `howlwriter writer --help` describes model setup. Install HowlPlane in the
-same Python environment, or set `HOWLPLANE_ROOT=/path/to/howlplane` to its
-source checkout. Explicitly select an installed, authenticated provider before
+same Python environment (`pip install 'howlwriter[plane]'`; `howl install`
+does this), or set `HOWLPLANE_ROOT=/path/to/howlplane` to its source
+checkout (HowlPlane's own `HOWLPLANE_HOME` is a fallback when no installed
+HowlPlane can be imported). Explicitly select an installed, authenticated provider before
 starting Writer, for example `HOWLPLANE_ROLE_WRITING_WRITER=claude_code`.
 The default registry reads exported environment bindings once per process;
 configuration files are not automatically loaded for role bindings.
 See [HowlPlane integration](docs/howlplane-integration.md) for other roles,
 source layouts, and setup details. Missing setup produces an actionable error
-and exit status 2.
+and exit status 2; a chosen model with no HowlPlane to run it exits 1.
 
 ## Using HowlWriter from an AI agent
 
