@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import sys
 
+from howlwriter.academic.citations import AcademicCitationManager
+from howlwriter.academic.identifiers import find_ungrounded_identifiers
 from howlwriter.academic.research import load_sources_file
 from howlwriter.academic.spec import AssignmentSpec
 from howlwriter.academic.writer import ModelAcademicWriter
@@ -49,6 +51,14 @@ def add_subparser(
         default=None,
         help="Write drafted text to this file.",
     )
+    parser.add_argument(
+        "--fail-if-blocked",
+        action="store_true",
+        help=(
+            "Exit 3 when the draft cites a work, or names an exact identifier such as a CVE, "
+            "that is not in --sources or the prompt."
+        ),
+    )
     parser.set_defaults(handler=run)
     return parser
 
@@ -82,4 +92,25 @@ def run(args: argparse.Namespace) -> int:
     else:
         print(res.document.text)
 
-    return 0
+    problems = _unsupported_specifics(res.document, sources, args.prompt)
+    for problem in problems:
+        print(f"warning: {problem}", file=sys.stderr)
+    return 3 if problems and args.fail_if_blocked else 0
+
+
+def _unsupported_specifics(document, sources: list[Source], prompt: str) -> list[str]:
+    """Citations and exact identifiers in the draft that nothing given to the model supports."""
+    problems = []
+    # A citation that matches no supplied source names a work nobody gave the model.
+    unmatched = AcademicCitationManager().analyze_and_build_references(document, sources)
+    if unmatched.unmatched_in_text_citations:
+        cited = unmatched.unmatched_in_text_citations
+        problems.append(f"the draft cites {len(cited)} work(s) that are not in the sources: " + "; ".join(cited))
+    grounding = [prompt, *(s.retrieved_text or "" for s in sources)]
+    invented = [f.identifier for f in find_ungrounded_identifiers(document.text, grounding)]
+    if invented:
+        problems.append(
+            f"the draft names {len(invented)} exact identifier(s) found in no source or the prompt: "
+            + "; ".join(invented)
+        )
+    return problems
