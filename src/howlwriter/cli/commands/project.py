@@ -92,6 +92,12 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
     p = add("classify", "Correct a source's category.")
     p.add_argument("source", help="Source id or relative path.")
     p.add_argument("category")
+    p.add_argument(
+        "--owner-confirmed",
+        action="store_true",
+        help="Record the change as relayed from the owner (they told you this category). "
+        "Without a terminal and without this flag it is recorded as an agent's change.",
+    )
     p = add("evidence", "List evidence.")
     p.add_argument("--source", default=None, help="Only this source (id or relative path).")
     p.add_argument("--kind", default=None)
@@ -307,10 +313,9 @@ def _run(args: argparse.Namespace) -> int:
     if command == "classify":
         from howlwriter.projects.scan import set_category
 
-        record = set_category(workspace, args.source, args.category)
-        return _out(
-            args, record.to_dict(), f"{record.path}: {record.category} (set by you; kept across rescans)"
-        )
+        record = set_category(workspace, args.source, args.category, by=owner.actor(args))
+        summary = f"{record.path}: {record.category} ({record.category_reason}; kept across rescans)"
+        return _out(args, record.to_dict(), summary)
     if command == "evidence":
         items = list(workspace.load_evidence().values())
         if args.source:

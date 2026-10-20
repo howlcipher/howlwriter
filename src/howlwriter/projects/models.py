@@ -37,6 +37,17 @@ REQUIREMENT_CATEGORIES = (INSTRUCTIONS, RUBRIC)
 #: Categories that record what was actually observed in the user's work.
 OBSERVATION_CATEGORIES = (EXPERIMENTAL, SCREENSHOT, PACKET_CAPTURE)
 
+#: Who set a category by hand. Each survives rescans; only "user" means the person was asked.
+CATEGORY_BY_USER = "user"  # at a terminal, or in HowlWriter's own page
+CATEGORY_BY_RELAY = "owner_relayed"  # an agent or script passing on the owner's word
+CATEGORY_BY_AGENT = "agent"  # an agent or script on its own judgement
+MANUAL_CATEGORY_SOURCES = (CATEGORY_BY_USER, CATEGORY_BY_RELAY, CATEGORY_BY_AGENT)
+CATEGORY_REASONS = {
+    CATEGORY_BY_USER: "set by the user",
+    CATEGORY_BY_RELAY: "set by an agent relaying the owner",
+    CATEGORY_BY_AGENT: "set by an agent or script, not confirmed by the owner",
+}
+
 # --- evidence status ---------------------------------------------------------
 
 DIRECTLY_OBSERVED = "directly_observed"  # measured from the user's own artefact
@@ -74,7 +85,7 @@ class SourceRecord:
     mtime: float
     sha256: str = ""
     category: str = UNKNOWN
-    category_source: str = "heuristic"  # heuristic | user
+    category_source: str = "heuristic"  # heuristic | browser | user | owner_relayed | agent
     category_reason: str = ""
     adapter: str = ""
     status: str = "pending"  # pending | extracted | partial | unavailable | failed | skipped

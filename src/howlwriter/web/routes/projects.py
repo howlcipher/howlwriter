@@ -209,11 +209,14 @@ async def get_sources(project_id: str, category: Optional[str] = None) -> list[d
 
 
 @router.post("/{project_id}/sources/{source_id}/category")
-async def post_category(project_id: str, source_id: str, request: CategoryRequest) -> dict:
+async def post_category(
+    project_id: str, source_id: str, request: CategoryRequest, http_request: Request
+) -> dict:
     from howlwriter.projects.scan import set_category
 
     try:
-        return set_category(_ws(project_id), source_id, request.category).to_dict()
+        record = set_category(_ws(project_id), source_id, request.category, by=owner.actor(http_request))
+        return record.to_dict()
     except ValueError as error:
         raise _bad(error) from error
 

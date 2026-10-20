@@ -38,9 +38,22 @@ def test_cli_sources_classify_and_status(opened, capsys):
     code, record = _json(
         capsys, ["project", "classify", str(folder), "draft notes.md", "supporting_reference", "--json"]
     )
-    assert record["category_source"] == "user"
+    # No terminal (as for an AI agent): recorded as the agent's change, not the user's.
+    assert record["category_source"] == "agent"
     code, status = _json(capsys, ["project", "status", str(folder), "--json"])
     assert status["sources"] == 4 and status["requirements"] >= 6
+
+
+def test_cli_classify_records_who_made_the_change(opened, capsys, monkeypatch):
+    from howlwriter.cli import owner
+
+    folder, _ = opened
+    argv = ["project", "classify", str(folder), "draft notes.md", "rubric", "--json"]
+    code, record = _json(capsys, [*argv, "--owner-confirmed"])
+    assert code == 0 and record["category_source"] == "owner_relayed"
+    monkeypatch.setattr(owner, "has_terminal", lambda: True)
+    code, record = _json(capsys, argv)
+    assert record["category_source"] == "user" and record["category_reason"] == "set by the user"
 
 
 def test_cli_search_requirements_and_validation(opened, capsys, tmp_path):
@@ -164,6 +177,13 @@ def test_web_open_scan_and_browse_evidence(client, lab_folder):
         f"/api/projects/{pid}/sources/{notes['source_id']}/category", json={"category": "rubric"}
     )
     assert changed.json()["category"] == "rubric"
+    # A client other than HowlWriter's page is recorded as an agent unless it relays the owner.
+    assert changed.json()["category_source"] == "agent"
+    url = f"/api/projects/{pid}/sources/{notes['source_id']}/category"
+    page = client.post(url, json={"category": "rubric"}, headers={"Sec-Fetch-Site": "same-origin"})
+    assert page.json()["category_source"] == "user"
+    relayed = client.post(url, json={"category": "rubric"}, headers={"X-HowlWriter-Owner-Confirmed": "1"})
+    assert relayed.json()["category_source"] == "owner_relayed"
     assert (
         client.post(
             f"/api/projects/{pid}/sources/{notes['source_id']}/category", json={"category": "bogus"}

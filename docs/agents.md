@@ -75,6 +75,12 @@ Revoking (`authorize-remote --revoke`), excluding a Workshop answer, reading
 the queue, and previewing a document never need the owner: they can only
 keep material local or remove evidence.
 
+Correcting a source's category (`project classify`, `POST
+.../sources/{id}/category`) is yours to make, but the record says who made
+it: `agent` by default without a terminal, `owner_relayed` with
+`--owner-confirmed` (or the header) when the owner told you the category,
+`user` only at a terminal or in HowlWriter's page.
+
 ### Rules for agents
 
 - **Never pass `--owner-confirmed` or the owner header on your own

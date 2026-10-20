@@ -96,7 +96,7 @@ Statuses, and how the writer must treat them:
 
 | Status | Example | In prose |
 |---|---|---|
-| `directly_observed` | packet counts from your capture; a lab page you observed | fact |
+| `directly_observed` | packet counts from your capture; a lab page you observed; lines of a data file classified as experimental evidence | fact |
 | `extracted_from_source` | a sentence from a reference PDF | fact, attributed |
 | `derived_by_calculation` | entropy of a stream; a capture comparison | fact, with method |
 | `supported_interpretation` | | phrased as interpretation |
@@ -115,8 +115,17 @@ products or tooling), or generated files in working/output folders. On a real
 lab folder, earlier reports rendered to images and frames of the instructor's
 video had been "satisfying" most experiment requirements; these rules are
 why that no longer happens. When the rules change, existing files are
-reclassified from their stored text without re-extraction, and a user's own
-`project classify` always wins.
+reclassified from their stored text without re-extraction, and a manual
+`project classify` always wins. The same data file is `directly_observed` as
+experimental evidence and `extracted_from_source` in any other category (a
+rating table or a reference's figures states what someone wrote), and the
+status follows when the category changes.
+
+A manual category records who set it: `user` at a terminal or in
+HowlWriter's page, `owner_relayed` when an agent passes `--owner-confirmed`
+(web: `X-HowlWriter-Owner-Confirmed: 1`) to relay the owner's word, and
+`agent` otherwise. All three survive rescans; only `user` means the owner
+was asked.
 
 ## Requirements
 

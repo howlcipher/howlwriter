@@ -35,6 +35,13 @@ def source(request: Request, why: str = "changes what trains the owner's voice p
     )
 
 
+def actor(request: Request) -> str:
+    """Who is making a change anyone may make, for the record: the page, a relay, or an agent."""
+    if (request.headers.get("sec-fetch-site") or "").lower() == "same-origin":
+        return "user"
+    return "owner_relayed" if (request.headers.get(OWNER_CONFIRMED_HEADER) or "").strip() == "1" else "agent"
+
+
 def voice_source(request: Request) -> str:
     """FastAPI dependency for authorship and Workshop decisions."""
     return source(request)

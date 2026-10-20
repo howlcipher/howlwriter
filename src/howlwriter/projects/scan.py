@@ -536,7 +536,7 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
                         "duplicate",
                         f"identical to {sources[original].path}",
                     )
-                    if record.category_source != "user":
+                    if record.category_source not in m.MANUAL_CATEGORY_SOURCES:
                         # Same content, but a name can carry the role (a "scoring matrix" image).
                         if _family(suffix) == "document":
                             record.category = sources[original].category
@@ -560,7 +560,7 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
         record.warnings = result.warnings[:20]
         record.metadata = {k: v for k, v in result.metadata.items() if k != "lines"}
         record.metadata["options"] = extractors.options(suffix)
-        if record.category_source != "user":
+        if record.category_source not in m.MANUAL_CATEGORY_SOURCES:
             record.category, record.category_reason = cls.classify(relative, suffix, result.text)
         record.metadata["classifier"] = cls.CLASSIFIER_VERSION
         if record.status == "failed":
@@ -578,6 +578,7 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
                 citation=f"{name}, {raw.get('location', '')}",
                 **{k: v for k, v in raw.items() if k in m.EvidenceItem.__dataclass_fields__},
             )
+            _apply_category(item, record.category)
             evidence[item.evidence_id] = item
             count += 1
         record.evidence_count = count
@@ -599,7 +600,7 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
     # Category corrections apply to evidence already in the library.
     for item in evidence.values():
         if item.source_id in sources:
-            item.category = sources[item.source_id].category
+            _apply_category(item, sources[item.source_id].category)
     workspace.save_evidence(evidence)
 
     from howlwriter.projects.requirements import refresh_requirements
@@ -623,21 +624,40 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
     return report
 
 
-def set_category(workspace: ProjectWorkspace, source: str, category: str) -> m.SourceRecord:
-    """A user correction. It survives every rescan."""
+def _apply_category(item: m.EvidenceItem, category: str) -> None:
+    """Give evidence its source's category, and the status that category supports.
+
+    Lines read from a data file are the user's own measurements only when the file is
+    their experimental evidence; a table in a reference or a draft states what someone
+    wrote, so it is extracted, not directly observed.
+    """
+    item.category = category
+    if item.kind == "data_lines":
+        item.status = m.DIRECTLY_OBSERVED if category in m.OBSERVATION_CATEGORIES else m.EXTRACTED
+
+
+def set_category(
+    workspace: ProjectWorkspace, source: str, category: str, by: str = m.CATEGORY_BY_USER
+) -> m.SourceRecord:
+    """A manual correction, recorded with who made it (see ``m.MANUAL_CATEGORY_SOURCES``).
+
+    It survives every rescan whoever made it; only ``by="user"`` says the person was asked.
+    """
+    if by not in m.MANUAL_CATEGORY_SOURCES:
+        raise ValueError(f"unknown category source {by!r}")
     if category not in m.CATEGORIES:
         raise ValueError(f"unknown category {category!r}; choose from {', '.join(m.CATEGORIES)}")
     sources = workspace.load_sources()
     record = sources.get(source) or next((r for r in sources.values() if r.path == source), None)
     if record is None:
         raise ValueError(f"no source {source!r} in this project")
-    record.category, record.category_source, record.category_reason = category, "user", "set by the user"
+    record.category, record.category_source, record.category_reason = category, by, m.CATEGORY_REASONS[by]
     sources[record.source_id] = record
     workspace.save_sources(sources)
     evidence = workspace.load_evidence()
     for item in evidence.values():
         if item.source_id == record.source_id:
-            item.category = category
+            _apply_category(item, category)
     workspace.save_evidence(evidence)
     from howlwriter.projects.requirements import refresh_requirements
 
