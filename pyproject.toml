@@ -15,7 +15,7 @@ dependencies = [
     # Bounded remote provider transport for the native Writer path. Pinned to
     # the same commit as howlcreate and howldream: pip treats different direct
     # URLs for one project as a conflict, so the three must stay identical.
-    "howl-provider-core @ git+https://github.com/howlcipher/howl-provider-core.git@d5ae6d696d95bebd799e9ae51fc18b7622e2c985",
+    "howl-provider-core @ git+https://github.com/howlcipher/howl-provider-core.git@f6ae63bb471a12c8ccaa51475c017b91757127fa",
 ]
 
 [project.optional-dependencies]
