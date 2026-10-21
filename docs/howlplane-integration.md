@@ -79,14 +79,23 @@ via HowlPlane's domain-neutral role execution framework:
    requirements. Setting a binding enables that role when it is requested;
    discovery itself does not execute a provider.
 
-   Install HowlPlane in the same Python environment as HowlWriter, or point at
-   an explicit source checkout:
+   Install HowlPlane in the same Python environment as HowlWriter (`howl
+   install` does this; with pip, `pip install 'howlwriter[plane]'`), or point
+   at an explicit source checkout:
    ```bash
    export HOWLPLANE_ROOT=/path/to/howlplane
    ```
-   The bridge supports the current `src/howlplane/control_plane` layout and
-   the legacy `src/control_plane` layout. An installed `howlplane` package
-   works without `HOWLPLANE_ROOT`.
+   HowlPlane's own `HOWLPLANE_HOME` (or `HOWLPLANE_DIR`) is used only when
+   `HOWLPLANE_ROOT` is unset and no installed `howlplane` package can be
+   imported, so an exported `HOWLPLANE_HOME` never shadows an installed
+   HowlPlane. The bridge supports the current
+   `src/howlplane/control_plane` layout and the legacy `src/control_plane`
+   layout. An installed `howlplane` package works without either variable.
+
+   If a model is chosen (`--provider`, `HOWLWRITER_PROVIDER`, or the page's
+   choice) but HowlPlane cannot be imported, the step fails with exit status 1
+   (HTTP 503 `howlplane_unavailable`) and names the missing package, instead of
+   asking again for a model or falling back to a rule-based step.
 
    The default registry does not automatically read `config.toml`, `.env`, or
    `settings.yaml`. Export environment bindings yourself, or register bindings

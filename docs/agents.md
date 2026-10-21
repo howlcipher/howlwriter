@@ -110,11 +110,16 @@ observations. Leave the file alone if you do not know how it was made.
 | Code | Meaning |
 | --- | --- |
 | 0 | Success. |
-| 1 | Error (bad argument, unknown project or identity); the message is on stderr. |
+| 1 | Error (bad argument or other usage error, unknown project or identity, or a model was chosen but HowlPlane, which runs it, cannot be imported); the message is on stderr. |
 | 2 | A model step had no model chosen; `project`: refused by the remote-inference gate or browser policy; `voice scan`/`sync`: the drive is not mounted. Nothing was changed or sent. |
 | 3 | Finished, but not ready: the `project validate` verdict is not `READY_FOR_HUMAN_REVIEW`, or a voice profile could not be built. A `project draft` reports its verdict in its output and provenance and exits 0, unless you pass `--fail-if-blocked`, which makes a not-ready draft exit 3 (the draft is still saved). `writer --fail-if-blocked` exits 3 when the draft cites a work, or names an exact identifier such as a CVE, that is not in `--sources` or the prompt; without the flag it warns on stderr and exits 0. |
 | 4 | An owner-only decision was asked for without a terminal or `--owner-confirmed`. Nothing was changed. |
 | 130 | `project`: cancelled. |
+
+`howlwriter interop --json` prints this table, every command and flag, and the
+documents `native request` and `native write` produce, as a `howl.interop/v1`
+descriptor (the [Howl interop contract](https://github.com/howlcipher/howl/blob/main/docs/INTEROP.md)).
+HowlPlane and `howl doctor` use it to check the commands they run.
 
 ## The web API
 

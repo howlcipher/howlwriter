@@ -64,6 +64,13 @@ gdocs = [
 publish = [
     "howlwriter[docx,pdf,gdocs]",
 ]
+plane = [
+    # HowlPlane runs every model step in-process (role dispatch and the
+    # claude/agy/codex/local backends). `howl install` supplies it; this
+    # extra is for a plain pip install. Without it a chosen model reports
+    # that HowlPlane is unavailable instead of running.
+    "howlplane @ git+https://github.com/howlcipher/howlplane.git@f3f9c0f057a523c7f64f9932a73e0f46471bd91e",
+]
 web = [
     "fastapi>=0.110,<1.0",
     "uvicorn[standard]>=0.27,<1.0",

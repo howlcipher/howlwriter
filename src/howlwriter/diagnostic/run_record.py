@@ -108,7 +108,9 @@ def get_git_revision(repo_dir: Path | str | None = None) -> str | None:
 
 
 def get_howlplane_git_revision() -> str | None:
-    env_root = os.environ.get("HOWLPLANE_ROOT")
+    from howlwriter.integration.howlplane_bridge import howlplane_root_from_env
+
+    env_root = howlplane_root_from_env()
     if env_root:
         p = Path(env_root).resolve()
         if p.is_dir() and (p / ".git").exists():

@@ -9,6 +9,7 @@ HowlPlane owns execution, provider resolution, reviewer independence, and contro
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import importlib.util
 import os
 from pathlib import Path
 import shutil
@@ -17,6 +18,7 @@ import tempfile
 from typing import Any, Callable, Protocol, runtime_checkable
 
 from howlwriter.integration.model_role import (
+    HowlPlaneUnavailableError,
     ModelRoleNotConfiguredError,
     WritingRole,
 )
@@ -43,17 +45,47 @@ class RoleDispatcherProtocol(Protocol):
     def execute(self, request: Any, custom_backend: Any | None = None) -> Any: ...
 
 
+def howlplane_root_from_env() -> str | None:
+    """An explicit HowlPlane checkout: HOWLPLANE_ROOT, else HowlPlane's own HOWLPLANE_HOME / HOWLPLANE_DIR."""
+    for name in ("HOWLPLANE_ROOT", "HOWLPLANE_HOME", "HOWLPLANE_DIR"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return None
+
+
+def _add_checkout(root: str, *, first: bool) -> None:
+    p = Path(root).resolve()
+    if not p.is_dir():
+        return
+    entries = [p]
+    source_root = p / "src"
+    if (source_root / "howlplane" / "control_plane").is_dir():
+        entries.insert(0, source_root)
+    for entry in reversed(entries) if first else entries:
+        if str(entry) in sys.path:
+            continue
+        if first:
+            sys.path.insert(0, str(entry))
+        else:
+            sys.path.append(str(entry))
+
+
 def _ensure_howlplane_on_path() -> None:
-    """Discover an explicit HowlPlane checkout in current or legacy layout."""
-    env_root = os.environ.get("HOWLPLANE_ROOT")
-    if env_root:
-        p = Path(env_root).resolve()
-        if p.is_dir() and str(p) not in sys.path:
-            sys.path.insert(0, str(p))
-        source_root = p / "src"
-        if (source_root / "howlplane" / "control_plane").is_dir():
-            if str(source_root) not in sys.path:
-                sys.path.insert(0, str(source_root))
+    """Discover an explicit HowlPlane checkout in current or legacy layout.
+
+    HOWLPLANE_ROOT is an explicit choice and takes precedence over an installed
+    package. HOWLPLANE_HOME / HOWLPLANE_DIR are HowlPlane's own settings, often
+    exported for other reasons, so they are only a fallback when no installed
+    HowlPlane can be imported (an installed engine is never shadowed).
+    """
+    explicit = os.environ.get("HOWLPLANE_ROOT", "").strip()
+    if explicit:
+        _add_checkout(explicit, first=True)
+        return
+    fallback = howlplane_root_from_env()
+    if fallback and importlib.util.find_spec("howlplane") is None:
+        _add_checkout(fallback, first=False)
 
 
 #: Why HowlPlane could not be imported although it was found (a missing dependency
@@ -174,8 +206,13 @@ class HowlPlaneWritingBridge:
             return True
         if self.no_model or provider_choice.REQUEST_NO_MODEL.get():
             return False
-        if provider_choice.REQUEST_PROVIDER.get() or self.session_provider:
-            return self.is_available()
+        chosen = provider_choice.REQUEST_PROVIDER.get() or self.session_provider
+        if chosen:
+            # A chosen model that cannot run is an error, not a reason to fall
+            # back to a rule-based step the person did not ask for.
+            if not self.is_available():
+                raise HowlPlaneUnavailableError(role, chosen)
+            return True
         if self.chooser is None or not self.is_available():
             return False
         try:
@@ -274,6 +311,9 @@ class HowlPlaneWritingBridge:
     ) -> Any:
         """Invokes a WritingRole through HowlPlane."""
         if not self.is_available() and custom_backend is None:
+            chosen = provider_choice.REQUEST_PROVIDER.get() or self.session_provider
+            if chosen:
+                raise HowlPlaneUnavailableError(role, chosen)
             raise ModelRoleNotConfiguredError(role)
 
         if custom_backend is None and preferred_provider is None:
