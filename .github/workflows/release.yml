@@ -60,7 +60,11 @@ jobs:
           python -m venv /tmp/verify-venv-core
           /tmp/verify-venv-core/bin/python -m pip install --quiet dist/*.whl
           /tmp/verify-venv-core/bin/howlwriter --version
-          /tmp/verify-venv-core/bin/howlwriter ui --no-browser; test $? -eq 1
+          # The shell runs with -e, so capture the expected failure explicitly:
+          # without the web extra, `ui` must refuse with exit 1.
+          status=0
+          /tmp/verify-venv-core/bin/howlwriter ui --no-browser || status=$?
+          test "$status" -eq 1
 
       # Separately, with the "web" extra: proves the committed frontend
       # build output actually made it into the wheel (setuptools silently
