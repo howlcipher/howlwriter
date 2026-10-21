@@ -59,7 +59,8 @@ this project surfaced but does not attempt to patch itself.
 
 **Native bounded path (exception to the above).** `howlwriter native` is
 the one Writer path that calls a provider directly, and it does so only
-through [howl-provider-core](https://github.com/howlcipher/howl-provider-core):
+through [howl-provider-core](https://github.com/howlcipher/howl-provider-core)
+(pinned to `9bf1f78`, shared with HowlCreate and HowlDream for credential redaction):
 one operator-declared remote command per request, no shell, a private
 temporary working directory, an allowlisted environment, a timeout, an
 output cap, and `HOWL_FORBID_LOCAL_INFERENCE` enforced on the child. It

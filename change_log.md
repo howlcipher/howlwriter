@@ -4,7 +4,9 @@
 
 * The `plane` extra pins HowlPlane `52b4a36`, which relays only the owner's HowlChangeOps approvals and uses exit 2 only for decisions waiting on a person.
 
-* Pin howl-provider-core 0.2.0 (`d5ae6d6`, shared secret redaction), the same commit howldream and howlcreate pin; pip refuses two different URLs for one project.
+* Pin shared howl-provider-core `9bf1f78`, matching HowlDream and HowlCreate, restoring historical credential coverage and sanitizing provider failure metadata before persistence (Mission 007 F2).
+* Invalid `runs prune` retention arguments now exit 1, including conflicting flags, negative settings, and overflowing day counts; synthetic regression tests verify no run artifacts change (F10).
+* Keep portability-test environment isolation intact while testing unavailable and unconfigured HowlPlane.
 
 * `howlwriter interop --json` prints the `howl.interop/v1` descriptor from the Howl interop contract: every command and flag (from the live parser), the documents `native request|write` produce, and the exit codes. HowlPlane and `howl doctor` use it to check the commands they run.
 * A model chosen with `--provider` (or `HOWLWRITER_PROVIDER`, or the page) when HowlPlane cannot be imported now fails with exit 1 and names the missing package (web: HTTP 503 `howlplane_unavailable`). Before, it reported "needs a model" with exit 2, and steps with a rule-based path silently ran that path instead of the chosen model.
