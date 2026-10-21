@@ -69,7 +69,7 @@ plane = [
     # claude/agy/codex/local backends). `howl install` supplies it; this
     # extra is for a plain pip install. Without it a chosen model reports
     # that HowlPlane is unavailable instead of running.
-    "howlplane @ git+https://github.com/howlcipher/howlplane.git@f3f9c0f057a523c7f64f9932a73e0f46471bd91e",
+    "howlplane @ git+https://github.com/howlcipher/howlplane.git@52b4a365d4d7a39f4220de926e7e7f86626231ed",
 ]
 web = [
     "fastapi>=0.110,<1.0",

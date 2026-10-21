@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+* The `plane` extra pins HowlPlane `52b4a36`, which relays only the owner's HowlChangeOps approvals and uses exit 2 only for decisions waiting on a person.
+
 * Pin howl-provider-core 0.2.0 (`d5ae6d6`, shared secret redaction), the same commit howldream and howlcreate pin; pip refuses two different URLs for one project.
 
 * `howlwriter interop --json` prints the `howl.interop/v1` descriptor from the Howl interop contract: every command and flag (from the live parser), the documents `native request|write` produce, and the exit codes. HowlPlane and `howl doctor` use it to check the commands they run.
