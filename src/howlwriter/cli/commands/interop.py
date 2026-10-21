@@ -19,7 +19,8 @@ SCHEMA = "howl.interop/v1"
 # docs/agents.md, "Exit codes".
 EXIT_CODES = {
     "0": "success",
-    "1": "error, including a usage error, or a chosen model that cannot run because HowlPlane is unavailable",
+    "1": "error, including usage errors (such as invalid runs prune retention arguments), "
+    "or a chosen model that cannot run because HowlPlane is unavailable",
     "2": "a model step had no model chosen; project: refused by the remote-inference gate or browser policy; "
     "voice scan/sync: the drive is not mounted",
     "3": "finished but not ready (project validate verdict, voice profile, or --fail-if-blocked)",

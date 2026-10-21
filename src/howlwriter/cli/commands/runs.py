@@ -134,19 +134,19 @@ def _prune(args: argparse.Namespace) -> int:
 
     if args.older_than_days is None and args.keep_latest is None:
         print("error: specify --older-than-days and/or --keep-latest", file=sys.stderr)
-        return 2
+        return 1
     if args.dry_run and args.yes:
         print("error: --dry-run and --yes are mutually exclusive", file=sys.stderr)
-        return 2
+        return 1
     try:
         plan = plan_prune(
             get_default_runs_dir(),
             older_than_days=args.older_than_days,
             keep_latest=args.keep_latest,
         )
-    except ValueError as exc:
+    except (ValueError, OverflowError) as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 2
+        return 1
 
     deleting = args.yes
     print(f"Runs directory: {plan.runs_dir}")
