@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+* Pin howl-provider-core 0.2.0 (`d5ae6d6`, shared secret redaction), the same commit howldream and howlcreate pin; pip refuses two different URLs for one project.
+
 * `howlwriter interop --json` prints the `howl.interop/v1` descriptor from the Howl interop contract: every command and flag (from the live parser), the documents `native request|write` produce, and the exit codes. HowlPlane and `howl doctor` use it to check the commands they run.
 * A model chosen with `--provider` (or `HOWLWRITER_PROVIDER`, or the page) when HowlPlane cannot be imported now fails with exit 1 and names the missing package (web: HTTP 503 `howlplane_unavailable`). Before, it reported "needs a model" with exit 2, and steps with a rule-based path silently ran that path instead of the chosen model.
 * A usage error (unknown flag or subcommand) exits 1 instead of argparse's 2, so 2 means only "a model step had no model chosen" (or the remote gate) and a caller such as HowlPlane cannot mistake an unsupported flag for a request for input.
