@@ -9,7 +9,10 @@ name: CI
   workflow_call:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # "ci-" keeps this group distinct when release.yml calls this workflow:
+  # github.workflow is then the caller's name, and sharing the caller's group
+  # is a deadlock that cancels the release before any test runs.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
