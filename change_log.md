@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-* Pin the `plane` extra and the real integration CI checkout to reviewed HowlPlane `20b110a`, including malformed-state exit and published Frame artifact compatibility corrections. The CI checkout previously followed moving `main` despite being labeled pinned; it now tests the same immutable revision the extra installs.
+* Pin the `plane` extra and the real integration CI checkout to reviewed HowlPlane `4ba3e71`, including malformed-state exit and published Frame artifact compatibility corrections. The CI checkout previously followed moving `main` despite being labeled pinned; it now tests the same immutable revision the extra installs.
 
 * Pin shared howl-provider-core `9bf1f78`, matching HowlDream and HowlCreate, restoring historical credential coverage and sanitizing provider failure metadata before persistence (Mission 007 F2).
 * Invalid `runs prune` retention arguments now exit 1, including conflicting flags, negative settings, and overflowing day counts; synthetic regression tests verify no run artifacts change (F10).
