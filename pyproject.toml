@@ -15,7 +15,7 @@ dependencies = [
     # Bounded remote provider transport for the native Writer path. Pinned to
     # the same commit as howlcreate and howldream: pip treats different direct
     # URLs for one project as a conflict, so the three must stay identical.
-    "howl-provider-core @ git+https://github.com/howlcipher/howl-provider-core.git@d5ae6d696d95bebd799e9ae51fc18b7622e2c985",
+    "howl-provider-core @ git+https://github.com/howlcipher/howl-provider-core.git@9bf1f78d95974cb826c1114552e4e34933428bf9",
 ]
 
 [project.optional-dependencies]
@@ -69,7 +69,7 @@ plane = [
     # claude/agy/codex/local backends). `howl install` supplies it; this
     # extra is for a plain pip install. Without it a chosen model reports
     # that HowlPlane is unavailable instead of running.
-    "howlplane @ git+https://github.com/howlcipher/howlplane.git@52b4a365d4d7a39f4220de926e7e7f86626231ed",
+    "howlplane @ git+https://github.com/howlcipher/howlplane.git@4ba3e71a777747445173b381ca6db0a3d5366fe2",
 ]
 web = [
     "fastapi>=0.110,<1.0",

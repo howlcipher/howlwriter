@@ -85,22 +85,22 @@ def test_optional_howlplane_discovery_via_env(tmp_path: Path, monkeypatch: pytes
 def test_honest_absence_raises_model_role_not_configured(monkeypatch: pytest.MonkeyPatch):
     """When HowlPlane is unconfigured or absent, requesting model execution raises ModelRoleNotConfiguredError."""
     # Case 1: HowlPlane integration completely unavailable
-    monkeypatch.setattr(
-        "howlwriter.integration.howlplane_bridge._try_import_howlplane",
-        lambda: None,
-    )
-    bridge_unavailable = HowlPlaneWritingBridge(dispatcher=None, registry=None)
-    assert bridge_unavailable.is_available() is False
-
-    with pytest.raises(ModelRoleNotConfiguredError) as exc_info:
-        bridge_unavailable.execute_writing_role(
-            role=WritingRole.WRITER,
-            prompt="Draft an academic paper about zero trust architectures.",
+    with monkeypatch.context() as unavailable:
+        unavailable.setattr(
+            "howlwriter.integration.howlplane_bridge._try_import_howlplane",
+            lambda: None,
         )
-    assert exc_info.value.role == WritingRole.WRITER
+        bridge_unavailable = HowlPlaneWritingBridge(dispatcher=None, registry=None)
+        assert bridge_unavailable.is_available() is False
 
-    # Case 2: HowlPlane bridge is present but the specific role is unconfigured
-    monkeypatch.undo()
+        with pytest.raises(ModelRoleNotConfiguredError) as exc_info:
+            bridge_unavailable.execute_writing_role(
+                role=WritingRole.WRITER,
+                prompt="Draft an academic paper about zero trust architectures.",
+            )
+        assert exc_info.value.role == WritingRole.WRITER
+
+    # Case 2: restore only the import patch, preserving environment isolation.
     bridge_unconfigured = HowlPlaneWritingBridge()
     assert bridge_unconfigured.is_role_configured(WritingRole.WRITER) is False
 

@@ -231,3 +231,19 @@ def test_cli_check_exit_codes(tmp_path):
     assert main(["native", "check", "--source", str(source), "--proposal", str(proposal)]) == 0
     proposal.write_text("Validated 25/28 deployment paths.")
     assert main(["native", "check", "--source", str(source), "--proposal", str(proposal)]) == 4
+
+
+def test_unknown_provider_credentials_removed_from_copy_package(dream_candidate, copy_spec):
+    import sys
+    from howl_provider_core import CommandConfig, CommandProvider
+
+    echo = "token: bearer syntheticPrivate456 ghp_abcdefghijkl-mnopqrstuvwxyz"
+    reply = json.dumps({"proposals": [{
+        "item_id": "verification", "proposed_text": echo, "reason": echo,
+        "design_judgment": echo, "uncertainty": echo,
+    }]})
+    provider = CommandProvider(CommandConfig((sys.executable, "-c", "print(" + repr(reply) + ")"), True))
+    package = write_copy(_request(dream_candidate, copy_spec), provider).to_dict()
+    receipt = json.dumps(package)
+    assert "syntheticPrivate456" not in receipt
+    assert "abcdefghijkl-mnopqrstuvwxyz" not in receipt

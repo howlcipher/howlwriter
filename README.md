@@ -59,7 +59,8 @@ this project surfaced but does not attempt to patch itself.
 
 **Native bounded path (exception to the above).** `howlwriter native` is
 the one Writer path that calls a provider directly, and it does so only
-through [howl-provider-core](https://github.com/howlcipher/howl-provider-core):
+through [howl-provider-core](https://github.com/howlcipher/howl-provider-core)
+(pinned to `9bf1f78`, shared with HowlCreate and HowlDream for credential redaction):
 one operator-declared remote command per request, no shell, a private
 temporary working directory, an allowlisted environment, a timeout, an
 output cap, and `HOWL_FORBID_LOCAL_INFERENCE` enforced on the child. It
@@ -440,3 +441,9 @@ See [docs/humanization.md](docs/humanization.md) and
 
 See [ROADMAP.md](ROADMAP.md) for the MVP scope checklist and the growth
 path toward the full pipeline described in [docs/vision.md](docs/vision.md).
+
+The optional `plane` extra and real HowlPlane integration CI use the same reviewed
+immutable revision `4ba3e71a777747445173b381ca6db0a3d5366fe2`. This includes Mission007
+state-exit and published-Frame artifact fixes; no owner-installed package is changed
+by source verification. Source pins require reviewed release replacement before
+published-install readiness can be claimed.

@@ -90,6 +90,24 @@ def test_cli_dry_run_default_then_yes(tmp_path, monkeypatch, capsys):
 
 def test_cli_rejects_missing_criterion_and_conflicts(tmp_path, monkeypatch):
     monkeypatch.setenv("HOWLWRITER_RUNS_DIR", str(_runs(tmp_path, IDS)))
-    assert main(["runs", "prune"]) == 2
-    assert main(["runs", "prune", "--keep-latest", "1", "--dry-run", "--yes"]) == 2
-    assert main(["runs", "prune", "--keep-latest", "-1"]) == 2
+    assert main(["runs", "prune"]) == 1
+    assert main(["runs", "prune", "--keep-latest", "1", "--dry-run", "--yes"]) == 1
+    assert main(["runs", "prune", "--keep-latest", "-1"]) == 1
+
+
+@pytest.mark.parametrize("arguments", [
+    [],
+    ["--keep-latest", "1", "--dry-run", "--yes"],
+    ["--keep-latest", "-1", "--yes"],
+    ["--older-than-days", "-1", "--yes"],
+    ["--older-than-days", "999999999999999999999999", "--yes"],
+])
+def test_semantic_usage_errors_preserve_run_artifacts(arguments, tmp_path, monkeypatch, capsys):
+    directory = _runs(tmp_path, IDS)
+    monkeypatch.setenv("HOWLWRITER_RUNS_DIR", str(directory))
+    before = {path.name: path.read_bytes() for path in directory.iterdir()}
+    assert main(["runs", "prune", *arguments]) == 1
+    captured = capsys.readouterr()
+    assert "error:" in captured.err
+    assert captured.out == ""
+    assert {path.name: path.read_bytes() for path in directory.iterdir()} == before
