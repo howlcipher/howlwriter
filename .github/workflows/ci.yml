@@ -142,7 +142,7 @@ jobs:
         with:
           repository: howlcipher/howlplane
           path: deps/howlplane
-          ref: main
+          ref: cddddc0d1bee2165916f8eb1c467de2ccfc09a64
 
       - name: Install dependencies with pinned HowlPlane
         run: |

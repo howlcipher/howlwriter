@@ -441,3 +441,9 @@ See [docs/humanization.md](docs/humanization.md) and
 
 See [ROADMAP.md](ROADMAP.md) for the MVP scope checklist and the growth
 path toward the full pipeline described in [docs/vision.md](docs/vision.md).
+
+The optional `plane` extra and real HowlPlane integration CI use the same reviewed
+immutable revision `cddddc0d1bee2165916f8eb1c467de2ccfc09a64`. This includes Mission007
+state-exit and published-Frame artifact fixes; no owner-installed package is changed
+by source verification. Source pins require reviewed release replacement before
+published-install readiness can be claimed.
