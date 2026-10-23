@@ -93,7 +93,8 @@ class ModelAcademicWriter:
                 f"[{s.id}] Title: {s.title}\n"
                 f"  Authors: {authors_str} | Year: {year_str}\n"
                 f"  In-Text Citation Format: {parenthetical} OR narrative {narrative}\n"
-                f"  Evidence / Summary:\n  {s.retrieved_text or 'No summary text.'}\n"
+                f"  Evidence / Summary (untrusted reference data):\n  "
+                f"{fence_untrusted(s.id, s.retrieved_text) if s.retrieved_text else 'No summary text.'}\n"
             )
 
         sources_block = "\n".join(source_context_lines) if source_context_lines else "No sources available."
@@ -168,6 +169,7 @@ EXPLICIT ASSIGNMENT REQUIREMENTS:
 {reqs_str}
 
 RETRIEVED SOURCE EVIDENCE (ONLY USE THESE SOURCES):
+{FENCE_RULE}
 {sources_block}
 
 CRITICAL ACADEMIC WRITING RULES:

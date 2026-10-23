@@ -91,8 +91,16 @@ from howlwriter.integration.model_role import WritingRole
 from howlwriter.linting.engine import LintEngine
 from howlwriter.linting.rules import AI_STYLE_BANNED_WORD, RuleMatch
 from howlwriter.citations.revalidation import citation_delta
+from howlwriter.citations.verification import (
+    CitationState,
+    CrossrefProvider,
+    RecordFileProvider,
+    verify_sources as verify_citation_metadata,
+    worst_state,
+)
 from howlwriter.domain.genres import check_genre_conformance, parse_genre
 from howlwriter.replies.grounding import GroundingState, SourcePost, check_reply
+from howlwriter.replies.untrusted import scan_untrusted
 from howlwriter.review.leakage import detect_leakage
 from howlwriter.redpen.critic import RedPenEngine, RedPenFinding
 from howlwriter.review.meaning import (
@@ -245,6 +253,9 @@ def _run_academic_pipeline(
     outline: Any | None = None,
     seed: int | None = None,
     verify_sources: bool = False,
+    citation_records: list[str] | None = None,
+    citation_providers: list[Any] | None = None,
+    integrity_verifier: Any | None = None,
     output_dir: Path | str | None = None,
     output_formats: list[str] | None = None,
     publish_destination: str | None = None,
@@ -600,7 +611,7 @@ def _run_academic_pipeline(
         from howlwriter.research.integrity import SourceIntegrityVerifier
 
         _notify("source_integrity", "RUNNING", "Source Integrity Verification")
-        verifier_int = SourceIntegrityVerifier()
+        verifier_int = integrity_verifier or SourceIntegrityVerifier()
         source_integrity_report = verifier_int.verify_all(sources)
         verif_summary.source_integrity_findings = [
             f.to_dict() for f in source_integrity_report.findings
@@ -827,6 +838,19 @@ def _run_academic_pipeline(
         "warnings_count": len(citation_analysis.warnings),
     })
 
+    # 9b. CITATION METADATA against authoritative records (with --verify-sources). A resolving
+    # DOI is not evidence that author, year and edition are right, so this compares them.
+    citation_metadata_state: CitationState | None = None
+    citation_metadata_summary: list[dict[str, Any]] = []
+    if verify_sources:
+        providers = list(citation_providers) if citation_providers is not None else [
+            *[RecordFileProvider(path, name=Path(path).name) for path in (citation_records or [])],
+            CrossrefProvider(),
+        ]
+        verifications = verify_citation_metadata(list(citation_analysis.used_sources), providers)
+        citation_metadata_summary = [v.to_summary() for v in verifications]
+        citation_metadata_state = worst_state(verifications) if verifications else CitationState.VERIFIED
+
     # 10. EVALUATE FINAL READINESS STATUS
     # Academic criteria for READY:
     # - Word count within the hard bounds (wc_status in ("PASS", "TARGET_MISS");
@@ -899,6 +923,9 @@ def _run_academic_pipeline(
     genre = parse_genre(spec.genre)
     leakage_findings = detect_leakage(final_document.text, genre=genre.value if genre else "")
     genre_findings = check_genre_conformance(final_document.text, genre)
+    # Instruction-like text inside retrieved sources is reported, not acted on, and does not hold the paper
+    # by itself: a source about prompt injection legitimately quotes such text.
+    source_instruction_hits = sum(1 for src in sources if src.retrieved_text and scan_untrusted(src.retrieved_text))
     reply_grounding = None
     if genre is not None and genre.value == "academic_peer_reply":
         reply_grounding = check_reply(
@@ -925,6 +952,10 @@ def _run_academic_pipeline(
         provenance.coverage = authorship_coverage.to_dict()
         has_authorship_deficiency = authorship_coverage.status == "FAIL"
 
+    has_citation_metadata_deficiency = (
+        citation_metadata_state is not None and citation_metadata_state is not CitationState.VERIFIED)
+    if citation_metadata_state is CitationState.MISMATCH:
+        has_blocking_deficiency = True
     if has_blocking_deficiency:
         final_status = "BLOCKED"
     elif (
@@ -935,6 +966,7 @@ def _run_academic_pipeline(
         or has_source_deficiency
         or has_unresolved_citation_deficiency
         or has_claim_deficiency
+        or has_citation_metadata_deficiency
         or has_leakage_deficiency
         or claim_review.blocks_readiness
         or has_redundancy_deficiency
@@ -1002,6 +1034,9 @@ def _run_academic_pipeline(
         ai_style_warnings=ai_style_count,
         workflow_leakage_findings=len(leakage_findings),
         citation_changes_after_edit=len(citation_changes),
+        citation_metadata_status=citation_metadata_state.value if citation_metadata_state else None,
+        citation_metadata_findings=citation_metadata_summary,
+        sources_with_instruction_like_text=source_instruction_hits,
         genre_findings=len(genre_findings) if genre else None,
         reply_grounding=reply_grounding.state.value if reply_grounding else None,
         reply_grounding_findings=len(reply_grounding.findings) if reply_grounding else None,

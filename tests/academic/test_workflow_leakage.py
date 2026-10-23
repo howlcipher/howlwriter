@@ -76,3 +76,52 @@ def test_a_real_limitation_is_not_treated_as_leakage(tmp_path, monkeypatch):
     result = _run(tmp_path, monkeypatch,
                   "The evidence covers multi-agent systems only, so single-agent deployments remain untested.")
     assert result.report.workflow_leakage_findings == 0
+
+
+def test_verify_sources_compares_citation_metadata_with_authoritative_records(tmp_path, monkeypatch):
+    """A resolving DOI is not enough: the year must agree with the records."""
+    from howlwriter.citations.verification import CanonicalAuthor, CanonicalRecord
+
+    class Records:
+        name = "records"
+
+        def __init__(self, year):
+            self.year = year
+
+        def fetch(self, source):
+            return CanonicalRecord(
+                provider="publisher-page", authority="publisher", title=source.title,
+                authors=[CanonicalAuthor(family="Oladimeji", given="Ganiyu")], year=self.year,
+                year_source="cite_as", doi=source.doi)
+
+    def run(year):
+        monkeypatch.setenv("HOWLWRITER_RUNS_DIR", str(tmp_path / "runs"))
+        spec = AssignmentSpec(
+            title="Zero Trust and Autonomous AI Agents", topic="Examine identity for autonomous agents.",
+            target_words=50, word_tolerance_percent=30.0, outline=["Introduction", "Identity Challenges", "Conclusion"],
+            source_requirements=dict(minimum_sources=1))
+        backend = FakeAgentBackend(agent_id="fake_meta_backend",
+                                   default_stdout=_REPLY.format(conclusion="Delegated authorization is the stronger control."))
+        import httpx
+
+        from howlwriter.research.integrity import SourceIntegrityVerifier
+
+        def crossref(request):
+            # A DOI that resolves and carries the right title: reachability is fine; only metadata can differ.
+            return httpx.Response(200, json={"message": {"title": [_SOURCE.title], "DOI": _SOURCE.doi}})
+
+        offline = SourceIntegrityVerifier(mock_transport=httpx.MockTransport(crossref))
+        return run_academic_pipeline(spec, default_config(), existing_sources=[_SOURCE], custom_backend=backend,
+                                     verify_sources=True, citation_providers=[Records(year)],
+                                     integrity_verifier=offline)
+
+    ok = run(2025)
+    assert ok.report.citation_metadata_status == "VERIFIED" and ok.report.status == "READY"
+    wrong = run(2023)
+    assert wrong.report.citation_metadata_status == "MISMATCH" and wrong.report.status == "BLOCKED"
+    assert "MISMATCH" in wrong.report.render_text() if hasattr(wrong.report, "render_text") else True
+
+
+def test_without_verify_sources_citation_metadata_is_reported_as_not_checked(tmp_path, monkeypatch):
+    result = _run(tmp_path, monkeypatch, "Delegated authorization is the stronger control.")
+    assert result.report.citation_metadata_status is None

@@ -125,6 +125,15 @@ def add_subparser(
              "evidence. Overrides materials.directory in the assignment spec.",
     )
     parser.add_argument(
+        "--records",
+        dest="citation_records",
+        action="append",
+        default=[],
+        metavar="FILE",
+        help="Canonical bibliographic records (publisher pages, document covers) used by "
+             "--verify-sources to check each citation's author, year and edition. May repeat.",
+    )
+    parser.add_argument(
         "--peer-post",
         dest="peer_posts",
         action="append",
@@ -295,6 +304,7 @@ def run(args: argparse.Namespace) -> int:
             cwd=_source_dir(args),
             seed=args.seed,
             verify_sources=args.verify_sources,
+            citation_records=args.citation_records,
             output_dir=out_dir,
             output_formats=output_formats,
             publish_destination=args.publish_destination,
