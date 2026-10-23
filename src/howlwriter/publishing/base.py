@@ -10,6 +10,10 @@ from typing import Any, Protocol
 from howlwriter.domain.serialization import DataClassSerializationMixin
 
 
+class RevisionConflictError(Exception):
+    """The destination document changed after it was read; the write was refused, nothing overwritten."""
+
+
 @dataclass
 class PublicationArtifact(DataClassSerializationMixin):
     """The verified, authorized artifact prepared for publication."""
@@ -69,7 +73,11 @@ class PublishResult(DataClassSerializationMixin):
     content_hash: str = ""
     source_run_id: str = ""
     revision_metadata: dict[str, Any] = field(default_factory=dict)
-    status: str = "SUCCESS"  # "SUCCESS" | "FAILED"
+    # SUCCESS: the destination confirmed the content on read-back.
+    # UNCONFIRMED: written, but the read-back did not match (or could not be done); not a success.
+    # CONFLICT: the destination changed concurrently; nothing was written.
+    # FAILED: nothing was published.
+    status: str = "SUCCESS"
     diagnostics: list[str] = field(default_factory=list)
 
     @property

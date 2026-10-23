@@ -1283,6 +1283,13 @@ def _run_academic_pipeline(
         pub_ctx = PublishContext(
             run_id=active_run_id,
             allow_unverified=pub_allow_unverified,
+            # Keep a record of exactly what was approved beside the local deliverables, and
+            # have the destination read back against the same length limits as the paper.
+            extra={
+                **({"record_dir": str(Path(local_deliverables[0].path).parent)} if local_deliverables else {}),
+                "min_words": bounds.min_words,
+                "max_words": bounds.max_words,
+            },
         )
         publish_result = pub.publish(pub_art, pub_dest, pub_ctx)
 
