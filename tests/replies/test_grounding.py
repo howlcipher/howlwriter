@@ -192,3 +192,28 @@ class TestUntrustedScan:
 def test_report_round_trips_to_json():
     r = check_reply(GOOD, [POST])
     assert json.loads(json.dumps(r.to_dict()))["state"] == "GROUNDED"
+
+
+class TestAttributionBoundaries:
+    """Only what the reply says the peer said is checked against the post."""
+
+    def test_a_relative_clause_is_not_an_attribution(self):
+        reply = ("The framework reaches a vendor only through contract terms, which is why the review you mention "
+                 "at contract time needs a notice clause behind it. " + GOOD.split(". ", 1)[1])
+        assert all("notice clause" not in a.attributed_clause for a in check_reply(reply, [POST]).attributions)
+
+    def test_the_authors_own_coordinated_clause_is_not_checked_against_the_post(self):
+        reply = ("You say untested backups are only a guess, and the restore cadence is the right control. "
+                 + GOOD.split(". ", 1)[1])
+        (attribution,) = [a for a in check_reply(reply, [POST]).attributions]
+        assert "right control" not in attribution.attributed_clause and attribution.status == "SUPPORTED"
+
+    def test_and_that_keeps_the_second_half_attributed(self):
+        reply = ("You say untested backups are only a guess, and that zero trust removes the need for backups. "
+                 + GOOD.split(". ", 1)[1])
+        r = check_reply(reply, [POST])
+        assert r.state is GroundingState.UNSUPPORTED or r.attributions[0].status in ("PARTIAL", "UNSUPPORTED")
+
+    def test_citations_inside_the_clause_are_not_counted_as_the_peers_words(self):
+        reply = ("You say untested backups are only a guess (Moreno, 2025). " + GOOD.split(". ", 1)[1])
+        assert check_reply(reply, [POST]).attributions[0].status == "SUPPORTED"

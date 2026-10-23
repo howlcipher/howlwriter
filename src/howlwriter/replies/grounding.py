@@ -69,7 +69,25 @@ _YOU = re.compile(rf"\byou(?:'ve|\s+have)?\s+(?:also\s+|then\s+|already\s+|right
 _YOUR = re.compile(r"\byour\s+(?:point|argument|claim|post|view|observation|suggestion|recommendation|"
                    r"emphasis|framing|description)\s+(?:about|on|that|regarding|is\s+that|of)?\s*(.*)", re.I)
 _QUOTE = re.compile(r"[“\"]([^”\"]{10,300})[”\"]")
-_CUT_AT_OWN_VIEW = re.compile(r",?\s*(?:and|but|so|which|yet)\s+(?:I|we)\b|;\s*(?:I|we)\b|\.\s+(?:I|we)\b")
+# Where the reply stops reporting the peer and starts speaking for itself. ", and that ..." continues
+# the attribution; ", and the ..." or ", which ..." is the author's own clause.
+_CUT_AT_OWN_VIEW = re.compile(
+    r",?\s*(?:and|but|so|which|yet)\s+(?:I|we)\b|;|\.\s+(?:I|we)\b|,\s*(?:and|but|so|which|yet)\s+(?!that\b)")
+# Words that may sit before an attribution at the start of its clause. Anything else before "you"
+# ("the review you mention ...") makes it a relative clause inside the author's own sentence.
+_CLAUSE_LEADS = frozenset({"and", "but", "while", "as", "so", "because", "since", "though", "although", "yet",
+                           "if", "when", "also", "then", "first", "second", "finally", "clearly", "indeed"})
+_CITATION_PAREN = re.compile(r"\s*\([^()]*\d{4}[^()]*\)")
+
+
+def _starts_a_clause(sentence: str, match_start: int) -> bool:
+    before = sentence[:match_start].rstrip()
+    if not before:
+        return True
+    if before[-1] in ",;:(":
+        return True
+    last = re.findall(r"[A-Za-z']+", before)
+    return bool(last) and last[-1].lower() in _CLAUSE_LEADS
 
 
 def _stem(word: str) -> str:
@@ -140,8 +158,8 @@ def _attributions(reply: str, posts: list[SourcePost]) -> list[tuple[str, str]]:
     for sentence in _sentences(reply):
         for pattern in (_YOU, _YOUR, *named):
             m = pattern.search(sentence)
-            if m:
-                clause = _CUT_AT_OWN_VIEW.split(m.group(1))[0].strip(" ,;.")
+            if m and _starts_a_clause(sentence, m.start()):
+                clause = _CUT_AT_OWN_VIEW.split(_CITATION_PAREN.sub("", m.group(1)))[0].strip(" ,;.")
                 pairs.append((sentence, clause))
                 break
     return pairs
