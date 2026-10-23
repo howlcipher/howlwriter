@@ -43,6 +43,7 @@ from howlwriter.voice.corpus.features import extract_features
 from howlwriter.voice.corpus.store import VoiceStore
 from howlwriter.voice.identity import classify, privacy
 from howlwriter.voice.identity.profiles import load_calibration
+from howlwriter.domain.genres import base_mode_name
 from howlwriter.voice.identity.store import IdentityStore
 
 REPORT_VERSION = "personal-evaluation/v1"
@@ -128,7 +129,7 @@ def choose_profile(
     auto_voice: bool = False,
     identities_root: Path | None = None,
 ) -> ProfileChoice:
-    mode_context = MODE_PROFILE_CONTEXT.get((mode or "").lower(), "")
+    mode_context = MODE_PROFILE_CONTEXT.get(base_mode_name(mode), "")
     if voice:
         # An explicitly named profile must exist; scoring against "nothing"
         # while the user believes a profile was used would be a silent fallback.

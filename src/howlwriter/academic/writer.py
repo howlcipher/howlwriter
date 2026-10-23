@@ -8,6 +8,7 @@ from typing import Any
 
 from howlwriter.academic.length import count_body_words, resolve_length_bounds
 from howlwriter.academic.prompts import ACADEMIC_PRIORITY_ORDERING_GUIDANCE
+from howlwriter.domain.genres import PROFILES, parse_genre
 from howlwriter.academic.redundancy import RedundancyResult
 from howlwriter.academic.spec import AssignmentSpec
 from howlwriter.citations.apa7 import APA7Formatter
@@ -121,12 +122,29 @@ class ModelAcademicWriter:
                 "source evidence strictly outrank voice realization.)\n"
             )
 
+        genre = parse_genre(getattr(spec, "genre", ""))
+        genre_profile = PROFILES.get(genre) if genre else None
+        if genre_profile is None or genre_profile.allows_headings:
+            mission = (
+                "Your mission is to draft a rigorous, high-quality academic research paper on the specified topic,\n"
+                "strictly structured according to the required outline and strictly grounded in the retrieved sources."
+            )
+            outline_rule = "Address every section in the required outline. Use clear markdown headings for major outline sections."
+            body_hint = "<complete academic paper markdown body with headings and APA in-text citations>"
+            title_line = f"# {spec.title}\n\n  "
+        else:
+            mission = genre_profile.mission
+            outline_rule = ("Cover every point in the required outline, in order, as continuous prose "
+                            "with no headings.")
+            body_hint = "<the post as plain paragraphs with APA in-text citations; no title and no headings>"
+            title_line = ""
+        genre_block = f"\n{genre_profile.guidance}\n" if genre_profile is not None else ""
+
         prompt = f"""You are executing the WRITER role under the HowlWriter academic contract.
-Your mission is to draft a rigorous, high-quality academic research paper on the specified topic,
-strictly structured according to the required outline and strictly grounded in the retrieved sources.
+{mission}
 
 {ACADEMIC_PRIORITY_ORDERING_GUIDANCE}
-{realization_block}
+{genre_block}{realization_block}
 ASSIGNMENT TITLE: {spec.title}
 TOPIC: {spec.topic}
 TARGET WORD COUNT (BODY): aim for approximately {aim_words} words
@@ -156,7 +174,7 @@ CRITICAL ACADEMIC WRITING RULES:
    exactly as given rather than generalizing it away -- grounded precision is preferred over
    unnecessary vagueness. Only generalize when no such grounded value exists.
 6. If evidence is insufficient for a claim, qualify the statement (e.g. "Research suggests...") or omit it.
-7. Address every section in the required outline. Use clear markdown headings for major outline sections.
+7. {outline_rule}
 8. Aim for approximately {aim_words} words -- near the lower-middle of the allowed range, not the
    maximum. Stop once the outline and explicit requirements are fully addressed with sufficient
    (not exhaustive) support; do not pad, restate, or add tangential elaboration to approach the
@@ -174,9 +192,7 @@ OUTPUT FORMAT:
 Return a ```yaml code block containing:
 ```yaml
 body_markdown: |
-  # {spec.title}
-
-  <complete academic paper markdown body with headings and APA in-text citations>
+  {title_line}{body_hint}
 claims_made:
   - claim: "<factual statement made>"
     source_id: "<e.g. S001>"

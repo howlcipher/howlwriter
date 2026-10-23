@@ -90,6 +90,7 @@ from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import WritingRole
 from howlwriter.linting.engine import LintEngine
 from howlwriter.linting.rules import AI_STYLE_BANNED_WORD, RuleMatch
+from howlwriter.domain.genres import check_genre_conformance, parse_genre
 from howlwriter.review.leakage import detect_leakage
 from howlwriter.redpen.critic import RedPenEngine, RedPenFinding
 from howlwriter.review.meaning import (
@@ -893,8 +894,10 @@ def _run_academic_pipeline(
     # Internal workflow commentary in reader-facing prose (provenance notes,
     # status codes, task instructions) holds the paper for human review; the
     # detector reports and never edits, so the author decides what stays.
-    leakage_findings = detect_leakage(final_document.text)
-    has_leakage_deficiency = bool(leakage_findings)
+    genre = parse_genre(spec.genre)
+    leakage_findings = detect_leakage(final_document.text, genre=genre.value if genre else "")
+    genre_findings = check_genre_conformance(final_document.text, genre)
+    has_leakage_deficiency = bool(leakage_findings) or bool(genre_findings)
 
     authorship_coverage = None
     has_authorship_deficiency = False
@@ -979,6 +982,7 @@ def _run_academic_pipeline(
         banned_words=banned_word_count,
         ai_style_warnings=ai_style_count,
         workflow_leakage_findings=len(leakage_findings),
+        genre_findings=len(genre_findings) if genre else None,
         meaning_preservation=meaning_det.status,
         semantic_meaning_status=semantic_res.verdict if semantic_res else None,
         consistency_review_status=consistency_res.verdict if consistency_res else None,

@@ -7,11 +7,13 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
 
 from howlwriter.config.loader import ConfigLoader
 from howlwriter.domain.document import Document
 from howlwriter.linting.engine import LintEngine
 from howlwriter.linting.rules import RuleMatch
+from howlwriter.domain.genres import check_genre_conformance, parse_genre
 from howlwriter.review.leakage import detect_leakage
 
 
@@ -22,6 +24,11 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
         "--config", dest="project_config_path", default=None, help="Project config YAML path."
     )
     parser.add_argument("--json", action="store_true", help="Emit findings as JSON.")
+    parser.add_argument(
+        "--genre", default=None, metavar="GENRE",
+        help="Check the text against an academic genre's conventions: academic_discussion, "
+        "academic_peer_reply or academic_research_paper. Reports only; never edits.",
+    )
     parser.add_argument(
         "--workflow-leakage", action="store_true",
         help="Also report internal workflow commentary (provenance notes, status codes, task "
@@ -36,6 +43,15 @@ def run(args: argparse.Namespace) -> int:
     document = Document.parse(text, title=Path(args.path).stem)
     config = ConfigLoader().load(project_config_path=args.project_config_path)
     matches = LintEngine().run(document, config)
+    if args.genre:
+        genre = parse_genre(args.genre)
+        if genre is None:
+            print(f"error: unknown genre {args.genre!r}", file=sys.stderr)
+            return 1
+        matches = matches + [
+            RuleMatch(rule_code=f.code, matched_text=f.matched_text, message=f.message, severity=f.severity)
+            for f in check_genre_conformance(text, genre)
+        ]
     if args.workflow_leakage:
         matches = matches + [
             RuleMatch(rule_code=f.code, matched_text=f.matched_text, message=f.message,
