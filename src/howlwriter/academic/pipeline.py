@@ -91,6 +91,7 @@ from howlwriter.integration.model_role import WritingRole
 from howlwriter.linting.engine import LintEngine
 from howlwriter.linting.rules import AI_STYLE_BANNED_WORD, RuleMatch
 from howlwriter.domain.genres import check_genre_conformance, parse_genre
+from howlwriter.replies.grounding import GroundingState, SourcePost, check_reply
 from howlwriter.review.leakage import detect_leakage
 from howlwriter.redpen.critic import RedPenEngine, RedPenFinding
 from howlwriter.review.meaning import (
@@ -897,7 +898,19 @@ def _run_academic_pipeline(
     genre = parse_genre(spec.genre)
     leakage_findings = detect_leakage(final_document.text, genre=genre.value if genre else "")
     genre_findings = check_genre_conformance(final_document.text, genre)
-    has_leakage_deficiency = bool(leakage_findings) or bool(genre_findings)
+    reply_grounding = None
+    if genre is not None and genre.value == "academic_peer_reply":
+        reply_grounding = check_reply(
+            final_document.text,
+            [SourcePost(text=p.get("text", ""), author=p.get("author", ""), label=p.get("label", ""))
+             for p in (spec.peer_posts or [])],
+            min_words=bounds.min_words, max_words=bounds.max_words,
+            extra_quotable_text=" ".join(s.retrieved_text or "" for s in sources),
+        )
+    has_leakage_deficiency = (
+        bool(leakage_findings) or bool(genre_findings)
+        or (reply_grounding is not None and reply_grounding.state is not GroundingState.GROUNDED)
+    )
 
     authorship_coverage = None
     has_authorship_deficiency = False
@@ -983,6 +996,8 @@ def _run_academic_pipeline(
         ai_style_warnings=ai_style_count,
         workflow_leakage_findings=len(leakage_findings),
         genre_findings=len(genre_findings) if genre else None,
+        reply_grounding=reply_grounding.state.value if reply_grounding else None,
+        reply_grounding_findings=len(reply_grounding.findings) if reply_grounding else None,
         meaning_preservation=meaning_det.status,
         semantic_meaning_status=semantic_res.verdict if semantic_res else None,
         consistency_review_status=consistency_res.verdict if consistency_res else None,

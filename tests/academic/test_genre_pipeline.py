@@ -57,10 +57,18 @@ GOOD = [
 ]
 
 
-def test_conforming_peer_reply_is_ready_and_reports_zero_genre_findings(tmp_path, monkeypatch):
-    result = _run(tmp_path, monkeypatch, "academic_peer_reply", GOOD)
+def test_conforming_discussion_post_is_ready_and_reports_zero_genre_findings(tmp_path, monkeypatch):
+    result = _run(tmp_path, monkeypatch, "academic_discussion", GOOD)
     assert result.report.genre_findings == 0
     assert result.report.status == "READY"
+
+
+def test_conforming_peer_reply_without_its_post_is_held_as_ungrounded(tmp_path, monkeypatch):
+    # Genre conventions are met, but the post being answered was never supplied.
+    result = _run(tmp_path, monkeypatch, "academic_peer_reply", GOOD)
+    assert result.report.genre_findings == 0
+    assert result.report.reply_grounding == "UNGROUNDED"
+    assert result.report.status == "NEEDS_REVIEW"
 
 
 @pytest.mark.parametrize("body,expected", [

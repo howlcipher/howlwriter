@@ -118,6 +118,9 @@ class AssignmentSpec(DataClassSerializationMixin):
     # Optional academic genre (academic_discussion, academic_peer_reply,
     # academic_research_paper). Empty keeps the original research-paper behavior.
     genre: str = ""
+    # Posts being answered (peer replies). Each entry: {"author": str, "label": str, "text": str}.
+    # Treated as untrusted reference data: fenced in prompts and checked for embedded instructions.
+    peer_posts: list[dict[str, Any]] = field(default_factory=list)
     target_words: int = 2000
     word_tolerance_percent: float = 10.0
     citation_style: str = "apa7"

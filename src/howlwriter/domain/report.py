@@ -93,6 +93,8 @@ class WritingReport(DataClassSerializationMixin):
     redundancy_findings_count: int | None = None
     workflow_leakage_findings: int | None = None
     genre_findings: int | None = None
+    reply_grounding: str | None = None
+    reply_grounding_findings: int | None = None
     lint_before_count: int | None = None
     lint_after_count: int | None = None
     meaning_preservation: MeaningPreservationStatus = "NOT_EVALUATED"
@@ -425,6 +427,9 @@ class WritingReport(DataClassSerializationMixin):
                 else:
                     rendered = str(value)
                 lines.append(f"{label:<28}{rendered}")
+        if self.reply_grounding is not None:
+            lines.append(f"{'Reply grounding':<28}{self.reply_grounding} "
+                         f"({self.reply_grounding_findings or 0} findings)")
         if self.voice_match_basis:
             if self.voice_match is None:
                 lines.append(f"{'Voice match':<28}unavailable")
