@@ -14,6 +14,7 @@ from howlwriter import __version__
 from howlwriter.cli.commands import (
     benchmark,
     cite,
+    citations,
     editor,
     evaluate,
     factcheck,
@@ -53,6 +54,7 @@ _COMMAND_MODULES = (
     research,
     sources,
     cite,
+    citations,
     references,
     redpen,
     lint,
