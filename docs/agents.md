@@ -21,8 +21,16 @@ howlwriter voice status --identity william --json
 howlwriter voice review --identity william --json      # what awaits the owner's decision
 ```
 
+```bash
+# Reliability checks: read-only, deterministic, nothing leaves the machine with --offline.
+howlwriter citations verify sources.json --records records.json --offline --json
+howlwriter reply check reply.md --post "Author=post.md" --json
+howlwriter assignment check package.yaml --records records.json --offline --json
+howlwriter lint draft.md --workflow-leakage --genre academic_discussion --json
+```
+
 Use `--json` wherever a command offers it (`evaluate`, `lint`, `project`,
-`sources`, `benchmark`, and the `voice` identity commands) and read the exit
+`sources`, `benchmark`, `citations verify`, `reply check`, `assignment check`, and the `voice` identity commands) and read the exit
 code, not the prose.
 
 ## Choosing the model
@@ -112,7 +120,7 @@ observations. Leave the file alone if you do not know how it was made.
 | 0 | Success. |
 | 1 | Error (bad argument or other usage error, including missing/conflicting/negative `runs prune` retention settings, unknown project or identity, or a model was chosen but HowlPlane, which runs it, cannot be imported); the message is on stderr. |
 | 2 | A model step had no model chosen; `project`: refused by the remote-inference gate or browser policy; `voice scan`/`sync`: the drive is not mounted. Nothing was changed or sent. |
-| 3 | Finished, but not ready: the `project validate` verdict is not `READY_FOR_HUMAN_REVIEW`, or a voice profile could not be built. A `project draft` reports its verdict in its output and provenance and exits 0, unless you pass `--fail-if-blocked`, which makes a not-ready draft exit 3 (the draft is still saved). `writer --fail-if-blocked` exits 3 when the draft cites a work, or names an exact identifier such as a CVE, that is not in `--sources` or the prompt; without the flag it warns on stderr and exits 0. |
+| 3 | Finished, but not ready: the `project validate` verdict is not `READY_FOR_HUMAN_REVIEW`, `citations verify` found a citation that is not `VERIFIED`, `reply check` found a reply that is not `GROUNDED`, `assignment check` is not `READY_FOR_HUMAN_REVIEW`, or a voice profile could not be built. A `project draft` reports its verdict in its output and provenance and exits 0, unless you pass `--fail-if-blocked`, which makes a not-ready draft exit 3 (the draft is still saved). `writer --fail-if-blocked` exits 3 when the draft cites a work, or names an exact identifier such as a CVE, that is not in `--sources` or the prompt; without the flag it warns on stderr and exits 0. |
 | 4 | An owner-only decision was asked for without a terminal or `--owner-confirmed`. Nothing was changed. |
 | 130 | `project`: cancelled. |
 

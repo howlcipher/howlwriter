@@ -343,6 +343,15 @@ howlwriter benchmark compare --current output/evaluation/benchmark-results.json 
 
 See [docs/evaluation.md](docs/evaluation.md) for details on metric calculations, baseline fairness, and judging independence.
 
+### Reliability checks
+
+`citations verify` (citation metadata against canonical records), `reply check`
+(a reply against the post it answers), `assignment check` (a whole submission
+package), `lint --workflow-leakage --genre ...` and `finalize --changes` check
+accuracy, context and completeness without editing your text. The Google Docs
+publisher confirms a publication by reading it back. See
+[docs/reliability.md](docs/reliability.md) for the states, exit codes and limits.
+
 ## Using the local web UI
 
 ```bash

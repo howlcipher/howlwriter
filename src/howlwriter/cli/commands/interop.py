@@ -23,7 +23,8 @@ EXIT_CODES = {
     "or a chosen model that cannot run because HowlPlane is unavailable",
     "2": "a model step had no model chosen; project: refused by the remote-inference gate or browser policy; "
     "voice scan/sync: the drive is not mounted",
-    "3": "finished but not ready (project validate verdict, voice profile, or --fail-if-blocked)",
+    "3": "finished but not ready (project validate verdict, voice profile, --fail-if-blocked, or a citations "
+    "verify / reply check / assignment check result that is not verified, grounded or ready)",
     "4": "an owner-only decision was asked for without a terminal or --owner-confirmed",
     "130": "project: cancelled",
 }
