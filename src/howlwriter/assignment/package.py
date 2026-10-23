@@ -41,6 +41,7 @@ import yaml
 from howlwriter.academic.citations import AcademicCitationManager
 from howlwriter.academic.length import count_body_words
 from howlwriter.citations.apa7 import APA7Formatter
+from howlwriter.citations.registry import build_registry
 from howlwriter.citations.verification import (
     CitationState,
     CitationVerification,
@@ -346,6 +347,12 @@ def check_package(
         package_findings.append(PackageFinding(
             LEVEL_INCOMPLETE, "DELIVERABLE_COUNT", f"{len(entries)} deliverable(s) listed; {expected} required."))
 
+    # One work, one set of metadata: the documents must agree with each other.
+    registry = build_registry(texts)
+    for conflict in registry.conflicts():
+        package_findings.append(PackageFinding(
+            LEVEL_REVISE, conflict.code, conflict.message + f" (documents: {', '.join(conflict.documents)})"))
+
     # Citation metadata verification, once, for every source actually cited.
     verification: list[CitationVerification] = []
     if cited_sources and require_citations:
@@ -371,6 +378,9 @@ def check_package(
     elif cited_sources and not require_citations:
         unavailable.append("citation metadata verification (not required by this package)")
 
+    for finding in registry.apply_verifications(verification):
+        package_findings.append(PackageFinding(
+            LEVEL_REVISE, finding.code, finding.message + f" (documents: {', '.join(finding.documents)})"))
     all_findings = package_findings + [f for r in reports for f in r.findings]
     state = _state_for(all_findings)
     if state is PackageState.READY_FOR_HUMAN_REVIEW:

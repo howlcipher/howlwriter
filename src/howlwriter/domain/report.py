@@ -93,6 +93,7 @@ class WritingReport(DataClassSerializationMixin):
     redundancy_findings_count: int | None = None
     workflow_leakage_findings: int | None = None
     genre_findings: int | None = None
+    citation_changes_after_edit: int | None = None
     reply_grounding: str | None = None
     reply_grounding_findings: int | None = None
     lint_before_count: int | None = None
@@ -415,6 +416,7 @@ class WritingReport(DataClassSerializationMixin):
             ("Redundancy findings", self.redundancy_findings_count),
             ("Workflow-commentary leakage", self.workflow_leakage_findings),
             ("Genre-convention findings", self.genre_findings),
+            ("Citation changes after edit", self.citation_changes_after_edit),
         ]
         has_metrics = any(v is not None for _, v in metrics)
         if has_metrics:

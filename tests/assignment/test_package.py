@@ -164,3 +164,11 @@ def test_cli_exit_codes(tmp_path, capsys):
     (tmp_path / "reply.md").unlink()
     assert main(["assignment", "check", str(tmp_path / "package.yaml"), "--offline",
                  "--records", str(tmp_path / "records.json")]) == 3
+
+
+def test_same_work_cited_with_two_years_across_documents_needs_revision(tmp_path):
+    spec = _package(tmp_path)
+    _write(tmp_path, "reply.md", (tmp_path / "reply.md").read_text().replace("Moreno, D. (2025)", "Moreno, D. (2024)"))
+    report = check_package(spec, providers=_providers(tmp_path))
+    assert "CROSS_DOCUMENT_YEAR_CONFLICT" in _codes(report)
+    assert report.state is not PackageState.READY_FOR_HUMAN_REVIEW

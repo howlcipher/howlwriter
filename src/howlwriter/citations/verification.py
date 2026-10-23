@@ -62,6 +62,10 @@ METADATA_MISSING = "CITATION_METADATA_MISSING"
 PROVIDER_UNAVAILABLE = "CITATION_PROVIDER_UNAVAILABLE"
 NO_RECORD = "CITATION_NO_AUTHORITATIVE_RECORD"
 RECORD_THIN = "CITATION_RECORD_INCOMPLETE"
+IDENTIFIER_MISMATCH = "CITATION_IDENTIFIER_MISMATCH"
+YEAR_UNCERTAIN = "CITATION_YEAR_UNCERTAIN"
+SOURCE_WITHDRAWN = "CITATION_SOURCE_WITHDRAWN"
+SOURCE_SUPERSEDED = "CITATION_SOURCE_SUPERSEDED"
 
 
 @dataclass
@@ -84,9 +88,18 @@ class CanonicalRecord(DataClassSerializationMixin):
     title: str = ""
     authors: list[CanonicalAuthor] = field(default_factory=list)
     year: int | None = None
+    # Where the year comes from: "cite_as" (the publisher's own how-to-cite statement),
+    # "cover" (a date printed on the document), "registry" (a DOI registry deposit).
+    # Only a cite_as year can settle a disagreement between records.
+    year_source: str = ""
     edition: str = ""
+    identifier: str = ""  # the publisher's own identifier, e.g. a report number
     doi: str = ""
     url: str = ""
+    # Distinct dated events, never merged into one "date": published, revised,
+    # updated, withdrawn (ISO dates or years as the authority states them).
+    dates: dict[str, str] = field(default_factory=dict)
+    status: str = ""  # current | superseded | withdrawn | ""
     note: str = ""
 
     @property
@@ -112,6 +125,9 @@ class CitationVerification(DataClassSerializationMixin):
     state: CitationState
     findings: list[CitationFinding] = field(default_factory=list)
     records: list[CanonicalRecord] = field(default_factory=list)
+    # field -> {"value": ..., "provider": ..., "authority": ..., "basis": ...}: where each
+    # resolved bibliographic value came from, so a reader can see why a year was accepted.
+    resolved: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def to_summary(self) -> dict[str, Any]:
         return {
@@ -119,6 +135,7 @@ class CitationVerification(DataClassSerializationMixin):
             "title": self.title,
             "state": self.state.value,
             "providers": [r.provider for r in self.records],
+            "resolved": self.resolved,
             "findings": [
                 {"code": f.code, "field": f.field, "severity": f.severity, "message": f.message}
                 for f in self.findings
@@ -206,6 +223,10 @@ def _source_edition_tokens(source: Source) -> set[str]:
 # ------------------------------------------------------------- comparison
 
 
+def _norm_identifier(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
 def _strip_designator(title: str) -> str:
     """Drop a trailing parenthetical such as a report number: "(NIST SP 800-161 Rev. 1)"."""
     stripped = re.sub(r"\s*\([^()]*\)\s*$", "", title).strip()
@@ -290,6 +311,14 @@ def _compare_to_record(source: Source, record: CanonicalRecord) -> list[Citation
                 f"Cited title does not match {where} title (similarity {similarity:.2f}).",
                 "error", where))
 
+    # Publisher identifier (e.g. a report number) against the source's own.
+    cited_id = _norm_identifier(source.freshness.document_identifier or "")
+    if cited_id and record.identifier and cited_id != _norm_identifier(record.identifier):
+        findings.append(CitationFinding(
+            IDENTIFIER_MISMATCH, "identifier",
+            f"Cited identifier '{source.freshness.document_identifier}' differs from {where} "
+            f"identifier '{record.identifier}'.", "error", where))
+
     # DOI.
     if source.doi and record.doi and normalize_doi(source.doi).lower() != normalize_doi(record.doi).lower():
         findings.append(CitationFinding(
@@ -326,7 +355,7 @@ def _missing_fields(source: Source) -> list[str]:
     return missing
 
 
-_DEPENDENT_CODES = {AUTHOR_MISMATCH, AUTHOR_TYPE_MISMATCH, YEAR_MISMATCH, EDITION_MISMATCH,
+_DEPENDENT_CODES = {IDENTIFIER_MISMATCH, AUTHOR_MISMATCH, AUTHOR_TYPE_MISMATCH, YEAR_MISMATCH, EDITION_MISMATCH,
                     TITLE_MISMATCH, DOI_MISMATCH}
 
 
@@ -336,6 +365,17 @@ def verify_citation(
     unavailable: list[str] | None = None,
 ) -> CitationVerification:
     """Decide the state of one citation from the records gathered for it."""
+    result = _decide(source, records, unavailable)
+    if not result.resolved and records:
+        result.resolved = _resolved_fields(source, records)
+    return result
+
+
+def _decide(
+    source: Source,
+    records: list[CanonicalRecord],
+    unavailable: list[str] | None = None,
+) -> CitationVerification:
     unavailable = unavailable or []
     findings: list[CitationFinding] = []
 
@@ -392,9 +432,37 @@ def verify_citation(
         return CitationVerification(source.id, source.title, state, findings, records)
 
     findings.extend(conflicts)
-    # No hard disagreement with the best record. Registry-only agreement on a thin
-    # record still counts, but a record that cannot test authors or year leaves the
-    # citation unconfirmed on those fields.
+
+    # A year the records disagree about is never settled silently. It is accepted only when
+    # the citation matches a year the publisher itself states as the way to cite the work.
+    years = {r.provider: r.year for r in records if r.year is not None}
+    if len(set(years.values())) > 1:
+        citing = [r for r in records if r.year == _source_year(source)]
+        authoritative = [r for r in citing if r.year_source == "cite_as"]
+        if not authoritative:
+            findings.append(CitationFinding(
+                YEAR_UNCERTAIN, "publication_date",
+                "Records give different years (" + ", ".join(f"{k}: {v}" for k, v in sorted(years.items()))
+                + ") and no publisher cite-as statement settles it; choose the year deliberately.",
+                "warning"))
+            return CitationVerification(source.id, source.title, CitationState.NEEDS_REVIEW, findings,
+                                        records, _resolved_fields(source, records))
+
+    # Withdrawn or superseded works are cited knowingly or not at all.
+    for r in records:
+        if r.status == "withdrawn":
+            findings.append(CitationFinding(
+                SOURCE_WITHDRAWN, "status", f"{r.provider} reports this work is withdrawn.", "warning", r.provider))
+        elif r.status == "superseded":
+            findings.append(CitationFinding(
+                SOURCE_SUPERSEDED, "status", f"{r.provider} reports a newer edition supersedes this work.",
+                "info", r.provider))
+    if any(f.code == SOURCE_WITHDRAWN for f in findings):
+        return CitationVerification(source.id, source.title, CitationState.NEEDS_REVIEW, findings, records,
+                                    _resolved_fields(source, records))
+
+    # No hard disagreement with the best record. A record that cannot test authors or year
+    # leaves the citation unconfirmed on those fields.
     confirmed_authors = any(r.authors for r in records)
     confirmed_year = any(r.year is not None for r in records)
     if not (confirmed_authors and confirmed_year):
@@ -403,8 +471,37 @@ def verify_citation(
             "Records could not confirm "
             + " or ".join(n for n, ok in (("authors", confirmed_authors), ("year", confirmed_year)) if not ok)
             + ".", "warning"))
-        return CitationVerification(source.id, source.title, CitationState.NEEDS_REVIEW, findings, records)
-    return CitationVerification(source.id, source.title, CitationState.VERIFIED, findings, records)
+        return CitationVerification(source.id, source.title, CitationState.NEEDS_REVIEW, findings, records,
+                                    _resolved_fields(source, records))
+    return CitationVerification(source.id, source.title, CitationState.VERIFIED, findings, records,
+                                _resolved_fields(source, records))
+
+
+def _resolved_fields(source: Source, records: list[CanonicalRecord]) -> dict[str, dict[str, Any]]:
+    """For each field, the value the citation was checked against and who stated it."""
+    ranked = sorted(records, key=lambda r: -_AUTHORITY_RANK.get(r.authority, 0))
+    resolved: dict[str, dict[str, Any]] = {}
+    for r in ranked:
+        if r.year is not None and "year" not in resolved:
+            resolved["year"] = {"value": r.year, "provider": r.provider, "authority": r.authority,
+                                "basis": r.year_source or "unspecified"}
+        if r.authors and "authors" not in resolved:
+            resolved["authors"] = {"value": [a.organization or f"{a.family}, {a.given}".strip(", ")
+                                             for a in r.authors],
+                                   "provider": r.provider, "authority": r.authority, "basis": "record"}
+        if r.title and "title" not in resolved:
+            resolved["title"] = {"value": r.title, "provider": r.provider, "authority": r.authority,
+                                 "basis": "record"}
+        if r.doi and "doi" not in resolved:
+            resolved["doi"] = {"value": normalize_doi(r.doi), "provider": r.provider, "authority": r.authority,
+                               "basis": "record"}
+        if r.identifier and "identifier" not in resolved:
+            resolved["identifier"] = {"value": r.identifier, "provider": r.provider, "authority": r.authority,
+                                      "basis": "record"}
+        if r.dates and "dates" not in resolved:
+            resolved["dates"] = {"value": dict(r.dates), "provider": r.provider, "authority": r.authority,
+                                 "basis": "record"}
+    return resolved
 
 
 # --------------------------------------------------------------- providers
@@ -444,6 +541,10 @@ def _record_from_dict(entry: dict) -> CanonicalRecord:
         title=entry.get("title", ""),
         authors=authors,
         year=entry.get("year"),
+        year_source=entry.get("year_source", ""),
+        identifier=entry.get("identifier", ""),
+        dates=dict(entry.get("dates", {})),
+        status=entry.get("status", ""),
         edition=entry.get("edition", ""),
         doi=entry.get("doi", ""),
         url=entry.get("url", ""),

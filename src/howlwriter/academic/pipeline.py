@@ -90,6 +90,7 @@ from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import WritingRole
 from howlwriter.linting.engine import LintEngine
 from howlwriter.linting.rules import AI_STYLE_BANNED_WORD, RuleMatch
+from howlwriter.citations.revalidation import citation_delta
 from howlwriter.domain.genres import check_genre_conformance, parse_genre
 from howlwriter.replies.grounding import GroundingState, SourcePost, check_reply
 from howlwriter.review.leakage import detect_leakage
@@ -907,8 +908,13 @@ def _run_academic_pipeline(
             min_words=bounds.min_words, max_words=bounds.max_words,
             extra_quotable_text=" ".join(s.retrieved_text or "" for s in sources),
         )
+    # Re-check citations on the text that will actually ship: a transformation after the
+    # draft (humanizing, editing) may have dropped, added or changed one.
+    citation_changes = [c for c in citation_delta(draft_doc.text, final_document.text).changes
+                        if c.severity != "info"]
     has_leakage_deficiency = (
-        bool(leakage_findings) or bool(genre_findings)
+        bool(citation_changes)
+        or bool(leakage_findings) or bool(genre_findings)
         or (reply_grounding is not None and reply_grounding.state is not GroundingState.GROUNDED)
     )
 
@@ -995,6 +1001,7 @@ def _run_academic_pipeline(
         banned_words=banned_word_count,
         ai_style_warnings=ai_style_count,
         workflow_leakage_findings=len(leakage_findings),
+        citation_changes_after_edit=len(citation_changes),
         genre_findings=len(genre_findings) if genre else None,
         reply_grounding=reply_grounding.state.value if reply_grounding else None,
         reply_grounding_findings=len(reply_grounding.findings) if reply_grounding else None,
