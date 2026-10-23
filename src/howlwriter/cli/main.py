@@ -12,8 +12,10 @@ import sys
 
 from howlwriter import __version__
 from howlwriter.cli.commands import (
+    assignment,
     benchmark,
     cite,
+    citations,
     editor,
     evaluate,
     factcheck,
@@ -30,6 +32,7 @@ from howlwriter.cli.commands import (
     publish,
     redpen,
     references,
+    reply,
     research,
     runs,
     sources,
@@ -40,6 +43,7 @@ from howlwriter.cli.commands import (
 from howlwriter.integration.model_role import HowlPlaneUnavailableError, ModelRoleNotConfiguredError
 
 _COMMAND_MODULES = (
+    assignment,
     benchmark,
     paper,
     publish,
@@ -53,6 +57,7 @@ _COMMAND_MODULES = (
     research,
     sources,
     cite,
+    citations,
     references,
     redpen,
     lint,
@@ -61,6 +66,7 @@ _COMMAND_MODULES = (
     native,
     outline,
     project,
+    reply,
     runs,
     ui,
     interop,

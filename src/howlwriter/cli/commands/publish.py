@@ -85,7 +85,7 @@ def run(args: argparse.Namespace) -> int:
             title = file_path.stem.replace("-", " ").replace("_", " ").title()
 
     run_id = generate_run_id()
-    content_hash = compute_sha256(content_text if is_text else str(content_bytes))
+    content_hash = compute_sha256(content_text if is_text else content_bytes)
 
     artifact = PublicationArtifact(
         title=title,
@@ -131,6 +131,8 @@ def run(args: argparse.Namespace) -> int:
         return 0
     else:
         print(f"\nPublication Failed: {result.status}", file=sys.stderr)
+        if result.status == "UNCONFIRMED" and result.url:
+            print(f"  The document exists but is not confirmed: {result.url}", file=sys.stderr)
         for diag in result.diagnostics:
             print(f"  - {diag}", file=sys.stderr)
         return 1

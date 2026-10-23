@@ -90,6 +90,18 @@ from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import WritingRole
 from howlwriter.linting.engine import LintEngine
 from howlwriter.linting.rules import AI_STYLE_BANNED_WORD, RuleMatch
+from howlwriter.citations.revalidation import citation_delta
+from howlwriter.citations.verification import (
+    CitationState,
+    CrossrefProvider,
+    RecordFileProvider,
+    verify_sources as verify_citation_metadata,
+    worst_state,
+)
+from howlwriter.domain.genres import check_genre_conformance, parse_genre
+from howlwriter.replies.grounding import GroundingState, SourcePost, check_reply
+from howlwriter.replies.untrusted import scan_untrusted
+from howlwriter.review.leakage import detect_leakage
 from howlwriter.redpen.critic import RedPenEngine, RedPenFinding
 from howlwriter.review.meaning import (
     MeaningPreservationReviewer,
@@ -241,6 +253,9 @@ def _run_academic_pipeline(
     outline: Any | None = None,
     seed: int | None = None,
     verify_sources: bool = False,
+    citation_records: list[str] | None = None,
+    citation_providers: list[Any] | None = None,
+    integrity_verifier: Any | None = None,
     output_dir: Path | str | None = None,
     output_formats: list[str] | None = None,
     publish_destination: str | None = None,
@@ -596,7 +611,7 @@ def _run_academic_pipeline(
         from howlwriter.research.integrity import SourceIntegrityVerifier
 
         _notify("source_integrity", "RUNNING", "Source Integrity Verification")
-        verifier_int = SourceIntegrityVerifier()
+        verifier_int = integrity_verifier or SourceIntegrityVerifier()
         source_integrity_report = verifier_int.verify_all(sources)
         verif_summary.source_integrity_findings = [
             f.to_dict() for f in source_integrity_report.findings
@@ -823,6 +838,19 @@ def _run_academic_pipeline(
         "warnings_count": len(citation_analysis.warnings),
     })
 
+    # 9b. CITATION METADATA against authoritative records (with --verify-sources). A resolving
+    # DOI is not evidence that author, year and edition are right, so this compares them.
+    citation_metadata_state: CitationState | None = None
+    citation_metadata_summary: list[dict[str, Any]] = []
+    if verify_sources:
+        providers = list(citation_providers) if citation_providers is not None else [
+            *[RecordFileProvider(path, name=Path(path).name) for path in (citation_records or [])],
+            CrossrefProvider(),
+        ]
+        verifications = verify_citation_metadata(list(citation_analysis.used_sources), providers)
+        citation_metadata_summary = [v.to_summary() for v in verifications]
+        citation_metadata_state = worst_state(verifications) if verifications else None
+
     # 10. EVALUATE FINAL READINESS STATUS
     # Academic criteria for READY:
     # - Word count within the hard bounds (wc_status in ("PASS", "TARGET_MISS");
@@ -889,6 +917,33 @@ def _run_academic_pipeline(
         for f in verif_summary.source_integrity_findings
     )
     has_length_deficiency = wc_status in ("TOO_SHORT", "HARD_LIMIT_FAILURE")
+    # Internal workflow commentary in reader-facing prose (provenance notes,
+    # status codes, task instructions) holds the paper for human review; the
+    # detector reports and never edits, so the author decides what stays.
+    genre = parse_genre(spec.genre)
+    leakage_findings = detect_leakage(final_document.text, genre=genre.value if genre else "")
+    genre_findings = check_genre_conformance(final_document.text, genre)
+    # Instruction-like text inside retrieved sources is reported, not acted on, and does not hold the paper
+    # by itself: a source about prompt injection legitimately quotes such text.
+    source_instruction_hits = sum(1 for src in sources if src.retrieved_text and scan_untrusted(src.retrieved_text))
+    reply_grounding = None
+    if genre is not None and genre.value == "academic_peer_reply":
+        reply_grounding = check_reply(
+            final_document.text,
+            [SourcePost(text=p.get("text", ""), author=p.get("author", ""), label=p.get("label", ""))
+             for p in (spec.peer_posts or [])],
+            min_words=bounds.min_words, max_words=bounds.max_words,
+            extra_quotable_text=" ".join(s.retrieved_text or "" for s in sources),
+        )
+    # Re-check citations on the text that will actually ship: a transformation after the
+    # draft (humanizing, editing) may have dropped, added or changed one.
+    citation_changes = [c for c in citation_delta(draft_doc.text, final_document.text).changes
+                        if c.severity != "info"]
+    has_leakage_deficiency = (
+        bool(citation_changes)
+        or bool(leakage_findings) or bool(genre_findings)
+        or (reply_grounding is not None and reply_grounding.state is not GroundingState.GROUNDED)
+    )
 
     authorship_coverage = None
     has_authorship_deficiency = False
@@ -897,6 +952,10 @@ def _run_academic_pipeline(
         provenance.coverage = authorship_coverage.to_dict()
         has_authorship_deficiency = authorship_coverage.status == "FAIL"
 
+    has_citation_metadata_deficiency = (
+        citation_metadata_state is not None and citation_metadata_state is not CitationState.VERIFIED)
+    if citation_metadata_state is CitationState.MISMATCH:
+        has_blocking_deficiency = True
     if has_blocking_deficiency:
         final_status = "BLOCKED"
     elif (
@@ -907,6 +966,8 @@ def _run_academic_pipeline(
         or has_source_deficiency
         or has_unresolved_citation_deficiency
         or has_claim_deficiency
+        or has_citation_metadata_deficiency
+        or has_leakage_deficiency
         or claim_review.blocks_readiness
         or has_redundancy_deficiency
         or (semantic_res is not None and semantic_res.verdict == "FAIL")
@@ -971,6 +1032,15 @@ def _run_academic_pipeline(
         lint_after_count=len(lint_after),
         banned_words=banned_word_count,
         ai_style_warnings=ai_style_count,
+        workflow_leakage_findings=len(leakage_findings),
+        citation_changes_after_edit=len(citation_changes),
+        citation_metadata_status=(citation_metadata_state.value if citation_metadata_state
+                                  else ("NOT_APPLICABLE" if verify_sources else None)),
+        citation_metadata_findings=citation_metadata_summary,
+        sources_with_instruction_like_text=source_instruction_hits,
+        genre_findings=len(genre_findings) if genre else None,
+        reply_grounding=reply_grounding.state.value if reply_grounding else None,
+        reply_grounding_findings=len(reply_grounding.findings) if reply_grounding else None,
         meaning_preservation=meaning_det.status,
         semantic_meaning_status=semantic_res.verdict if semantic_res else None,
         consistency_review_status=consistency_res.verdict if consistency_res else None,
@@ -1249,6 +1319,13 @@ def _run_academic_pipeline(
         pub_ctx = PublishContext(
             run_id=active_run_id,
             allow_unverified=pub_allow_unverified,
+            # Keep a record of exactly what was approved beside the local deliverables, and
+            # have the destination read back against the same length limits as the paper.
+            extra={
+                **({"record_dir": str(Path(local_deliverables[0].path).parent)} if local_deliverables else {}),
+                "min_words": bounds.min_words,
+                "max_words": bounds.max_words,
+            },
         )
         publish_result = pub.publish(pub_art, pub_dest, pub_ctx)
 

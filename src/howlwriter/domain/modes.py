@@ -31,4 +31,10 @@ def parse_mode(value: str | WritingMode | None) -> WritingMode:
     try:
         return WritingMode(normalized)
     except ValueError:
+        # An academic genre (academic_discussion, ...) is an academic task, not an
+        # unknown mode; it must keep the academic register and voice profile.
+        from howlwriter.domain.genres import parse_genre
+
+        if parse_genre(normalized) is not None:
+            return WritingMode.ACADEMIC
         return WritingMode.CUSTOM

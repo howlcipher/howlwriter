@@ -3,14 +3,24 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import inspect
 from typing import Any
 
+from howlwriter.publishing.verification import (
+    HASH_MISMATCH,
+    approved_record,
+    extract_document_text,
+    looks_like_sha256,
+    verify_readback,
+    write_record,
+)
 from howlwriter.publishing.base import (
     ArtifactPublisher,
     PublicationArtifact,
     PublishContext,
     PublishDestination,
     PublishResult,
+    RevisionConflictError,
 )
 from howlwriter.publishing.google.auth import get_auth_status, load_credentials
 
@@ -73,6 +83,25 @@ class GoogleDocsPublisher(ArtifactPublisher):
                 diagnostics=[diag],
             )
 
+        # 1b. The text being published must be the text that was approved. Fails closed: an approval
+        # hash that is present but not a recognizable SHA-256 is refused, never ignored.
+        asserted = (artifact.authorized_sha256 or "").strip()
+        if asserted:
+            normalized = asserted.lower().removeprefix("sha256:").strip()
+            if not looks_like_sha256(normalized) or normalized != artifact.content_hash:
+                reason = ("is not a SHA-256" if not looks_like_sha256(normalized) else
+                          f"does not match (approved {normalized[:12]}, got {artifact.content_hash[:12]})")
+                return PublishResult(
+                    destination_type="google_docs",
+                    destination_target=destination.target or destination.folder or "",
+                    artifact_title=artifact.title,
+                    published_at=datetime.now(timezone.utc).isoformat(),
+                    content_hash=artifact.content_hash,
+                    source_run_id=context.run_id,
+                    status="FAILED",
+                    diagnostics=[f"{HASH_MISMATCH}: the approval hash {reason}. Nothing was published."],
+                )
+
         # 2. Obtain client/adapter
         try:
             client = self._get_client()
@@ -98,6 +127,8 @@ class GoogleDocsPublisher(ArtifactPublisher):
         try:
             doc_id: str
             revision_meta: dict[str, Any] = {}
+            prior_text = ""
+            update_mode = ""
 
             # 3. Existing Document Update vs New Document Creation
             if destination.update_doc_id:
@@ -122,6 +153,24 @@ class GoogleDocsPublisher(ArtifactPublisher):
                         ],
                     )
 
+                # Revision-aware write: refuse if the document changed since we read it. The
+                # check is repeated immediately before the write and enforced again by the
+                # destination, so a concurrent edit is reported, never overwritten.
+                read_revision = existing.get("revisionId")
+                if not read_revision or not _supports_revision_guard(client):
+                    return PublishResult(
+                        destination_type="google_docs", destination_target=doc_id, artifact_title=title,
+                        artifact_id=doc_id, published_at=datetime.now(timezone.utc).isoformat(),
+                        content_hash=artifact.content_hash, source_run_id=context.run_id, status="FAILED",
+                        diagnostics=["Cannot update an existing document safely: the destination does not "
+                                     "provide a revision id or revision-aware writes. Nothing was changed."])
+                prior_text = extract_document_text(existing)
+                fresh = client.get_document(doc_id)
+                if fresh.get("revisionId") != read_revision:
+                    raise RevisionConflictError(
+                        f"document changed since it was read (revision {read_revision} -> {fresh.get('revisionId')})")
+                revision_meta["read_revision"] = read_revision
+
                 end_index = _get_doc_end_index(existing)
                 requests = _build_update_requests(
                     text_content,
@@ -129,7 +178,7 @@ class GoogleDocsPublisher(ArtifactPublisher):
                     mode=update_mode,
                     existing_body_length=end_index,
                 )
-                res = client.batch_update(doc_id, requests)
+                res = client.batch_update(doc_id, requests, required_revision_id=read_revision)
                 revision_meta.update(res)
             else:
                 # Create brand new document
@@ -141,11 +190,44 @@ class GoogleDocsPublisher(ArtifactPublisher):
 
             # 4. Folder Targeting
             target_folder = destination.folder or destination.target
+            folder_error = ""
             if target_folder and hasattr(client, "move_to_folder"):
-                client.move_to_folder(doc_id, target_folder)
-                revision_meta["folder"] = target_folder
+                try:
+                    client.move_to_folder(doc_id, target_folder)
+                    revision_meta["folder"] = target_folder
+                except Exception as exc:  # the document exists; say so rather than "nothing published"
+                    folder_error = f"The document was written but could not be moved to '{target_folder}' " \
+                                   f"({type(exc).__name__}: {exc})."
+                    revision_meta["folder_error"] = folder_error
 
             url = f"https://docs.google.com/document/d/{doc_id}/edit"
+
+            # 5. Confirm what the destination now holds. Success is not claimed on a write alone.
+            record_dir = context.extra.get("record_dir") if isinstance(context.extra, dict) else None
+            if record_dir:
+                rec = approved_record(text_content, title=title, run_id=context.run_id)
+                rec.authorized_sha256 = artifact.authorized_sha256
+                revision_meta["approved_record"] = str(write_record(rec, record_dir))
+            status, diagnostics = "SUCCESS", []
+            if folder_error:
+                status, diagnostics = "UNCONFIRMED", [folder_error]
+            try:
+                readback_doc = client.get_document(doc_id)
+                verification = verify_readback(
+                    text_content, extract_document_text(readback_doc), title=title,
+                    prior_text=prior_text if (destination.update_doc_id and update_mode == "append") else "",
+                    min_words=context.extra.get("min_words") if isinstance(context.extra, dict) else None,
+                    max_words=context.extra.get("max_words") if isinstance(context.extra, dict) else None)
+                revision_meta["readback"] = verification.to_dict()
+                revision_meta["readback_revision"] = readback_doc.get("revisionId")
+                if not verification.verified:
+                    status = "UNCONFIRMED"
+                    diagnostics = diagnostics + [f"{f.code}: {f.message}" for f in verification.findings
+                                                 if f.severity == "error"]
+            except Exception as exc:  # could not read back: unconfirmed, not failed and not success
+                status = "UNCONFIRMED"
+                diagnostics = diagnostics + [f"The published document could not be read back ({type(exc).__name__}: {exc}); "
+                               "publication is unconfirmed."]
 
             return PublishResult(
                 destination_type="google_docs",
@@ -157,8 +239,21 @@ class GoogleDocsPublisher(ArtifactPublisher):
                 content_hash=artifact.content_hash,
                 source_run_id=context.run_id,
                 revision_metadata=revision_meta,
-                status="SUCCESS",
-                diagnostics=[],
+                status=status,
+                diagnostics=diagnostics,
+            )
+        except RevisionConflictError as exc:
+            return PublishResult(
+                destination_type="google_docs",
+                destination_target=destination.target or "",
+                artifact_title=title,
+                artifact_id=destination.update_doc_id,
+                published_at=datetime.now(timezone.utc).isoformat(),
+                content_hash=artifact.content_hash,
+                source_run_id=context.run_id,
+                status="CONFLICT",
+                diagnostics=[f"Not published: {exc}. The document was changed by someone else; "
+                             "nothing was overwritten. Read the current version and retry."],
             )
         except Exception as exc:
             return PublishResult(
@@ -171,6 +266,13 @@ class GoogleDocsPublisher(ArtifactPublisher):
                 status="FAILED",
                 diagnostics=[f"Google Docs publish failed: {type(exc).__name__}: {exc}"],
             )
+
+
+def _supports_revision_guard(client: Any) -> bool:
+    try:
+        return "required_revision_id" in inspect.signature(client.batch_update).parameters
+    except (TypeError, ValueError, AttributeError):
+        return False
 
 
 class _RealGoogleApiAdapter:
@@ -187,15 +289,20 @@ class _RealGoogleApiAdapter:
         return self.docs.documents().get(documentId=doc_id).execute()
 
     def batch_update(
-        self, doc_id: str, requests: list[dict[str, Any]]
+        self, doc_id: str, requests: list[dict[str, Any]], required_revision_id: str | None = None
     ) -> dict[str, Any]:
         if not requests:
             return {}
-        return (
-            self.docs.documents()
-            .batchUpdate(documentId=doc_id, body={"requests": requests})
-            .execute()
-        )
+        body: dict[str, Any] = {"requests": requests}
+        if required_revision_id:
+            body["writeControl"] = {"requiredRevisionId": required_revision_id}
+        try:
+            return self.docs.documents().batchUpdate(documentId=doc_id, body=body).execute()
+        except Exception as exc:
+            # The Docs API rejects a stale requiredRevisionId with HTTP 400 naming the revision.
+            if required_revision_id and "revision" in str(exc).lower():
+                raise RevisionConflictError(f"destination rejected the write: {exc}") from exc
+            raise
 
     def move_to_folder(self, doc_id: str, folder_name_or_id: str) -> dict[str, Any]:
         folder_id = folder_name_or_id
@@ -271,13 +378,15 @@ def _build_update_requests(
 
     # replace mode: delete existing body range if not empty, then insert at index 1
     requests: list[dict[str, Any]] = []
-    if existing_body_length > 1:
+    # The final newline of a document body can never be deleted; the range must stop before it.
+    delete_end = existing_body_length - 1
+    if delete_end > 1:
         requests.append(
             {
                 "deleteContentRange": {
                     "range": {
                         "startIndex": 1,
-                        "endIndex": existing_body_length,
+                        "endIndex": delete_end,
                     }
                 }
             }

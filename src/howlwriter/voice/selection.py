@@ -193,9 +193,10 @@ def select_for_context(
 
 
 def context_for_mode(mode: str | None) -> str | None:
+    from howlwriter.domain.genres import base_mode_name
     from howlwriter.evaluation.personal import MODE_PROFILE_CONTEXT
 
-    return MODE_PROFILE_CONTEXT.get((mode or "").lower())
+    return MODE_PROFILE_CONTEXT.get(base_mode_name(mode))
 
 
 def apply_selection(

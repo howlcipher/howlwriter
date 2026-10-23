@@ -1,0 +1,207 @@
+{
+  "_note": "Recorded 2026-10-23 from the issuing body's publication pages and the Crossref REST API. Trimmed to the fields the verifier reads.",
+  "records": [
+    {
+      "provider": "nist-publication-page",
+      "authority": "publisher",
+      "title": "Artificial Intelligence Risk Management Framework (AI RMF 1.0)",
+      "authors": [
+        {
+          "family": "Tabassi",
+          "given": "Elham"
+        }
+      ],
+      "year": 2023,
+      "doi": "10.6028/NIST.AI.100-1",
+      "year_source": "cite_as",
+      "identifier": "NIST AI 100-1",
+      "dates": {
+        "published": "2023-01-26"
+      }
+    },
+    {
+      "provider": "crossref",
+      "authority": "registry",
+      "title": "Artificial Intelligence Risk Management Framework (AI RMF 1.0)",
+      "authors": [
+        {
+          "family": "Tabassi",
+          "given": "Elham"
+        }
+      ],
+      "year": 2023,
+      "doi": "10.6028/NIST.AI.100-1"
+    },
+    {
+      "provider": "nist-publication-page",
+      "authority": "publisher",
+      "title": "Artificial Intelligence Risk Management Framework: Generative Artificial Intelligence Profile",
+      "authors": [
+        {
+          "family": "Autio",
+          "given": "Chloe"
+        },
+        {
+          "family": "Schwartz",
+          "given": "Reva"
+        },
+        {
+          "family": "Dunietz",
+          "given": "Jesse"
+        },
+        {
+          "family": "Jain",
+          "given": "Shomik"
+        },
+        {
+          "family": "Stanley",
+          "given": "Martin"
+        },
+        {
+          "family": "Tabassi",
+          "given": "Elham"
+        },
+        {
+          "family": "Hall",
+          "given": "Patrick"
+        },
+        {
+          "family": "Roberts",
+          "given": "Kamie"
+        }
+      ],
+      "year": 2024,
+      "doi": "10.6028/NIST.AI.600-1",
+      "year_source": "cite_as",
+      "identifier": "NIST AI 600-1",
+      "dates": {
+        "published": "2024-07-26"
+      }
+    },
+    {
+      "provider": "crossref",
+      "authority": "registry",
+      "title": "Artificial intelligence risk management framework :",
+      "authors": [
+        {
+          "organization": "National Institute of Standards and Technology (US)"
+        }
+      ],
+      "year": 2024,
+      "doi": "10.6028/NIST.AI.600-1"
+    },
+    {
+      "provider": "nist-document-cover",
+      "authority": "publisher",
+      "title": "Cybersecurity Supply Chain Risk Management Practices for Systems and Organizations",
+      "authors": [
+        {
+          "family": "Boyens",
+          "given": "Jon"
+        },
+        {
+          "family": "Smith",
+          "given": "Angela"
+        },
+        {
+          "family": "Bartol",
+          "given": "Nadya"
+        },
+        {
+          "family": "Winkler",
+          "given": "Kris"
+        },
+        {
+          "family": "Holbrook",
+          "given": "Alex"
+        },
+        {
+          "family": "Fallon",
+          "given": "Matthew"
+        }
+      ],
+      "year": 2022,
+      "edition": "Rev. 1 Update 1 (includes updates as of 2024-11-01)",
+      "doi": "10.6028/NIST.SP.800-161r1-upd1",
+      "year_source": "cite_as",
+      "identifier": "NIST SP 800-161r1-upd1",
+      "status": "current",
+      "dates": {
+        "published": "2022-05",
+        "updated": "2024-11-01"
+      },
+      "note": "The document's own How to Cite block reads (2022) ... NIST SP 800-161r1-upd1, Includes updates as of November 1, 2024."
+    },
+    {
+      "provider": "crossref",
+      "authority": "registry",
+      "title": "Cybersecurity Supply Chain Risk Management Practices for Systems and Organizations",
+      "authors": [
+        {
+          "family": "Boyens",
+          "given": "Jon M"
+        }
+      ],
+      "year": 2024,
+      "doi": "10.6028/NIST.SP.800-161r1-upd1",
+      "year_source": "registry",
+      "identifier": "",
+      "dates": {
+        "deposited": "2025-01-15"
+      }
+    },
+    {
+      "provider": "nist-document-cover",
+      "authority": "publisher",
+      "title": "Cybersecurity Supply Chain Risk Management Practices for Systems and Organizations",
+      "authors": [
+        {
+          "family": "Boyens",
+          "given": "Jon"
+        },
+        {
+          "family": "Smith",
+          "given": "Angela"
+        },
+        {
+          "family": "Bartol",
+          "given": "Nadya"
+        },
+        {
+          "family": "Winkler",
+          "given": "Kris"
+        },
+        {
+          "family": "Holbrook",
+          "given": "Alex"
+        },
+        {
+          "family": "Fallon",
+          "given": "Matthew"
+        }
+      ],
+      "year": 2022,
+      "edition": "Rev. 1",
+      "doi": "10.6028/NIST.SP.800-161r1",
+      "year_source": "cite_as",
+      "identifier": "NIST SP 800-161r1",
+      "status": "superseded",
+      "dates": {
+        "published": "2022-05-05"
+      }
+    },
+    {
+      "provider": "owasp-project-page",
+      "authority": "publisher",
+      "title": "OWASP Top 10 for LLM Applications 2025",
+      "authors": [
+        {
+          "organization": "OWASP Gen AI Security Project"
+        }
+      ],
+      "year": 2025,
+      "edition": "2025",
+      "url": "https://genai.owasp.org/llm-top-10/"
+    }
+  ]
+}

@@ -67,7 +67,7 @@ def test_publishing_authority_gate_blocks_unverified():
         content="Some draft content",
         format="md",
         source_run_id="run-1",
-        authorized_sha256="hash-1",
+        authorized_sha256="",
         metadata={"status": "DRAFT"},  # Not READY or PASS
     )
     dest = PublishDestination(destination_type="google_docs", target="Folder")
@@ -89,7 +89,7 @@ def test_publishing_authority_gate_passes_when_authorized():
         content="Polished verified content",
         format="md",
         source_run_id="run-2",
-        authorized_sha256="hash-2",
+        authorized_sha256="",
         metadata={"status": "READY"},
     )
     dest = PublishDestination(destination_type="google_docs", target="Folder")
@@ -106,7 +106,7 @@ def test_publishing_authority_gate_passes_when_authorized():
         content="Draft content",
         format="md",
         source_run_id="run-3",
-        authorized_sha256="hash-3",
+        authorized_sha256="",
         metadata={"status": "DRAFT"},
     )
     ctx_override = PublishContext(run_id="run-3", allow_unverified=True)

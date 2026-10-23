@@ -91,6 +91,14 @@ class WritingReport(DataClassSerializationMixin):
     freshness_warnings: int | None = None
     freshness_findings: list[Any] = field(default_factory=list)
     redundancy_findings_count: int | None = None
+    workflow_leakage_findings: int | None = None
+    genre_findings: int | None = None
+    citation_changes_after_edit: int | None = None
+    sources_with_instruction_like_text: int | None = None
+    citation_metadata_status: str | None = None
+    citation_metadata_findings: list[Any] = field(default_factory=list)
+    reply_grounding: str | None = None
+    reply_grounding_findings: int | None = None
     lint_before_count: int | None = None
     lint_after_count: int | None = None
     meaning_preservation: MeaningPreservationStatus = "NOT_EVALUATED"
@@ -409,6 +417,10 @@ class WritingReport(DataClassSerializationMixin):
             ("Banned words", self.banned_words),
             ("AI-style warnings", self.ai_style_warnings),
             ("Redundancy findings", self.redundancy_findings_count),
+            ("Workflow-commentary leakage", self.workflow_leakage_findings),
+            ("Genre-convention findings", self.genre_findings),
+            ("Citation changes after edit", self.citation_changes_after_edit),
+            ("Sources w/ embedded instructions", self.sources_with_instruction_like_text),
         ]
         has_metrics = any(v is not None for _, v in metrics)
         if has_metrics:
@@ -421,6 +433,17 @@ class WritingReport(DataClassSerializationMixin):
                 else:
                     rendered = str(value)
                 lines.append(f"{label:<28}{rendered}")
+        if self.citation_metadata_status is not None:
+            lines.append(f"{'Citation metadata':<28}{self.citation_metadata_status}")
+            for item in self.citation_metadata_findings:
+                if item.get("state") != "VERIFIED":
+                    lines.append(f"  {item['state']}: {item['title'][:60]}")
+                    for f in item.get("findings", [])[:3]:
+                        if f.get("severity") != "info":
+                            lines.append(f"    {f['code']}: {f['message'][:100]}")
+        if self.reply_grounding is not None:
+            lines.append(f"{'Reply grounding':<28}{self.reply_grounding} "
+                         f"({self.reply_grounding_findings or 0} findings)")
         if self.voice_match_basis:
             if self.voice_match is None:
                 lines.append(f"{'Voice match':<28}unavailable")

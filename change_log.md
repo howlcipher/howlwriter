@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+* `citations verify` compares each source's authors, year, edition, title, DOI and identifier with canonical records (publisher records outrank registry records) and reports `VERIFIED`, `MISMATCH`, `INCOMPLETE`, `UNVERIFIABLE` or `NEEDS_REVIEW`; a provider outage is never a wrong citation, a year the records disagree about needs the publisher's own cite-as year, and verified metadata is never claim support. `paper --verify-sources --records` applies it to the cited sources.
+* Citations are re-checked after editing: dropped, added or changed citations and orphaned or missing references hold a `paper` for review.
+* `lint --workflow-leakage` and the `paper` pipeline report workflow commentary that leaked into prose (for example "this is my recommendation, not a cited result"); legitimate qualifications are kept.
+* Academic genres `academic_discussion`, `academic_peer_reply` and `academic_research_paper` use the existing academic voice profile. `evaluate --mode academic_*` previously fell through to an unknown context; it now routes to the academic profile.
+* `reply check` and `paper --peer-post` ground a reply in the post it answers and treat posts and retrieved text as untrusted reference data (fenced in prompts, scanned for embedded instructions).
+* `assignment check` evaluates a multi-document package and reports `BLOCKED`, `INCOMPLETE`, `NEEDS_REVISION`, `VERIFICATION_UNAVAILABLE` or `READY_FOR_HUMAN_REVIEW`, with a record of each check, its component, evidence and limits, and one-work-one-metadata consistency across documents.
+* `finalize --changes` accounts for each change between a document and its revision.
+* The Google Docs publisher confirms by read-back, writes updates only against the revision it read, refuses content that differs from the approved hash, records the approved artifact, and no longer asks the Docs API to delete a document's final newline. Results are `SUCCESS`, `UNCONFIRMED`, `CONFLICT` or `FAILED`.
+* Independent audits of this work found and closed: a wrong year passing when the publisher record states none, given-name and edition-ordinal comparisons that were missing, a wrong DOI printed in every reference list, a deleted reference section reported as no change, an approval-hash check that failed open, a read-back that could not see reordered, short or appended content, quadratic regexes reachable from hostile text, and prompt metadata outside the fence. `assignment check` no longer returns ready when a required voice score or a citation check could not run.
+* The `paper` report gains `workflow_leakage_findings`, `genre_findings`, `citation_changes_after_edit`, `citation_metadata_status`, `reply_grounding` and `sources_with_instruction_like_text`.
+
 * Pin the `plane` extra and the real integration CI checkout to reviewed HowlPlane `4ba3e71`, including malformed-state exit and published Frame artifact compatibility corrections. The CI checkout previously followed moving `main` despite being labeled pinned; it now tests the same immutable revision the extra installs.
 
 * Pin shared howl-provider-core `9bf1f78`, matching HowlDream and HowlCreate, restoring historical credential coverage and sanitizing provider failure metadata before persistence (Mission 007 F2).

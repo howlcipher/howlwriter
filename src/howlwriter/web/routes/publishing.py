@@ -56,7 +56,7 @@ def publish_document(req: PublishRequest) -> PublishResponse:
         media_type = "text/plain"
         binary_bytes = None
 
-    sha = compute_sha256(path.read_bytes())
+    sha = compute_sha256(text_content if text_content is not None else (binary_bytes or b""))
     title = req.title or path.stem.replace("_", " ").title()
 
     try:
@@ -101,4 +101,5 @@ def publish_document(req: PublishRequest) -> PublishResponse:
         version_or_revision=result.revision_metadata.get("revision_id"),
         published_at=result.published_at,
         error_message="; ".join(result.diagnostics) if not result.is_success else None,
+        status=result.status,
     )

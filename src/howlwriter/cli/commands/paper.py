@@ -125,6 +125,25 @@ def add_subparser(
              "evidence. Overrides materials.directory in the assignment spec.",
     )
     parser.add_argument(
+        "--records",
+        dest="citation_records",
+        action="append",
+        default=[],
+        metavar="FILE",
+        help="Canonical bibliographic records (publisher pages, document covers) used by "
+             "--verify-sources to check each citation's author, year and edition. May repeat.",
+    )
+    parser.add_argument(
+        "--peer-post",
+        dest="peer_posts",
+        action="append",
+        default=[],
+        metavar="[AUTHOR=]PATH",
+        help="Path to a post being answered (peer reply), optionally prefixed with the author's name. "
+             "May repeat. The text is treated as untrusted reference data, and the finished reply is "
+             "checked against it. Without it a peer reply cannot be reported as source-grounded.",
+    )
+    parser.add_argument(
         "--voice",
         default=None,
         help="Name of a personal voice built with `howlwriter voice build`. The "
@@ -203,6 +222,17 @@ def run(args: argparse.Namespace) -> int:
     else:
         spec = AssignmentSpec(title=outline.title or outline.topic, topic=outline.topic)
 
+    for raw_peer in getattr(args, "peer_posts", None) or []:
+        author, sep, path = raw_peer.partition("=")
+        if not sep:
+            author, path = "", raw_peer
+        try:
+            text = Path(path).read_text(encoding="utf-8")
+        except OSError as exc:
+            print(f"error: cannot read peer post '{path}': {exc}", file=sys.stderr)
+            return 1
+        spec.peer_posts = [*spec.peer_posts, {"author": author.strip(), "label": Path(path).name, "text": text}]
+
     config = ConfigLoader().load(project_config_path=args.project_config_path)
 
     # The outline's voice reaches the spec only inside the pipeline, which
@@ -274,6 +304,7 @@ def run(args: argparse.Namespace) -> int:
             cwd=_source_dir(args),
             seed=args.seed,
             verify_sources=args.verify_sources,
+            citation_records=args.citation_records,
             output_dir=out_dir,
             output_formats=output_formats,
             publish_destination=args.publish_destination,
@@ -316,7 +347,9 @@ def run(args: argparse.Namespace) -> int:
             if pub.url:
                 print(f"  URL:         {pub.url}")
         else:
-            print(f"  Status: FAILED")
+            print(f"  Status: {pub.status}")
+            if pub.status == "UNCONFIRMED" and pub.url:
+                print(f"  The document exists but is not confirmed: {pub.url}")
             for diag in pub.diagnostics:
                 print(f"  - {diag}")
 

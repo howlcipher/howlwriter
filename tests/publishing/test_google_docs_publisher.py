@@ -32,7 +32,7 @@ def test_create_new_google_doc_with_formatting():
         ),
         format="md",
         source_run_id="run-101",
-        authorized_sha256="sha-101",
+        authorized_sha256="",
         metadata={"status": "READY"},
     )
     dest = PublishDestination(
@@ -69,7 +69,7 @@ def test_update_existing_google_doc_replace():
         content="New finalized body text.",
         format="md",
         source_run_id="run-102",
-        authorized_sha256="sha-102",
+        authorized_sha256="",
         metadata={"status": "READY"},
     )
     dest = PublishDestination(
@@ -101,7 +101,7 @@ def test_update_existing_google_doc_append():
         content="Section 2 appended content.",
         format="md",
         source_run_id="run-103",
-        authorized_sha256="sha-103",
+        authorized_sha256="",
         metadata={"status": "READY"},
     )
     dest = PublishDestination(
@@ -128,7 +128,7 @@ def test_update_nonexistent_doc_fails_gracefully():
         content="Content",
         format="md",
         source_run_id="run-104",
-        authorized_sha256="sha-104",
+        authorized_sha256="",
         metadata={"status": "READY"},
     )
     dest = PublishDestination(
@@ -153,7 +153,7 @@ def test_simulated_api_errors():
         content="Content",
         format="md",
         source_run_id="run-105",
-        authorized_sha256="sha-105",
+        authorized_sha256="",
         metadata={"status": "READY"},
     )
     dest = PublishDestination(destination_type="google_docs")
