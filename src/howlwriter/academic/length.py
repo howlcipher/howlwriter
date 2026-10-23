@@ -31,7 +31,7 @@ def extract_body_text(text: str) -> str:
 
     # Find where "# References" or "## References" or "### References" or "REFERENCES" starts
     ref_pattern = re.compile(
-        r"(?:^|\n)#{1,3}\s*References(?:\s*\n|\Z)",
+        r"(?:^|\n)(?:#{1,3}\s*|\*\*\s*)References(?:\s*\*\*)?(?:\s*\n|\Z)",
         re.IGNORECASE,
     )
     match = ref_pattern.search(clean)

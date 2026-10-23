@@ -12,6 +12,7 @@ import sys
 
 from howlwriter import __version__
 from howlwriter.cli.commands import (
+    assignment,
     benchmark,
     cite,
     citations,
@@ -42,6 +43,7 @@ from howlwriter.cli.commands import (
 from howlwriter.integration.model_role import HowlPlaneUnavailableError, ModelRoleNotConfiguredError
 
 _COMMAND_MODULES = (
+    assignment,
     benchmark,
     paper,
     publish,
