@@ -91,6 +91,7 @@ class WritingReport(DataClassSerializationMixin):
     freshness_warnings: int | None = None
     freshness_findings: list[Any] = field(default_factory=list)
     redundancy_findings_count: int | None = None
+    workflow_leakage_findings: int | None = None
     lint_before_count: int | None = None
     lint_after_count: int | None = None
     meaning_preservation: MeaningPreservationStatus = "NOT_EVALUATED"
@@ -409,6 +410,7 @@ class WritingReport(DataClassSerializationMixin):
             ("Banned words", self.banned_words),
             ("AI-style warnings", self.ai_style_warnings),
             ("Redundancy findings", self.redundancy_findings_count),
+            ("Workflow-commentary leakage", self.workflow_leakage_findings),
         ]
         has_metrics = any(v is not None for _, v in metrics)
         if has_metrics:

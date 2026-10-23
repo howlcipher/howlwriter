@@ -11,6 +11,8 @@ from pathlib import Path
 from howlwriter.config.loader import ConfigLoader
 from howlwriter.domain.document import Document
 from howlwriter.linting.engine import LintEngine
+from howlwriter.linting.rules import RuleMatch
+from howlwriter.review.leakage import detect_leakage
 
 
 def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
@@ -20,6 +22,11 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
         "--config", dest="project_config_path", default=None, help="Project config YAML path."
     )
     parser.add_argument("--json", action="store_true", help="Emit findings as JSON.")
+    parser.add_argument(
+        "--workflow-leakage", action="store_true",
+        help="Also report internal workflow commentary (provenance notes, status codes, task "
+        "instructions) that leaked into reader-facing prose. Reports only; never edits.",
+    )
     parser.set_defaults(handler=run)
     return parser
 
@@ -29,6 +36,12 @@ def run(args: argparse.Namespace) -> int:
     document = Document.parse(text, title=Path(args.path).stem)
     config = ConfigLoader().load(project_config_path=args.project_config_path)
     matches = LintEngine().run(document, config)
+    if args.workflow_leakage:
+        matches = matches + [
+            RuleMatch(rule_code=f.code, matched_text=f.matched_text, message=f.message,
+                      sentence_index=f.sentence_index, severity=f.severity)
+            for f in detect_leakage(text)
+        ]
 
     if args.json:
         print(json.dumps([m.to_dict() for m in matches], indent=2))

@@ -90,6 +90,7 @@ from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import WritingRole
 from howlwriter.linting.engine import LintEngine
 from howlwriter.linting.rules import AI_STYLE_BANNED_WORD, RuleMatch
+from howlwriter.review.leakage import detect_leakage
 from howlwriter.redpen.critic import RedPenEngine, RedPenFinding
 from howlwriter.review.meaning import (
     MeaningPreservationReviewer,
@@ -889,6 +890,11 @@ def _run_academic_pipeline(
         for f in verif_summary.source_integrity_findings
     )
     has_length_deficiency = wc_status in ("TOO_SHORT", "HARD_LIMIT_FAILURE")
+    # Internal workflow commentary in reader-facing prose (provenance notes,
+    # status codes, task instructions) holds the paper for human review; the
+    # detector reports and never edits, so the author decides what stays.
+    leakage_findings = detect_leakage(final_document.text)
+    has_leakage_deficiency = bool(leakage_findings)
 
     authorship_coverage = None
     has_authorship_deficiency = False
@@ -907,6 +913,7 @@ def _run_academic_pipeline(
         or has_source_deficiency
         or has_unresolved_citation_deficiency
         or has_claim_deficiency
+        or has_leakage_deficiency
         or claim_review.blocks_readiness
         or has_redundancy_deficiency
         or (semantic_res is not None and semantic_res.verdict == "FAIL")
@@ -971,6 +978,7 @@ def _run_academic_pipeline(
         lint_after_count=len(lint_after),
         banned_words=banned_word_count,
         ai_style_warnings=ai_style_count,
+        workflow_leakage_findings=len(leakage_findings),
         meaning_preservation=meaning_det.status,
         semantic_meaning_status=semantic_res.verdict if semantic_res else None,
         consistency_review_status=consistency_res.verdict if consistency_res else None,
