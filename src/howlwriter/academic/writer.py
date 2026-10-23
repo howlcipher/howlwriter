@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -9,7 +11,7 @@ from typing import Any
 from howlwriter.academic.length import count_body_words, resolve_length_bounds
 from howlwriter.academic.prompts import ACADEMIC_PRIORITY_ORDERING_GUIDANCE
 from howlwriter.domain.genres import PROFILES, parse_genre
-from howlwriter.replies.untrusted import FENCE_RULE, fence_untrusted
+from howlwriter.replies.untrusted import FENCE_RULE, fence_untrusted, one_line
 from howlwriter.academic.redundancy import RedundancyResult
 from howlwriter.academic.spec import AssignmentSpec
 from howlwriter.citations.apa7 import APA7Formatter
@@ -84,17 +86,19 @@ class ModelAcademicWriter:
         # Build formatted source list with exact APA in-text citation keys
         source_context_lines: list[str] = []
         for s in sources:
-            parenthetical = formatter.in_text_parenthetical(s).text
-            narrative = formatter.narrative(s).text
-            authors_str = ", ".join(s.authors) if s.authors else "No listed author"
+            parenthetical = one_line(formatter.in_text_parenthetical(s).text, 120)
+            narrative = one_line(formatter.narrative(s).text, 120)
+            authors_str = one_line(", ".join(s.authors), 300) if s.authors else "No listed author"
+            safe_id = re.sub(r"[^A-Za-z0-9._-]", "", s.id)[:24] or "source"
+            safe_title = one_line(s.title, 300)
             year_str = str(s.publication_date.year) if s.publication_date else "n.d."
 
             source_context_lines.append(
-                f"[{s.id}] Title: {s.title}\n"
+                f"[{safe_id}] Title: {safe_title}\n"
                 f"  Authors: {authors_str} | Year: {year_str}\n"
                 f"  In-Text Citation Format: {parenthetical} OR narrative {narrative}\n"
                 f"  Evidence / Summary (untrusted reference data):\n  "
-                f"{fence_untrusted(s.id, s.retrieved_text) if s.retrieved_text else 'No summary text.'}\n"
+                f"{fence_untrusted(safe_id, s.retrieved_text) if s.retrieved_text else 'No summary text.'}\n"
             )
 
         sources_block = "\n".join(source_context_lines) if source_context_lines else "No sources available."
@@ -144,7 +148,7 @@ class ModelAcademicWriter:
         peer_posts = [p for p in (getattr(spec, "peer_posts", None) or []) if (p.get("text") or "").strip()]
         if peer_posts:
             fenced = "\n\n".join(
-                fence_untrusted(p.get("author") or p.get("label") or f"post {i}", p["text"])
+                fence_untrusted(f"post {i}", p["text"])
                 for i, p in enumerate(peer_posts, 1))
             genre_block += (
                 "\nPOST(S) BEING ANSWERED:\n" + FENCE_RULE + "\n" + fenced + "\n"

@@ -22,7 +22,8 @@ howlwriter voice review --identity william --json      # what awaits the owner's
 ```
 
 ```bash
-# Reliability checks: read-only, deterministic, nothing leaves the machine with --offline.
+# Reliability checks: read-only and deterministic. With --offline (citations verify,
+# assignment check) nothing leaves the machine; paper --verify-sources always asks Crossref.
 howlwriter citations verify sources.json --records records.json --offline --json
 howlwriter reply check reply.md --post "Author=post.md" --json
 howlwriter assignment check package.yaml --records records.json --offline --json

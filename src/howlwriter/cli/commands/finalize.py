@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
 
 from howlwriter.domain.document import Document
 from howlwriter.review.change_report import build_change_report
@@ -33,6 +34,9 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
 
 
 def run(args: argparse.Namespace) -> int:
+    if args.output_json and not args.changes:
+        print("error: --json applies to the --changes report; add --changes", file=sys.stderr)
+        return 1
     original_text = Path(args.original_path).read_text(encoding="utf-8")
     revised_text = Path(args.revised_path).read_text(encoding="utf-8")
     if args.changes:

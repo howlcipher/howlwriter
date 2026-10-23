@@ -99,3 +99,39 @@ def test_parse_references_reads_year_doi_and_url():
     entries = parse_references(DOC)
     assert [e.lead for e in entries] == ["boyens", "owasp"]
     assert entries[0].doi == "10.6028/nist.sp.800-161r1-upd1" and entries[1].url.startswith("https://genai.owasp.org")
+
+
+class TestAuditRegressions:
+    def test_adding_a_pinpoint_page_is_not_a_dropped_citation(self):
+        revised = DOC.replace("(Boyens et al., 2022)", "(Boyens et al., 2022, p. 5)")
+        assert citation_delta(DOC, revised).clean
+
+    def test_deleting_the_whole_reference_list_is_an_error(self):
+        for revised in (DOC.split("**References**")[0],
+                        DOC.replace("**References**", "Works consulted")):
+            delta = citation_delta(DOC, revised)
+            assert delta.blocking and "REFERENCE_SECTION_REMOVED" in _codes(delta)
+
+    def test_a_changed_author_list_in_the_text_is_reported(self):
+        original = DOC.replace("Boyens et al., 2022", "Boyens & Paulsen, 2022")
+        revised = DOC.replace("Boyens et al., 2022", "Boyens, 2022")
+        assert "CITATION_NAMES_CHANGED" in _codes(citation_delta(original, revised))
+
+    def test_a_reference_author_initial_changed(self):
+        revised = DOC.replace("Boyens, J., Smith", "Boyens, Z., Smith")
+        assert REFERENCE_CHANGED in _codes(citation_delta(DOC, revised))
+
+    def test_a_reference_title_or_edition_changed(self):
+        revised = DOC.replace("*Cybersecurity supply chain risk management practices*",
+                              "*Cybersecurity supply chain risk management practices Rev. 2 with new material*")
+        assert REFERENCE_CHANGED in _codes(citation_delta(DOC, revised))
+
+    def test_a_reference_doi_dropped(self):
+        revised = DOC.replace(" https://doi.org/10.6028/NIST.SP.800-161r1-upd1", "")
+        assert REFERENCE_CHANGED in _codes(citation_delta(DOC, revised))
+
+    def test_two_works_by_one_author_are_compared_with_their_own_prior_entry(self):
+        two = DOC + "\nBoyens, J. (2020). *An earlier unrelated report about something else*. NIST. https://doi.org/10.1/old\n"
+        revised = two.replace("(2020)", "(2021)")
+        changed = [c for c in citation_delta(two, revised).changes if c.code == REFERENCE_CHANGED]
+        assert len(changed) == 1 and "2020 -> 2021" in changed[0].message

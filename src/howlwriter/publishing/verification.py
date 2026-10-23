@@ -13,6 +13,7 @@ presentation is reported separately.
 
 from __future__ import annotations
 
+import difflib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
@@ -25,6 +26,10 @@ from howlwriter.citations.extract import extract_in_text_citations
 from howlwriter.citations.revalidation import citation_key, parse_references, split_body_and_references
 from howlwriter.domain.serialization import DataClassSerializationMixin
 
+EMPTY_APPROVED = "READBACK_NOTHING_APPROVED"
+EXTRA_CONTENT = "READBACK_EXTRA_CONTENT"
+REORDERED_CONTENT = "READBACK_REORDERED_CONTENT"
+TEXT_TOO_LARGE = "READBACK_TEXT_TOO_LARGE"
 MISSING_PARAGRAPH = "READBACK_MISSING_PARAGRAPH"
 DUPLICATED_CONTENT = "READBACK_DUPLICATED_CONTENT"
 CITATION_LOST = "READBACK_CITATION_LOST"
@@ -39,6 +44,7 @@ UNSUPPORTED_ELEMENT = "READBACK_UNSUPPORTED_ELEMENT"
 HASH_MISMATCH = "ARTIFACT_CHANGED_AFTER_APPROVAL"
 
 _MIN_PARAGRAPH_WORDS = 6
+MAX_COMPARE_CHARS = 2_000_000
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -52,8 +58,8 @@ def looks_like_sha256(value: str) -> bool:
 
 def normalize(text: str) -> str:
     """Lower-cased words with Markdown syntax and punctuation spacing removed."""
-    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
-    text = re.sub(r"^\s*#{1,6}\s+", "", text, flags=re.M)
+    text = re.sub(r"\[([^\]\n]{1,300})\]\([^)\n]{0,2000}\)", r"\1", text)
+    text = re.sub(r"^[ \t]*#{1,6}[ \t]+", "", text, flags=re.M)
     text = re.sub(r"[*_`]", "", text)
     return re.sub(r"\s+", " ", text).strip().lower()
 
@@ -65,8 +71,9 @@ def _paragraphs(text: str) -> list[str]:
 def _body_word_count(text: str) -> int:
     body, _ = split_body_and_references(text)
     # A plain "References" line (no Markdown) also ends the body.
-    body = re.split(r"(?im)^\s*references\s*$", body, maxsplit=1)[0]
-    return len(re.findall(r"\b[\w'-]+\b", re.sub(r"[*_`#]", "", re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", body))))
+    body = re.split(r"(?im)^[ \t]*references[ \t]*$", body, maxsplit=1)[0]
+    return len(re.findall(r"\b[\w'-]+\b", re.sub(r"[*_`#]", "", re.sub(
+        r"\[([^\]\n]{1,300})\]\([^)\n]{0,2000}\)", r"\1", body))))
 
 
 # ---------------------------------------------------------------- approved record
@@ -83,6 +90,7 @@ class ArtifactRecord(DataClassSerializationMixin):
     paragraphs: int
     citations: list[str] = field(default_factory=list)
     reference_entries: int = 0
+    authorized_sha256: str = ""
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -158,22 +166,53 @@ def verify_readback(
 ) -> ReadbackVerification:
     """Compare the text read back from a destination with the approved text."""
     findings: list[ReadbackFinding] = []
+    if len(approved_text) > MAX_COMPARE_CHARS or len(readback_text) > MAX_COMPARE_CHARS:
+        return ReadbackVerification("MISMATCH", 0, 0, [ReadbackFinding(
+            TEXT_TOO_LARGE, f"Texts over {MAX_COMPARE_CHARS} characters are not compared.", "error")], [])
     read = readback_text
     if title and normalize(read).startswith(normalize(title)):
         # Destinations that add the title as a first line: not part of the body.
-        read = re.sub(r"^\s*" + re.escape(title) + r"\s*\n", "", read.lstrip(), count=1)
+        read = re.sub(r"^[ \t]*" + re.escape(title) + r"[ \t]*\n", "", read.lstrip(), count=1)
     norm_read = normalize(read)
     approved_paras = _paragraphs(approved_text)
     read_paras = _paragraphs(read)
 
-    for para in approved_paras:
-        if len(para.split()) >= _MIN_PARAGRAPH_WORDS and para not in norm_read:
-            findings.append(ReadbackFinding(MISSING_PARAGRAPH, "A paragraph of the approved text is missing or altered "
-                                            "in the published document.", "error", para[:100]))
-    for para in set(approved_paras):
-        if len(para.split()) >= _MIN_PARAGRAPH_WORDS and read_paras.count(para) > approved_paras.count(para):
-            findings.append(ReadbackFinding(DUPLICATED_CONTENT, "A paragraph appears more often than in the "
-                                            "approved text.", "error", para[:100]))
+    if not approved_paras:
+        findings.append(ReadbackFinding(EMPTY_APPROVED, "There is no approved text to compare the destination with.",
+                                        "error"))
+    elif prior_text:
+        # Appending: the approved text must appear in order among the existing content.
+        position = 0
+        for para in approved_paras:
+            try:
+                position = read_paras.index(para, position) + 1
+            except ValueError:
+                if para in read_paras:
+                    findings.append(ReadbackFinding(REORDERED_CONTENT, "Approved paragraphs are out of order.",
+                                                    "error", para[:100]))
+                else:
+                    findings.append(ReadbackFinding(MISSING_PARAGRAPH, "A paragraph of the approved text is missing "
+                                                    "or altered in the published document.", "error", para[:100]))
+    elif approved_paras != read_paras:
+        if sorted(approved_paras) == sorted(read_paras):
+            findings.append(ReadbackFinding(REORDERED_CONTENT, "The paragraphs are the same but in a different order.",
+                                            "error"))
+        else:
+            ops = difflib.SequenceMatcher(a=approved_paras, b=read_paras, autojunk=False).get_opcodes()
+            for tag, i1, i2, j1, j2 in ops:
+                if tag in ("delete", "replace"):
+                    for para in approved_paras[i1:i2]:
+                        findings.append(ReadbackFinding(
+                            MISSING_PARAGRAPH, "A paragraph of the approved text is missing or altered in the "
+                            "published document.", "error", para[:100]))
+                if tag in ("insert", "replace"):
+                    for para in read_paras[j1:j2]:
+                        duplicate = para in approved_paras
+                        findings.append(ReadbackFinding(
+                            DUPLICATED_CONTENT if duplicate else EXTRA_CONTENT,
+                            "A paragraph appears more often than in the approved text." if duplicate else
+                            "The published document contains text that was not in the approved text.",
+                            "error", para[:100]))
 
     approved_body, _ = split_body_and_references(approved_text)
     read_body, _ = split_body_and_references(read)
@@ -198,7 +237,7 @@ def verify_readback(
             findings.append(ReadbackFinding(code, msg, "error", ref.raw[:100]))
 
     tail = normalize(approved_text)[-60:]
-    if tail and tail not in norm_read:
+    if tail and not norm_read.endswith(tail) and not prior_text:
         findings.append(ReadbackFinding(TEXT_TRUNCATED, "The end of the approved text is not at the end of the "
                                         "published document.", "error", tail))
 
@@ -218,10 +257,10 @@ def verify_readback(
                                         "is no longer there.", "error"))
 
     # Presentation: report, do not fail.
-    if re.search(r"\*\*[^*\n]+\*\*", read) or re.search(r"(?m)^\s*#{1,6}\s+\S", read):
+    if re.search(r"\*\*[^*\n]+\*\*", read) or re.search(r"(?m)^[ \t]*#{1,6}[ \t]+\S", read):
         findings.append(ReadbackFinding(FORMATTING_LITERAL, "Markdown markers appear as literal characters in the "
                                         "published document.", "info"))
-    if re.search(r"(?m)^\|.*\|\s*$", approved_text) or "![" in approved_text:
+    if re.search(r"(?m)^\|.*\|[ \t]*$", approved_text) or "![" in approved_text:
         findings.append(ReadbackFinding(UNSUPPORTED_ELEMENT, "The approved text has tables or images, which this "
                                         "destination does not carry as plain text.", "info"))
 

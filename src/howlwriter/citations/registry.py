@@ -56,6 +56,10 @@ class RegistryEntry(DataClassSerializationMixin):
         return sorted({a.document for a in self.appearances})
 
 
+def _identity_of(appearance: "Appearance") -> str:
+    return "doi:" + normalize_doi(appearance.doi).lower() if appearance.doi else ""
+
+
 def _identity(entry: ReferenceEntry) -> str:
     if entry.doi:
         return "doi:" + normalize_doi(entry.doi).lower()
@@ -84,15 +88,25 @@ class SourceRegistry:
                 target.appearances.append(appearance)
 
     def _match(self, ref: ReferenceEntry) -> RegistryEntry | None:
+        """The entry for the work `ref` cites, or None if it is a new work.
+
+        Two references with the same identifier are the same work. Two with different identifiers
+        (different DOIs) are different works unless they are indistinguishable otherwise, which the
+        conflict check reports. When either side has no identifier, the same lead author and title
+        (with the same edition markers) is the best evidence of one work.
+        """
         ident = _identity(ref)
         for entry in self._entries:
-            first = entry.appearances[0]
-            if ident and ident == (("doi:" + normalize_doi(first.doi).lower()) if first.doi else ""):
-                return entry
             if ident and entry.key == ident:
                 return entry
-            if not ident and not first.doi and first.lead == ref.lead and ref.title and first.title and (
-                    _compute_string_similarity(_normalize_title(first.title), _normalize_title(ref.title)) >= _TITLE_SAME
+        for entry in self._entries:
+            first = entry.appearances[0]
+            first_ident = _identity_of(first)
+            if ident and first_ident and ident != first_ident:
+                continue  # both identified, and differently
+            if (first.lead == ref.lead and ref.title and first.title
+                    and _compute_string_similarity(_normalize_title(first.title), _normalize_title(ref.title))
+                    >= _TITLE_SAME
                     and edition_tokens(first.title) == edition_tokens(ref.title)):
                 return entry
         return None
@@ -121,11 +135,11 @@ class SourceRegistry:
                 fa, fb = a.appearances[0], b.appearances[0]
                 if (fa.lead == fb.lead and fa.title and fb.title and fa.doi and fb.doi and fa.doi != fb.doi
                         and edition_tokens(fa.title, doi=fa.doi) == edition_tokens(fb.title, doi=fb.doi)
-                        and _compute_string_similarity(_normalize_title(fa.title), _normalize_title(fb.title)) >= _TITLE_SAME
-                        and fa.year == fb.year):
+                        and _compute_string_similarity(_normalize_title(fa.title), _normalize_title(fb.title)) >= _TITLE_SAME):
                     findings.append(RegistryFinding(
                         CROSS_DOC_DOI_CONFLICT,
-                        f"Two DOIs are given for what looks like one edition: {fa.doi} and {fb.doi}.",
+                        f"Two DOIs are given for what looks like one work: {fa.doi} ({fa.year}) and "
+                        f"{fb.doi} ({fb.year}). If they are different editions, say so in the title.",
                         sorted(set(a.documents + b.documents)), a.key))
         return findings
 

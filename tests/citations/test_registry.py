@@ -99,3 +99,22 @@ def test_registry_never_modifies_documents():
     snapshot = dict(docs)
     build_registry(docs).conflicts()
     assert docs == snapshot
+
+
+class TestAuditRegressions:
+    def test_doi_in_one_document_and_none_in_another_are_one_work(self):
+        a = _doc(_ref(2022, doi="https://doi.org/10.6028/abc.1"))
+        b = _doc(_ref(2024, doi=""))
+        registry = build_registry({"a": a, "b": b})
+        assert len(registry.entries) == 1 and CROSS_DOC_YEAR_CONFLICT in _codes(registry)
+
+    def test_same_title_with_different_dois_is_flagged_even_when_the_years_differ(self):
+        registry = build_registry({"a": _doc(_ref(2022, doi="https://doi.org/10.1234/a")),
+                                   "b": _doc(_ref(2024, doi="https://doi.org/10.1234/b"))})
+        assert CROSS_DOC_DOI_CONFLICT in _codes(registry)
+
+    def test_different_edition_ordinals_are_different_works(self):
+        a = _doc(_ref(2020, doi="", title="*Statistics handbook, 2nd edition*"))
+        b = _doc(_ref(2023, doi="", title="*Statistics handbook, 3rd edition*"))
+        registry = build_registry({"a": a, "b": b})
+        assert len(registry.entries) == 2 and registry.conflicts() == []

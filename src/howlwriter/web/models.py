@@ -333,6 +333,8 @@ class PublishResponse(BaseModel):
     version_or_revision: Optional[str] = None
     published_at: str
     error_message: Optional[str] = None
+    # SUCCESS, UNCONFIRMED (written, read-back did not match), CONFLICT (nothing written) or FAILED.
+    status: Optional[str] = None
 
 
 class GoogleAuthStatusResponse(BaseModel):

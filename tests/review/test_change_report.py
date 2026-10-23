@@ -69,7 +69,8 @@ def test_requirements_report_the_word_count_before_and_after():
 
 def test_voice_is_not_scored_unless_requested_and_unavailable_is_honest(tmp_path):
     assert build_change_report(ORIGINAL, ORIGINAL).voice["status"] == "NOT_REQUESTED"
-    report = build_change_report(ORIGINAL, ORIGINAL.replace("Vendors", "Suppliers"), identity="nobody-here")
+    report = build_change_report(ORIGINAL, ORIGINAL.replace("Vendors", "Suppliers"), identity="nobody-here",
+                                 identities_root=tmp_path)
     assert report.voice["status"] == "UNAVAILABLE"  # no profile: never a made-up score
 
 
@@ -87,3 +88,10 @@ def test_finalize_changes_cli_json_and_text(tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["changes"][0]["kind"] == "removed"
     assert main(["finalize", str(a), str(a), "--changes"]) == 0
     assert "No changes." in capsys.readouterr().out
+
+
+def test_finalize_json_without_changes_is_a_usage_error(tmp_path, capsys):
+    a = tmp_path / "a.md"
+    a.write_text(ORIGINAL)
+    assert main(["finalize", str(a), str(a), "--json"]) == 1
+    assert "--changes" in capsys.readouterr().err

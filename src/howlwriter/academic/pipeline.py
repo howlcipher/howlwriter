@@ -849,7 +849,7 @@ def _run_academic_pipeline(
         ]
         verifications = verify_citation_metadata(list(citation_analysis.used_sources), providers)
         citation_metadata_summary = [v.to_summary() for v in verifications]
-        citation_metadata_state = worst_state(verifications) if verifications else CitationState.VERIFIED
+        citation_metadata_state = worst_state(verifications) if verifications else None
 
     # 10. EVALUATE FINAL READINESS STATUS
     # Academic criteria for READY:
@@ -1034,7 +1034,8 @@ def _run_academic_pipeline(
         ai_style_warnings=ai_style_count,
         workflow_leakage_findings=len(leakage_findings),
         citation_changes_after_edit=len(citation_changes),
-        citation_metadata_status=citation_metadata_state.value if citation_metadata_state else None,
+        citation_metadata_status=(citation_metadata_state.value if citation_metadata_state
+                                  else ("NOT_APPLICABLE" if verify_sources else None)),
         citation_metadata_findings=citation_metadata_summary,
         sources_with_instruction_like_text=source_instruction_hits,
         genre_findings=len(genre_findings) if genre else None,

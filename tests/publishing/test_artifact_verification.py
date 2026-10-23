@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 
+import pytest
+
 from howlwriter.publishing.base import PublicationArtifact, PublishContext, PublishDestination
 from howlwriter.publishing.google.publisher import GoogleDocsPublisher, _build_update_requests
 from howlwriter.publishing.verification import (
@@ -233,3 +235,96 @@ def test_replace_never_asks_to_delete_the_final_newline():
     # The Docs API rejects a delete range that includes the body's last newline.
     requests = _build_update_requests("New text.", title="T", mode="replace", existing_body_length=51)
     assert requests[0]["deleteContentRange"]["range"] == {"startIndex": 1, "endIndex": 50}
+
+
+class TestApprovalHashFailsClosed:
+    @pytest.mark.parametrize("asserted", [
+        "sha256:" + "ab" * 32,          # right shape, wrong content
+        "AB" * 32,                       # upper case, wrong content
+        "sha-101",                       # not a hash
+        "sha256:" + "ab" * 35,           # wrong length
+    ])
+    def test_a_present_but_wrong_or_malformed_hash_is_refused(self, asserted):
+        fake = FakeGoogleDocsAdapter()
+        res = _publish(fake, _artifact(sha=asserted))
+        assert res.status == "FAILED" and "ARTIFACT_CHANGED_AFTER_APPROVAL" in res.diagnostics[0]
+        assert fake.documents == {}
+
+    def test_the_right_hash_in_any_common_spelling_is_accepted(self):
+        digest = hashlib.sha256(TEXT.encode()).hexdigest()
+        for spelling in (digest, digest.upper(), "sha256:" + digest):
+            assert _publish(FakeGoogleDocsAdapter(), _artifact(sha=spelling)).status == "SUCCESS"
+
+    def test_no_assertion_means_no_check_and_the_record_says_so(self, tmp_path):
+        art = _artifact()
+        art.authorized_sha256 = ""
+        fake = FakeGoogleDocsAdapter()
+        res = GoogleDocsPublisher(adapter=fake).publish(
+            art, PublishDestination(destination_type="google_docs"),
+            PublishContext(run_id="run-1", extra={"record_dir": str(tmp_path)}))
+        assert res.status == "SUCCESS"
+        record = json.loads(next(tmp_path.glob("approved-artifact-*.json")).read_text())
+        assert record["authorized_sha256"] == ""
+
+
+class TestReadbackComparesTheWholeSequence:
+    """Each case was a false VERIFIED found by an independent audit."""
+
+    SHORT = TEXT.replace("Backups belong", "Short claim here.\n\nBackups belong", 1)
+
+    def test_a_short_paragraph_removed_or_altered(self):
+        assert MISSING_PARAGRAPH in _codes(verify_readback(self.SHORT, self.SHORT.replace("Short claim here.\n\n", "")))
+        assert MISSING_PARAGRAPH in _codes(verify_readback(self.SHORT, self.SHORT.replace("Short claim here.", "Short claim gone.")))
+
+    def test_paragraphs_in_a_different_order(self):
+        paras = TEXT.split("\n\n")
+        swapped = "\n\n".join([paras[1], paras[0], *paras[2:]])
+        assert "READBACK_REORDERED_CONTENT" in _codes(verify_readback(TEXT, swapped))
+
+    def test_spam_appended_after_the_references(self):
+        v = verify_readback(TEXT, TEXT + "\nBuy cheap watches now at a very good price today only.\n")
+        assert not v.verified and "READBACK_EXTRA_CONTENT" in _codes(v)
+
+    def test_a_paragraph_inserted_in_the_middle(self):
+        v = verify_readback(TEXT, TEXT.replace("I would test", "Visit this unrelated site for a discount today.\n\nI would test", 1))
+        assert "READBACK_EXTRA_CONTENT" in _codes(v)
+
+    def test_paragraphs_merged_into_one(self):
+        v = verify_readback(TEXT, TEXT.replace("(Moreno, 2025).\n\n", "(Moreno, 2025). ", 1))
+        assert not v.verified and MISSING_PARAGRAPH in _codes(v)
+
+    def test_nothing_approved_is_never_verified(self):
+        v = verify_readback("", "anything at all in the destination")
+        assert not v.verified and "READBACK_NOTHING_APPROVED" in _codes(v)
+
+    def test_appended_text_must_still_appear_in_order(self):
+        approved = "First approved paragraph.\n\nSecond approved paragraph."
+        ok = verify_readback(approved, "Earlier notes.\n\nFirst approved paragraph.\n\nSecond approved paragraph.\n",
+                             prior_text="Earlier notes.")
+        assert ok.verified
+        bad = verify_readback(approved, "Earlier notes.\n\nSecond approved paragraph.\n\nFirst approved paragraph.\n",
+                              prior_text="Earlier notes.")
+        assert "READBACK_REORDERED_CONTENT" in _codes(bad)
+
+    def test_oversized_texts_are_refused_not_scanned(self):
+        v = verify_readback("a " * 1_100_000, "a")
+        assert "READBACK_TEXT_TOO_LARGE" in _codes(v)
+
+
+class TestFolderMoveAfterWrite:
+    def test_a_failed_folder_move_does_not_say_nothing_was_published(self):
+        fake = FakeGoogleDocsAdapter()
+        fake.simulate_folder_not_found = True
+        res = _publish(fake, target="Research", folder="Research")
+        assert res.status == "UNCONFIRMED" and res.artifact_id and res.url
+        assert "could not be moved" in res.diagnostics[0]
+        assert fake.documents  # the document exists
+
+
+def test_a_concurrent_edit_on_a_fresh_document_is_detected():
+    # The fake's first edit used to reuse the creation revision, hiding exactly this case.
+    fake = FakeGoogleDocsAdapter()
+    doc_id = fake.create_document("Doc")["documentId"]
+    before = fake.documents[doc_id]["revisionId"]
+    fake.concurrent_edit(doc_id, "A collaborator wrote this.\n")
+    assert fake.documents[doc_id]["revisionId"] != before

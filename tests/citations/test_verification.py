@@ -9,6 +9,8 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+import json
+
 import pytest
 
 from howlwriter.citations.verification import (
@@ -323,3 +325,150 @@ class TestCanonicalMetadataIntegrity:
         records = self._records_by_doi("10.6028/NIST.SP.800-161r1-upd1", "nist-document-cover")
         records[0].year = 2019
         assert verify_citation(s, records).state == CitationState.MISMATCH
+
+
+from howlwriter.citations.verification import (  # noqa: E402
+    AUTHOR_MISMATCH as _AM,
+    CanonicalAuthor,
+    CanonicalRecord,
+    EDITION_NOT_STATED,
+)
+from howlwriter.research.integrity import crossref_works_url  # noqa: E402
+
+
+def _rec(provider="p", authority="publisher", **kw):
+    return CanonicalRecord(provider=provider, authority=authority, **kw)
+
+
+def _person(family, given=""):
+    return CanonicalAuthor(family=family, given=given)
+
+
+class TestAuditRegressions:
+    """Each case below was a false VERIFIED (or false MISMATCH) found by an independent audit."""
+
+    def test_wrong_year_is_not_verified_when_the_publisher_record_states_no_year(self):
+        s = _src(authors=["Tabassi, E."], year=2022, id_="X", title="A framework for things", doi="10.1/x")
+        records = [_rec("publisher", "publisher", title="A framework for things", authors=[_person("Tabassi", "Elham")],
+                        doi="10.1/x"),
+                   _rec("crossref", "registry", title="A framework for things", authors=[_person("Tabassi", "Elham")],
+                        year=2024, doi="10.1/x")]
+        r = verify_citation(s, records)
+        assert r.state != CitationState.VERIFIED and YEAR_MISMATCH in _codes(r)
+
+    def test_a_given_name_initial_that_differs_is_a_mismatch(self):
+        s = _src(authors=["Boyens, Z."], year=2022, id_="X", title="A report on supply chains", doi="10.1/x")
+        records = [_rec(title="A report on supply chains", authors=[_person("Boyens", "Jon")], year=2022,
+                        year_source="cite_as", doi="10.1/x")]
+        r = verify_citation(s, records)
+        assert r.state == CitationState.MISMATCH and _AM in _codes(r)
+
+    def test_matching_initial_and_middle_names_are_fine(self):
+        s = _src(authors=["Boyens, J."], year=2022, id_="X", title="A report on supply chains", doi="10.1/x")
+        records = [_rec(title="A report on supply chains", authors=[_person("Boyens", "Jon M")], year=2022,
+                        year_source="cite_as", doi="10.1/x")]
+        assert verify_citation(s, records).state == CitationState.VERIFIED
+
+    def test_author_order_matters(self):
+        s = _src(authors=["Smith, A.", "Boyens, J."], year=2022, id_="X", title="A report on supply chains", doi="10.1/x")
+        records = [_rec(title="A report on supply chains", year=2022, year_source="cite_as", doi="10.1/x",
+                        authors=[_person("Boyens", "Jon"), _person("Smith", "Angela")])]
+        r = verify_citation(s, records)
+        assert r.state == CitationState.MISMATCH and any("different order" in f.message for f in r.findings)
+
+    @pytest.mark.parametrize("cited,recorded", [("3rd ed.", "2nd ed."), ("third edition", "second edition")])
+    def test_edition_ordinals_are_compared(self, cited, recorded):
+        s = _src(authors=["Rowe, C."], year=2020, id_="X", title=f"Statistics handbook ({cited})", doi="10.1/x")
+        records = [_rec(title="Statistics handbook", edition=recorded, authors=[_person("Rowe", "Casey")], year=2020,
+                        year_source="cite_as", doi="10.1/x")]
+        assert verify_citation(s, records).state == CitationState.MISMATCH
+
+    def test_a_citation_that_omits_the_edition_the_record_states_needs_review(self):
+        s = _src(authors=["Boyens, J."], year=2022, id_="X", title="Supply chain practices",
+                 url="https://example.org/sp161")
+        records = [_rec(title="Supply chain practices", edition="Rev. 1 Update 1", authors=[_person("Boyens", "Jon")],
+                        year=2022, year_source="cite_as", url="https://example.org/sp161")]
+        r = verify_citation(s, records)
+        assert r.state == CitationState.NEEDS_REVIEW and EDITION_NOT_STATED in _codes(r)
+
+    def test_a_fragment_of_an_organization_name_is_not_that_organization(self):
+        s = _src(authors=["Institute"], year=2022, id_="X", title="Guidance for operators", doi="10.1/x")
+        records = [_rec(title="Guidance for operators", authors=[CanonicalAuthor(organization="National Institute of Standards")],
+                        year=2022, year_source="cite_as", doi="10.1/x")]
+        assert verify_citation(s, records).state == CitationState.MISMATCH
+
+    def test_the_organization_name_with_a_trailing_country_tag_still_matches(self):
+        s = _src(authors=["National Institute of Standards and Technology"], year=2024, id_="X",
+                 title="Guidance for operators", doi="10.1/x")
+        records = [_rec(title="Guidance for operators",
+                        authors=[CanonicalAuthor(organization="National Institute of Standards and Technology (US)")],
+                        year=2024, year_source="cite_as", doi="10.1/x")]
+        assert verify_citation(s, records).state == CitationState.VERIFIED
+
+    def test_given_first_names_are_people_and_agency_names_with_commas_are_organizations(self):
+        person = _src(authors=["Jon Boyens"], year=2022, id_="X", title="A report on supply chains", doi="10.1/x")
+        rec = [_rec(title="A report on supply chains", authors=[_person("Boyens", "Jon")], year=2022,
+                    year_source="cite_as", doi="10.1/x")]
+        assert verify_citation(person, rec).state == CitationState.VERIFIED
+        org = _src(authors=["National Institute of Standards and Technology, U.S. Department of Commerce"], year=2022,
+                   id_="Y", title="A report on supply chains", doi="10.1/x")
+        org_rec = [_rec(title="A report on supply chains", year=2022, year_source="cite_as", doi="10.1/x",
+                        authors=[CanonicalAuthor(organization="National Institute of Standards and Technology, "
+                                                               "U.S. Department of Commerce")])]
+        assert verify_citation(org, org_rec).state == CitationState.VERIFIED
+
+    def test_a_thin_registry_record_with_a_matching_title_cannot_verify(self):
+        s = _src(authors=["Tabassi, E."], year=2023, id_="X", title="A framework for things", doi="10.1/x")
+        r = verify_citation(s, [_rec("crossref", "registry", title="A framework for things", doi="10.1/x")])
+        assert r.state == CitationState.NEEDS_REVIEW and "CITATION_RECORD_INCOMPLETE" in _codes(r)
+
+    def test_a_hand_written_record_without_authority_does_not_outrank_a_registry(self, tmp_path):
+        path = tmp_path / "r.json"
+        path.write_text(json.dumps([{"provider": "notes", "title": "A framework for things", "year": 2019, "doi": "10.1/x",
+                                     "authors": [{"family": "Tabassi", "given": "Elham"}]}]))
+        (rec,) = RecordFileProvider(path)._records
+        assert rec.authority == "registry"
+
+
+@pytest.mark.parametrize("doi,expected", [
+    ("10.6028/NIST.AI.100-1", "https://api.crossref.org/works/10.6028/NIST.AI.100-1"),
+    ("https://doi.org/10.6028/NIST.AI.100-1", "https://api.crossref.org/works/10.6028/NIST.AI.100-1"),
+    ("10.1002/(SICI)1097-4571(199806)49:8<693::AID-ASI4>3.0.CO;2-O",
+     "https://api.crossref.org/works/10.1002/(SICI)1097-4571(199806)49:8<693::AID-ASI4>3.0.CO;2-O"),
+    ("../../funders/100000001", None),
+    ("10.1234/x?rows=1000", None),
+    ("10.1234/x#frag", None),
+    ("https://evil.example/x", None),
+    ("10.1234/ spaced", None),
+    ("10.1234/a/../../b", None),
+    ("", None),
+])
+def test_crossref_url_is_built_only_from_a_plain_doi(doi, expected):
+    assert crossref_works_url(doi) == expected
+
+
+def test_a_crafted_doi_makes_no_request_at_all():
+    import httpx
+
+    from howlwriter.citations.verification import CrossrefProvider
+    from howlwriter.research.integrity import SourceIntegrityVerifier
+
+    seen = []
+    verifier = SourceIntegrityVerifier(mock_transport=httpx.MockTransport(lambda r: seen.append(str(r.url)) or httpx.Response(404)))
+    s = _src(authors=["A, B."], year=2022, id_="X", title="T", doi="../../funders/100000001")
+    assert CrossrefProvider(verifier).fetch(s) is None and seen == []
+
+
+class TestNothingToVerify:
+    def test_an_empty_set_is_never_reported_as_verified(self):
+        from howlwriter.citations.verification import worst_state
+
+        assert worst_state([]) is CitationState.UNVERIFIABLE
+
+    def test_the_cli_refuses_an_empty_sources_file(self, tmp_path, capsys):
+        from howlwriter.cli.main import main
+
+        path = tmp_path / "sources.json"
+        path.write_text("[]")
+        assert main(["citations", "verify", str(path), "--offline"]) == 1
+        assert "nothing to verify" in capsys.readouterr().err

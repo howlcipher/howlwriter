@@ -83,20 +83,24 @@ class GoogleDocsPublisher(ArtifactPublisher):
                 diagnostics=[diag],
             )
 
-        # 1b. The text being published must be the text that was approved.
-        if looks_like_sha256(artifact.authorized_sha256) and artifact.content_hash != artifact.authorized_sha256:
-            return PublishResult(
-                destination_type="google_docs",
-                destination_target=destination.target or destination.folder or "",
-                artifact_title=artifact.title,
-                published_at=datetime.now(timezone.utc).isoformat(),
-                content_hash=artifact.content_hash,
-                source_run_id=context.run_id,
-                status="FAILED",
-                diagnostics=[f"{HASH_MISMATCH}: the content differs from the approved artifact "
-                             f"(approved {artifact.authorized_sha256[:12]}, got {artifact.content_hash[:12]}). "
-                             "Nothing was published."],
-            )
+        # 1b. The text being published must be the text that was approved. Fails closed: an approval
+        # hash that is present but not a recognizable SHA-256 is refused, never ignored.
+        asserted = (artifact.authorized_sha256 or "").strip()
+        if asserted:
+            normalized = asserted.lower().removeprefix("sha256:").strip()
+            if not looks_like_sha256(normalized) or normalized != artifact.content_hash:
+                reason = ("is not a SHA-256" if not looks_like_sha256(normalized) else
+                          f"does not match (approved {normalized[:12]}, got {artifact.content_hash[:12]})")
+                return PublishResult(
+                    destination_type="google_docs",
+                    destination_target=destination.target or destination.folder or "",
+                    artifact_title=artifact.title,
+                    published_at=datetime.now(timezone.utc).isoformat(),
+                    content_hash=artifact.content_hash,
+                    source_run_id=context.run_id,
+                    status="FAILED",
+                    diagnostics=[f"{HASH_MISMATCH}: the approval hash {reason}. Nothing was published."],
+                )
 
         # 2. Obtain client/adapter
         try:
@@ -186,9 +190,15 @@ class GoogleDocsPublisher(ArtifactPublisher):
 
             # 4. Folder Targeting
             target_folder = destination.folder or destination.target
+            folder_error = ""
             if target_folder and hasattr(client, "move_to_folder"):
-                client.move_to_folder(doc_id, target_folder)
-                revision_meta["folder"] = target_folder
+                try:
+                    client.move_to_folder(doc_id, target_folder)
+                    revision_meta["folder"] = target_folder
+                except Exception as exc:  # the document exists; say so rather than "nothing published"
+                    folder_error = f"The document was written but could not be moved to '{target_folder}' " \
+                                   f"({type(exc).__name__}: {exc})."
+                    revision_meta["folder_error"] = folder_error
 
             url = f"https://docs.google.com/document/d/{doc_id}/edit"
 
@@ -196,8 +206,11 @@ class GoogleDocsPublisher(ArtifactPublisher):
             record_dir = context.extra.get("record_dir") if isinstance(context.extra, dict) else None
             if record_dir:
                 rec = approved_record(text_content, title=title, run_id=context.run_id)
+                rec.authorized_sha256 = artifact.authorized_sha256
                 revision_meta["approved_record"] = str(write_record(rec, record_dir))
             status, diagnostics = "SUCCESS", []
+            if folder_error:
+                status, diagnostics = "UNCONFIRMED", [folder_error]
             try:
                 readback_doc = client.get_document(doc_id)
                 verification = verify_readback(
@@ -209,10 +222,11 @@ class GoogleDocsPublisher(ArtifactPublisher):
                 revision_meta["readback_revision"] = readback_doc.get("revisionId")
                 if not verification.verified:
                     status = "UNCONFIRMED"
-                    diagnostics = [f"{f.code}: {f.message}" for f in verification.findings if f.severity == "error"]
+                    diagnostics = diagnostics + [f"{f.code}: {f.message}" for f in verification.findings
+                                                 if f.severity == "error"]
             except Exception as exc:  # could not read back: unconfirmed, not failed and not success
                 status = "UNCONFIRMED"
-                diagnostics = [f"The published document could not be read back ({type(exc).__name__}: {exc}); "
+                diagnostics = diagnostics + [f"The published document could not be read back ({type(exc).__name__}: {exc}); "
                                "publication is unconfirmed."]
 
             return PublishResult(

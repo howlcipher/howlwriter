@@ -252,6 +252,23 @@ def normalize_doi(raw_doi: str) -> str:
     return cleaned.rstrip(".,;)")
 
 
+_DOI_SYNTAX = re.compile(r"^10\.\d{4,9}/[^\s?#]+$")
+
+
+def crossref_works_url(raw_doi: str) -> str | None:
+    """The Crossref works URL for a DOI, or None if the string is not a plain DOI.
+
+    A DOI is data, not a URL: anything that could change the request (a query, a fragment, a
+    dot-segment, whitespace) is refused, and the rest is percent-encoded.
+    """
+    doi = normalize_doi(raw_doi)
+    if not _DOI_SYNTAX.match(doi) or any(part in ("", ".", "..") for part in doi.split("/")):
+        return None
+    from urllib.parse import quote
+
+    return "https://api.crossref.org/works/" + quote(doi, safe="/()-._:;<>@,")
+
+
 @dataclass
 class SourceIntegrityFinding(DataClassSerializationMixin):
     """Integrity evaluation result for a single source."""

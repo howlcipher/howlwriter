@@ -420,7 +420,7 @@ class WritingReport(DataClassSerializationMixin):
             ("Workflow-commentary leakage", self.workflow_leakage_findings),
             ("Genre-convention findings", self.genre_findings),
             ("Citation changes after edit", self.citation_changes_after_edit),
-            ("Sources with instruction-like text", self.sources_with_instruction_like_text),
+            ("Sources w/ embedded instructions", self.sources_with_instruction_like_text),
         ]
         has_metrics = any(v is not None for _, v in metrics)
         if has_metrics:

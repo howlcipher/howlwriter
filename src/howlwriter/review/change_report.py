@@ -18,11 +18,11 @@ from howlwriter.academic.length import count_body_words
 from howlwriter.citations.extract import extract_in_text_citations
 from howlwriter.citations.revalidation import CitationChange, citation_delta, split_body_and_references
 from howlwriter.domain.document import Document
+from howlwriter.domain.sentences import split_sentences
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.review.leakage import detect_leakage
 from howlwriter.review.meaning import MeaningPreservationReviewer
 
-_SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[\"'(\[]?[A-Z0-9])")
 _NUMBER = re.compile(r"\b\d+(?:[.,]\d+)?%?\b")
 NOT_DETERMINABLE = "wording change; the reason cannot be determined from the text alone"
 
@@ -53,7 +53,7 @@ class ChangeReport(DataClassSerializationMixin):
 
 def _sentences(text: str) -> list[str]:
     body, _ = split_body_and_references(text)
-    return [s.strip() for s in _SENTENCE.split(re.sub(r"\s+", " ", body)) if s.strip()]
+    return split_sentences(body)
 
 
 def _cite_keys(sentence: str) -> set[str]:
@@ -92,6 +92,7 @@ def build_change_report(
     max_words: int | None = None,
     identity: str | None = None,
     mode: str | None = None,
+    identities_root: Any = None,
 ) -> ChangeReport:
     before, after = _sentences(original_text), _sentences(revised_text)
     wb, wa = count_body_words(original_text), count_body_words(revised_text)
@@ -131,7 +132,7 @@ def build_change_report(
 
     voice: dict[str, Any] = {"status": "NOT_REQUESTED"}
     if identity:
-        voice = _voice_effect(original_text, revised_text, identity, mode)
+        voice = _voice_effect(original_text, revised_text, identity, mode, identities_root)
 
     changed = bool(changes) or original_text.strip() != revised_text.strip()
     summary = ("No changes." if not changed else
@@ -140,14 +141,17 @@ def build_change_report(
     return ChangeReport(changed, changes, overall.status, cdelta.changes, wb, wa, requirements, voice, summary)
 
 
-def _voice_effect(original: str, revised: str, identity: str, mode: str | None) -> dict[str, Any]:
+def _voice_effect(original: str, revised: str, identity: str, mode: str | None,
+                  identities_root: Any = None) -> dict[str, Any]:
     """Whether the revision moved toward or away from the voice profile. Statuses only; scores
     appear only when both versions were scored."""
     try:
         from howlwriter.evaluation.personal import evaluate_text
 
-        a = evaluate_text(split_body_and_references(original)[0], mode=mode or "academic", identity=identity)
-        b = evaluate_text(split_body_and_references(revised)[0], mode=mode or "academic", identity=identity)
+        a = evaluate_text(split_body_and_references(original)[0], mode=mode or "academic", identity=identity,
+                          identities_root=identities_root)
+        b = evaluate_text(split_body_and_references(revised)[0], mode=mode or "academic", identity=identity,
+                          identities_root=identities_root)
     except Exception as exc:
         return {"status": "UNAVAILABLE", "reason": f"{type(exc).__name__}: {exc}"}
     sa, sb = a["voice_match"].get("score"), b["voice_match"].get("score")

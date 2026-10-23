@@ -229,3 +229,83 @@ class TestVerificationEvidence:
         report = check_package(_package(tmp_path, main=text), providers=_providers(tmp_path))
         assert "LEAK_VERIFICATION_STATUS" in _codes(report)
         assert report.state is not PackageState.READY_FOR_HUMAN_REVIEW
+
+
+def test_a_wrong_doi_printed_in_every_reference_list_is_caught(tmp_path):
+    spec = _package(tmp_path)
+    for name in ("main.md", "reply.md"):
+        _write(tmp_path, name, (tmp_path / name).read_text().replace("example.1", "example.9"))
+    report = check_package(spec, providers=_providers(tmp_path))
+    assert "REFERENCE_IDENTIFIER_DIFFERS" in _codes(report)
+    assert report.state is not PackageState.READY_FOR_HUMAN_REVIEW
+
+
+def test_verified_records_are_compared_with_what_each_document_prints(tmp_path):
+    spec = _package(tmp_path)
+    _write(tmp_path, "reply.md", (tmp_path / "reply.md").read_text().replace("Moreno, D. (2025)", "Moreno, D. (2024)"))
+    report = check_package(spec, providers=_providers(tmp_path))
+    codes = _codes(report)
+    assert "DOCUMENT_DISAGREES_WITH_VERIFIED_RECORD" in codes or "REFERENCE_MISSING_OR_DIFFERENT" in codes
+
+
+class TestHonestRequirements:
+    def test_required_voice_match_without_an_identity_is_unavailable_not_ready(self, tmp_path):
+        spec = _package(tmp_path, extra={"require_voice_match": True})
+        report = check_package(spec, providers=_providers(tmp_path))
+        assert report.state is PackageState.VERIFICATION_UNAVAILABLE
+        assert "VOICE_MATCH_UNAVAILABLE" in _codes(report)
+
+    def test_required_naturalness_when_the_evaluation_raises_is_unavailable(self, tmp_path, monkeypatch):
+        import howlwriter.evaluation.personal as personal
+
+        monkeypatch.setattr(personal, "evaluate_text", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no store")))
+        spec = _package(tmp_path, extra={"require_naturalness": True, "require_voice_match": True, "identity": "someone"})
+        report = check_package(spec, providers=_providers(tmp_path))
+        assert report.state is PackageState.VERIFICATION_UNAVAILABLE and "NATURALNESS_UNAVAILABLE" in _codes(report)
+
+    def test_opting_out_of_citation_verification_is_recorded_as_a_human_decision(self, tmp_path):
+        spec = _package(tmp_path, extra={"require_citation_verification": False})
+        report = check_package(spec, providers=[])
+        assert any("opted out" in d for d in report.human_decisions)
+        assert any(r.status == "NOT_RUN" and "opted out" not in r.check for r in report.verification_records
+                   if r.check == "citation metadata")
+
+    def test_citations_in_the_text_with_no_sources_file_cannot_be_ready(self, tmp_path):
+        spec = _package(tmp_path)
+        spec.pop("sources")
+        report = check_package(spec, providers=_providers(tmp_path))
+        assert "NO_SOURCES" in _codes(report) and report.state is not PackageState.READY_FOR_HUMAN_REVIEW
+
+    def test_no_citations_and_no_sources_is_fine(self, tmp_path):
+        text = "Backups belong inside the risk program because recovery is a business decision for owners."
+        spec = _package(tmp_path, main=text * 3, reply=GOOD + "\n", lo=20)
+        spec.pop("sources")
+        _write(tmp_path, "main.md", text * 3 + "\n")
+        _write(tmp_path, "reply.md", GOOD + "\n")
+        report = check_package(spec, providers=[])
+        assert "NO_SOURCES" not in _codes(report)
+
+    def test_paths_outside_the_package_folder_are_refused(self, tmp_path):
+        import pytest
+
+        spec = _package(tmp_path)
+        spec["deliverables"][0]["path"] = "../../etc/hostname"
+        with pytest.raises(ValueError, match="outside the package folder"):
+            check_package(spec, providers=[])
+
+    def test_a_malformed_deliverable_is_a_clean_error(self, tmp_path):
+        import pytest
+
+        _write(tmp_path, "package.yaml", "deliverables:\n  - just a string\n")
+        with pytest.raises(ValueError, match="deliverable 1"):
+            load_package_spec(tmp_path / "package.yaml")
+
+    def test_an_oversized_file_is_refused(self, tmp_path, monkeypatch):
+        import pytest
+
+        from howlwriter.assignment import package
+
+        spec = _package(tmp_path)
+        monkeypatch.setattr(package, "MAX_FILE_BYTES", 10)
+        with pytest.raises(ValueError, match="larger than"):
+            check_package(spec, providers=[])

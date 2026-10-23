@@ -222,7 +222,7 @@ def test_a_faulty_destination_is_never_reported_as_a_successful_publication(tmp_
         fake = FakeGoogleDocsAdapter()
         setattr(fake, fault, 80 if fault == "truncate_tail_chars" else True)
         art = PublicationArtifact(title="main", content=drafts["main"], format="md", source_run_id="e2e",
-                                  authorized_sha256="n/a", metadata={"status": "READY"})
+                                  authorized_sha256="", metadata={"status": "READY"})
         statuses[fault] = GoogleDocsPublisher(adapter=fake).publish(
             art, PublishDestination(destination_type="google_docs"), PublishContext(run_id="e2e")).status
     assert statuses == {"truncate_tail_chars": "UNCONFIRMED", "duplicate_writes": "UNCONFIRMED"}

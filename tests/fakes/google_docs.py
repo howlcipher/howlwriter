@@ -41,7 +41,7 @@ class FakeGoogleDocsAdapter:
             "body": "",
             "folder": None,
             "requests": [],
-            "revisionId": "rev-1",
+            "revisionId": "rev-0",
         }
         self.documents[doc_id] = doc_record
         return doc_record

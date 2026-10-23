@@ -19,6 +19,7 @@ import enum
 import re
 
 from howlwriter.domain.genres import check_genre_conformance
+from howlwriter.domain.sentences import split_sentences
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.replies.untrusted import InjectionFinding, scan_untrusted
 
@@ -102,7 +103,7 @@ def _content_stems(text: str) -> list[str]:
 
 
 def _sentences(text: str) -> list[str]:
-    return [s.strip() for s in _SENTENCE.split(re.sub(r"\s+", " ", text)) if s.strip()]
+    return split_sentences(text)
 
 
 @dataclass
@@ -179,7 +180,7 @@ def check_reply(
     genre: str = "academic_peer_reply",
 ) -> GroundingReport:
     """Ground a reply against the post(s) it answers."""
-    body = re.split(r"\n\s*(?:#{1,6}\s*|\*\*)\s*(?:references|bibliography)\b", reply, maxsplit=1, flags=re.I)[0]
+    body = re.split(r"\n[ \t]*(?:#{1,6}[ \t]*|\*\*)[ \t]*(?:references|bibliography)\b", reply, maxsplit=1, flags=re.I)[0]
     words = len(re.findall(r"\b[\w'-]+\b", body))
     findings: list[GroundingFinding] = []
 

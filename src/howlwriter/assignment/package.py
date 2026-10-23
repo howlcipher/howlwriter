@@ -42,6 +42,8 @@ from howlwriter.academic.citations import AcademicCitationManager
 from howlwriter.academic.length import count_body_words
 from howlwriter.citations.apa7 import APA7Formatter
 from howlwriter.citations.registry import build_registry
+from howlwriter.citations.extract import extract_in_text_citations
+from howlwriter.citations.revalidation import split_body_and_references
 from howlwriter.citations.verification import (
     CitationState,
     CitationVerification,
@@ -53,6 +55,7 @@ from howlwriter.domain.genres import AcademicGenre, check_genre_conformance, par
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.domain.source import Source, source_from_dict
 from howlwriter.replies.grounding import GroundingState, SourcePost, check_reply
+from howlwriter.research.integrity import normalize_doi
 from howlwriter.review.leakage import detect_leakage
 from howlwriter.review.evidence import (
     DETERMINISTIC,
@@ -136,18 +139,40 @@ def _state_for(findings: list[PackageFinding]) -> PackageState:
     return PackageState.READY_FOR_HUMAN_REVIEW
 
 
+MAX_SPEC_BYTES = 1_000_000
+MAX_FILE_BYTES = 5_000_000
+
+
 def load_package_spec(path: str | Path) -> dict[str, Any]:
     spec_path = Path(path)
+    if spec_path.stat().st_size > MAX_SPEC_BYTES:
+        raise ValueError(f"package spec is larger than {MAX_SPEC_BYTES} bytes")
     raw = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict) or not isinstance(raw.get("deliverables"), list) or not raw["deliverables"]:
         raise ValueError("package spec needs a non-empty 'deliverables' list")
+    for index, entry in enumerate(raw["deliverables"], 1):
+        if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+            raise ValueError(f"deliverable {index} must be a mapping with a 'path'")
     raw["_base"] = str(spec_path.resolve().parent)
     return raw
 
 
 def _resolve(base: str, value: str) -> Path:
-    p = Path(value)
-    return p if p.is_absolute() else Path(base) / p
+    """A path named in the spec, kept inside the spec's own folder.
+
+    A package spec can come from someone else; it must not make the checker read arbitrary files.
+    """
+    root = Path(base).resolve()
+    target = (root / value).resolve()
+    if target != root and root not in target.parents:
+        raise ValueError(f"path '{value}' is outside the package folder")
+    return target
+
+
+def _read(path: Path) -> str:
+    if path.stat().st_size > MAX_FILE_BYTES:
+        raise ValueError(f"'{path.name}' is larger than {MAX_FILE_BYTES} bytes")
+    return path.read_text(encoding="utf-8")
 
 
 def _norm(text: str) -> str:
@@ -169,22 +194,36 @@ def _check_references(text: str, sources: list[Source], deliverable: str) -> lis
         findings.append(PackageFinding(
             LEVEL_BLOCKED, "CITATION_UNRESOLVED",
             f"In-text citation “{raw}” matches no supplied source.", deliverable))
-    lines = [_norm(ln) for ln in _reference_lines(text)]
+    raw_lines = _reference_lines(text)
+    lines = [_norm(ln) for ln in raw_lines]
     formatter = APA7Formatter()
     cited_keys: list[str] = []
     for source in analysis.used_sources:
         entry = _norm(formatter.reference_entry(source).text)
         key = " ".join(entry.split()[:8])  # authors and year lead the entry
         cited_keys.append(key)
-        if lines and not any(ln.startswith(key) or key in ln for ln in lines):
-            findings.append(PackageFinding(
-                LEVEL_REVISE, "REFERENCE_MISSING_OR_DIFFERENT",
-                f"The reference list has no entry matching '{source.title[:50]}' as the source metadata "
-                "formats it.", deliverable))
         if not lines:
             findings.append(PackageFinding(LEVEL_REVISE, "REFERENCE_LIST_MISSING",
                                            "The text cites sources but has no reference list.", deliverable))
             break
+        match = next((raw for raw, ln in zip(raw_lines, lines) if ln.startswith(key) or key in ln), None)
+        if match is None:
+            findings.append(PackageFinding(
+                LEVEL_REVISE, "REFERENCE_MISSING_OR_DIFFERENT",
+                f"The reference list has no entry matching '{source.title[:50]}' as the source metadata "
+                "formats it.", deliverable))
+            continue
+        # The printed identifier must be the source's own: a wrong DOI that resolves is still wrong.
+        printed = match.lower()
+        if source.doi and normalize_doi(source.doi).lower() not in printed:
+            findings.append(PackageFinding(
+                LEVEL_REVISE, "REFERENCE_IDENTIFIER_DIFFERS",
+                f"The reference for '{source.title[:50]}' does not print the source's DOI "
+                f"({normalize_doi(source.doi)}).", deliverable))
+        elif not source.doi and source.url and source.url.rstrip("/").lower() not in printed:
+            findings.append(PackageFinding(
+                LEVEL_REVISE, "REFERENCE_IDENTIFIER_DIFFERS",
+                f"The reference for '{source.title[:50]}' does not print the source's URL.", deliverable))
     for ln in lines:
         if cited_keys and not any(ln.startswith(k) or k in ln for k in cited_keys):
             findings.append(PackageFinding(
@@ -251,7 +290,7 @@ def check_package(
     if spec.get("sources"):
         import json
 
-        raw = json.loads(_resolve(base, spec["sources"]).read_text(encoding="utf-8"))
+        raw = json.loads(_read(_resolve(base, spec["sources"])))
         sources = [source_from_dict(e) for e in (raw["sources"] if isinstance(raw, dict) else raw)]
     require_citations = bool(spec.get("require_citation_verification", bool(sources)))
 
@@ -274,7 +313,7 @@ def check_package(
                                            f"Required deliverable '{did}' does not exist.", did))
             report.findings, report.state = findings, _state_for(findings)
             continue
-        text = path.read_text(encoding="utf-8")
+        text = _read(path)
         texts[did] = text
         words = count_body_words(text)
         report.word_count = words
@@ -297,16 +336,23 @@ def check_package(
             analysis = AcademicCitationManager().analyze_and_build_references(Document.parse(text, title=did), sources)
             for s in analysis.used_sources:
                 cited_sources[s.id] = s
-        elif entry.get("require_citations"):
-            findings.append(PackageFinding(LEVEL_INCOMPLETE, "NO_SOURCES",
-                                           "Citations are required but no sources file was supplied.", did))
+        else:
+            has_citations = bool([c for c in extract_in_text_citations(split_body_and_references(text)[0])
+                                  if c.source_id is None])
+            if entry.get("require_citations") or has_citations:
+                findings.append(PackageFinding(
+                    LEVEL_INCOMPLETE if entry.get("require_citations") else LEVEL_UNAVAILABLE,
+                    "NO_SOURCES",
+                    "The text cites sources but no sources file was supplied, so its citations and reference "
+                    "list cannot be checked." if has_citations else
+                    "Citations are required but no sources file was supplied.", did))
 
         if role == "peer_reply":
             post_spec = entry.get("source_post") or {}
             post_text = ""
             if post_spec.get("path"):
                 pp = _resolve(base, post_spec["path"])
-                post_text = pp.read_text(encoding="utf-8") if pp.is_file() else ""
+                post_text = _read(pp) if pp.is_file() else ""
             post_text = post_text or post_spec.get("text", "")
             if not post_text.strip():
                 findings.append(PackageFinding(
@@ -330,7 +376,7 @@ def check_package(
             op = _resolve(base, entry["original"])
             if op.is_file():
                 result = MeaningPreservationReviewer().compare(
-                    Document.parse(op.read_text(encoding="utf-8"), title="original"),
+                    Document.parse(_read(op), title="original"),
                     Document.parse(text, title=did))
                 report.scores["meaning_preservation"] = result.status
                 if result.status != "PASS":
@@ -344,11 +390,17 @@ def check_package(
                                                "The original to compare against was not found.", did))
                 unavailable.append(f"{did}: meaning preservation (original not found)")
 
-        voice = _evaluate_voice(re.split(r"\n(?:#{1,3}\s*|\*\*\s*)References", text, flags=re.I)[0],
-                                genre, spec.get("identity"))
+        voice = _evaluate_voice(split_body_and_references(text)[0], genre, spec.get("identity"))
         report.scores.update({f"voice.{k}": v for k, v in voice.items()})
-        if voice.get("status") == "UNAVAILABLE":
-            unavailable.append(f"{did}: voice evaluation ({voice.get('reason', '')})")
+        required = [(k, lbl) for k, lbl in (("voice_match", "Personal Voice Match"), ("naturalness", "Human Naturalness"))
+                    if spec.get(f"require_{k}")]
+        if voice.get("status") in ("UNAVAILABLE", "NOT_REQUESTED"):
+            reason = voice.get("reason") or "no voice identity was named in the package"
+            unavailable.append(f"{did}: voice evaluation ({reason})")
+            for kind, label in required:
+                findings.append(PackageFinding(
+                    LEVEL_UNAVAILABLE, f"{kind.upper()}_UNAVAILABLE",
+                    f"{label} is required but cannot be computed ({reason}).", did))
         else:
             for kind, label in (("voice_match", "Personal Voice Match"), ("naturalness", "Human Naturalness")):
                 status = voice.get(f"{kind}_status")
@@ -435,6 +487,16 @@ def check_package(
                 unavailable.append(f"citation metadata for '{v.title[:50]}'")
     elif cited_sources and not require_citations:
         unavailable.append("citation metadata verification (not required by this package)")
+        human.append("Citation metadata was not verified because this package opted out; check the "
+                     "reference list against the sources yourself.")
+        records.append(VerificationRecord(
+            "citation metadata", "howlwriter.citations.verification", EXTERNAL_RECORD, "NOT_RUN", scope="package",
+            evidence="the package set require_citation_verification: false",
+            limitations=["Author, year and edition were not compared with any record."]))
+    elif sources and not cited_sources:
+        records.append(VerificationRecord(
+            "citation metadata", "howlwriter.citations.verification", EXTERNAL_RECORD, PASS, scope="package",
+            evidence="no source is cited in any deliverable, so there is nothing to verify"))
 
     for finding in registry.apply_verifications(verification):
         package_findings.append(PackageFinding(

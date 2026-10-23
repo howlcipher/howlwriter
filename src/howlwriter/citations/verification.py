@@ -25,6 +25,7 @@ import re
 import unicodedata
 from typing import Any, Protocol
 
+from howlwriter.citations.apa7 import _ORG_WORDS, _is_organizational
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.domain.source import Source
 from howlwriter.research.integrity import (
@@ -32,6 +33,7 @@ from howlwriter.research.integrity import (
     SSRFSecurityError,
     _compute_string_similarity,
     _normalize_title,
+    crossref_works_url,
     normalize_doi,
 )
 
@@ -66,6 +68,7 @@ IDENTIFIER_MISMATCH = "CITATION_IDENTIFIER_MISMATCH"
 YEAR_UNCERTAIN = "CITATION_YEAR_UNCERTAIN"
 SOURCE_WITHDRAWN = "CITATION_SOURCE_WITHDRAWN"
 SOURCE_SUPERSEDED = "CITATION_SOURCE_SUPERSEDED"
+EDITION_NOT_STATED = "CITATION_EDITION_NOT_STATED"
 
 
 @dataclass
@@ -169,23 +172,48 @@ def _surname_key(name: str) -> str:
 
 
 def _source_authors(source: Source) -> list[CanonicalAuthor]:
-    """Parse Source.authors into individual/organizational authors.
+    """Parse Source.authors into individual or organizational authors.
 
-    A Source author is "Family, G." for a person and a bare name for an
-    organization; a comma-free multi-word name is treated as an organization
-    only if it has no initials-style given name.
+    Organizations are recognised by the same rules the APA formatter uses to leave them
+    uninverted. "Family, G." and "Given Family" are people.
     """
     parsed: list[CanonicalAuthor] = []
     for raw in source.authors:
         raw = raw.strip()
         if not raw:
             continue
-        if "," in raw:
+        if _is_organizational(raw) or any(t.strip('()[]{}:;,"\'').lower() in _ORG_WORDS for t in raw.split()):
+            parsed.append(CanonicalAuthor(organization=raw))
+        elif "," in raw:
             family, _, given = raw.partition(",")
             parsed.append(CanonicalAuthor(family=family.strip(), given=given.strip()))
         else:
-            parsed.append(CanonicalAuthor(organization=raw))
+            tokens = raw.split()
+            if len(tokens) == 1 or len(tokens) > 4:
+                parsed.append(CanonicalAuthor(organization=raw))
+            else:
+                parsed.append(CanonicalAuthor(family=tokens[-1], given=" ".join(tokens[:-1])))
     return parsed
+
+
+def _initial(given: str) -> str:
+    folded = _ascii_fold(given).lower()
+    m = re.search(r"[a-z]", folded)
+    return m.group(0) if m else ""
+
+
+def _org_tokens(name: str) -> frozenset[str]:
+    return frozenset(_normalize_title(name).split())
+
+
+def _same_organization(a: str, b: str) -> bool:
+    """Token overlap, not substring: "Institute" is not "National Institute of Standards"."""
+    ta, tb = _org_tokens(a), _org_tokens(b)
+    return bool(ta and tb) and len(ta & tb) / len(ta | tb) >= 0.75
+
+
+_ORDINAL_WORDS = {w: i for i, w in enumerate(
+    ('first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'), 1)}
 
 
 def edition_tokens(*texts: str, doi: str = "") -> set[str]:
@@ -204,6 +232,11 @@ def edition_tokens(*texts: str, doi: str = "") -> set[str]:
             tokens.add("update" + upd.group(1))
         for ver in re.finditer(r"\b(\d+\.\d+(?:\.\d+)*)\b", text):
             tokens.add(ver.group(1))
+        for ordinal in re.finditer(r"\b(\d+)(?:st|nd|rd|th)\s+ed(?:ition|\.)?", text, re.IGNORECASE):
+            tokens.add("ed" + ordinal.group(1))
+        for word in re.finditer(r"\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+ed(?:ition|\.)?",
+                                text, re.IGNORECASE):
+            tokens.add("ed" + str(_ORDINAL_WORDS[word.group(1).lower()]))
     if doi:
         for rev in re.finditer(r"(?<=\d)r(\d+)(?![\d.])", doi, re.IGNORECASE):
             tokens.add("rev" + rev.group(1))
@@ -264,6 +297,14 @@ def _compare_to_record(source: Source, record: CanonicalRecord) -> list[Citation
         elif cited_kind == "individual":
             cited_keys = [_surname_key(a.family) for a in cited]
             record_keys = [_surname_key(a.family) for a in record.authors]
+            if cited_keys == record_keys:
+                for c_author, r_author in zip(cited, record.authors):
+                    ci, ri = _initial(c_author.given), _initial(r_author.given)
+                    if ci and ri and ci != ri:
+                        findings.append(CitationFinding(
+                            AUTHOR_MISMATCH, "authors",
+                            f"Given name or initial differs for {c_author.family}: cited "
+                            f"'{c_author.given}' vs {where} '{r_author.given}'.", "error", where))
             if cited_keys != record_keys:
                 missing = [k for k in record_keys if k not in cited_keys]
                 extra = [k for k in cited_keys if k not in record_keys]
@@ -278,10 +319,8 @@ def _compare_to_record(source: Source, record: CanonicalRecord) -> list[Citation
                     AUTHOR_MISMATCH, "authors",
                     f"Author list differs from {where} ({'; '.join(detail)}).", "error", where))
         else:
-            cited_orgs = {_normalize_title(a.organization) for a in cited}
-            record_orgs = {_normalize_title(a.organization) for a in record.authors}
-            if cited_orgs.isdisjoint(record_orgs) and not any(
-                    c in r or r in c for c in cited_orgs for r in record_orgs):
+            if not any(_same_organization(c.organization, r.organization)
+                       for c in cited for r in record.authors):
                 findings.append(CitationFinding(
                     AUTHOR_MISMATCH, "authors",
                     f"Organizational author differs from {where}.", "error", where))
@@ -301,6 +340,11 @@ def _compare_to_record(source: Source, record: CanonicalRecord) -> list[Citation
             EDITION_MISMATCH, "edition",
             f"Edition markers differ: cited {sorted(cited_ed)} vs {where} {sorted(record_ed)}.",
             "error", where))
+    elif record_ed and not cited_ed:
+        findings.append(CitationFinding(
+            EDITION_NOT_STATED, "edition",
+            f"The citation states no edition, but {where} identifies this work as {sorted(record_ed)}.",
+            "warning", where))
 
     # Title.
     if source.title and record.title:
@@ -355,6 +399,7 @@ def _missing_fields(source: Source) -> list[str]:
     return missing
 
 
+_REVIEW_ONLY_CODES = {EDITION_NOT_STATED}
 _DEPENDENT_CODES = {IDENTIFIER_MISMATCH, AUTHOR_MISMATCH, AUTHOR_TYPE_MISMATCH, YEAR_MISMATCH, EDITION_MISMATCH,
                     TITLE_MISMATCH, DOI_MISMATCH}
 
@@ -397,35 +442,43 @@ def _decide(
     per_record = {id(r): _compare_to_record(source, r) for r in records}
     for r in records:
         findings.extend(_thin_record_notes(r))
-    top_rank = max(_AUTHORITY_RANK.get(r.authority, 0) for r in records)
-    top = [r for r in records if _AUTHORITY_RANK.get(r.authority, 0) == top_rank]
-    top_findings = [f for r in top for f in per_record[id(r)]]
-    lower = [r for r in records if r not in top]
+
+    def rank(r: CanonicalRecord) -> int:
+        return _AUTHORITY_RANK.get(r.authority, 0)
+
+    # The most authoritative record *for each field* decides that field. A publisher record that
+    # states no year cannot vouch for a year; the best record that does state it decides.
+    field_rank = {fld: max((rank(r) for r in records if _has_field(r, fld)), default=0) for fld in _FIELDS}
+    review_findings = [f for r in records for f in per_record[id(r)] if f.code in _REVIEW_ONLY_CODES]
+    decisive = [(r, f) for r in records for f in per_record[id(r)]
+                if f.code not in _REVIEW_ONLY_CODES and rank(r) == field_rank.get(f.field, 0)]
+    top_findings = [f for _, f in decisive]
+    top_names = sorted({r.provider for r, _ in decisive})
+    disputed_fields = {f.field for f in top_findings}
 
     # Do the records disagree among themselves on a field the citation depends on?
     conflicts: list[CitationFinding] = []
-    for r in lower:
+    for r in records:
         for f in per_record[id(r)]:
-            if f.code in _DEPENDENT_CODES and f.code not in {x.code for x in top_findings}:
+            if (f.code in _DEPENDENT_CODES and f.code not in _REVIEW_ONLY_CODES
+                    and rank(r) < field_rank.get(f.field, 0) and f.code not in {x.code for x in top_findings}):
                 conflicts.append(CitationFinding(
                     RECORDS_CONFLICT, f.field,
-                    f"{r.provider} disagrees with the citation on {f.field}, but the "
-                    f"higher-authority record ({top[0].provider}) agrees with it: {f.message}",
-                    "info", r.provider))
+                    f"{r.provider} disagrees with the citation on {f.field}, but a higher-authority record "
+                    f"agrees with it: {f.message}", "info", r.provider))
 
     if top_findings:
-        # The most authoritative records disagree with the citation.
-        # If a lower-authority record agrees with the citation on the disputed field,
-        # the authorities conflict, so human judgment is required.
-        disputed = {f.code for f in top_findings}
-        agreeing = [r for r in lower if not ({f.code for f in per_record[id(r)]} & disputed)]
+        # If a lower-authority record agrees with the citation on a disputed field, the
+        # authorities conflict, so human judgment is required.
+        agreeing = [r for r in records
+                    if any(_has_field(r, fld) and rank(r) < field_rank[fld] for fld in disputed_fields)
+                    and not any(f.field in disputed_fields for f in per_record[id(r)])]
         findings.extend(top_findings)
         if agreeing:
             findings.append(CitationFinding(
                 RECORDS_CONFLICT, "records",
                 "Records disagree: " + ", ".join(r.provider for r in agreeing)
-                + " support the citation but " + ", ".join(r.provider for r in top) + " do not.",
-                "warning"))
+                + " support the citation but " + ", ".join(top_names) + " do not.", "warning"))
             state = CitationState.NEEDS_REVIEW
         else:
             state = CitationState.MISMATCH
@@ -473,8 +526,31 @@ def _decide(
             + ".", "warning"))
         return CitationVerification(source.id, source.title, CitationState.NEEDS_REVIEW, findings, records,
                                     _resolved_fields(source, records))
+    if review_findings:
+        findings.extend(review_findings)
+        return CitationVerification(source.id, source.title, CitationState.NEEDS_REVIEW, findings, records,
+                                    _resolved_fields(source, records))
     return CitationVerification(source.id, source.title, CitationState.VERIFIED, findings, records,
                                 _resolved_fields(source, records))
+
+
+_FIELDS = ("authors", "publication_date", "title", "edition", "identifier", "doi")
+
+
+def _has_field(record: CanonicalRecord, fld: str) -> bool:
+    if fld == "authors":
+        return bool(record.authors)
+    if fld == "publication_date":
+        return record.year is not None
+    if fld == "title":
+        return bool(record.title)
+    if fld == "edition":
+        return bool(edition_tokens(record.edition, record.title, doi=record.doi))
+    if fld == "identifier":
+        return bool(record.identifier)
+    if fld == "doi":
+        return bool(record.doi)
+    return False
 
 
 def _resolved_fields(source: Source, records: list[CanonicalRecord]) -> dict[str, dict[str, Any]]:
@@ -537,7 +613,7 @@ def _record_from_dict(entry: dict) -> CanonicalRecord:
     authors = [CanonicalAuthor(**a) for a in entry.get("authors", [])]
     return CanonicalRecord(
         provider=entry.get("provider", "records-file"),
-        authority=entry.get("authority", AUTHORITY_PUBLISHER),
+        authority=entry.get("authority", AUTHORITY_REGISTRY),
         title=entry.get("title", ""),
         authors=authors,
         year=entry.get("year"),
@@ -563,8 +639,9 @@ class CrossrefProvider:
     def fetch(self, source: Source) -> CanonicalRecord | None:
         if not source.doi:
             return None
-        doi = normalize_doi(source.doi)
-        url = f"https://api.crossref.org/works/{doi}"
+        url = crossref_works_url(source.doi)
+        if url is None:
+            return None  # not a DOI; no request is made
         headers = {"User-Agent": "HowlWriter-CitationVerification/1.0"}
         try:
             with self._verifier._build_client() as client:
@@ -622,7 +699,12 @@ def verify_sources(
 
 
 def worst_state(results: list[CitationVerification]) -> CitationState:
-    """Aggregate: MISMATCH > NEEDS_REVIEW > INCOMPLETE > UNVERIFIABLE > VERIFIED."""
+    """Aggregate: MISMATCH > NEEDS_REVIEW > INCOMPLETE > UNVERIFIABLE > VERIFIED.
+
+    Nothing to aggregate is not "verified": an empty list is UNVERIFIABLE.
+    """
+    if not results:
+        return CitationState.UNVERIFIABLE
     order = [CitationState.MISMATCH, CitationState.NEEDS_REVIEW, CitationState.INCOMPLETE,
              CitationState.UNVERIFIABLE, CitationState.VERIFIED]
     for state in order:

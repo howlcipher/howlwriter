@@ -123,7 +123,7 @@ _PAPER_REGISTER = re.compile(
     r"\b(?:this\s+(?:paper|essay|study|report)\s+(?:will|examines|argues|explores)|in\s+conclusion|"
     r"the\s+remainder\s+of\s+this|in\s+summary,|to\s+summari[sz]e,)", re.IGNORECASE)
 _HEADING = re.compile(r"^\s*#{1,6}\s+\S", re.MULTILINE)
-_REFERENCES_HEADING = re.compile(r"^\s*(?:#{1,6}\s*|\*\*)\s*(?:references|bibliography)\b", re.IGNORECASE | re.MULTILINE)
+_REFERENCES_HEADING = re.compile(r"^[ \t]*(?:#{1,6}[ \t]*|\*\*)[ \t]*(?:references|bibliography)\b", re.IGNORECASE | re.MULTILINE)
 
 
 @dataclass

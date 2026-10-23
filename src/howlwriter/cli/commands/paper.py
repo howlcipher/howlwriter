@@ -347,7 +347,9 @@ def run(args: argparse.Namespace) -> int:
             if pub.url:
                 print(f"  URL:         {pub.url}")
         else:
-            print(f"  Status: FAILED")
+            print(f"  Status: {pub.status}")
+            if pub.status == "UNCONFIRMED" and pub.url:
+                print(f"  The document exists but is not confirmed: {pub.url}")
             for diag in pub.diagnostics:
                 print(f"  - {diag}")
 

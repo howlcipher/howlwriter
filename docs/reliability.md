@@ -17,12 +17,16 @@ howlwriter citations verify sources.json --records publisher-records.json --json
 howlwriter citations verify sources.json --offline --records publisher-records.json
 ```
 
-Records come from providers. A **publisher** record (the issuing body's own page
+Records come from providers. The most authoritative record *for each field* decides
+that field: a publisher record that states no year cannot vouch for a year, so the
+best record that does state it decides. A **publisher** record (the issuing body's own page
 or document cover) outranks a **registry** record (Crossref), because registries
 are often thin or date a revision by its update year. Records you supply with
 `--records` are JSON; see `tests/fixtures/citations/canonical_records.json` for
 the fields (`provider`, `authority`, `year`, `year_source`, `identifier`, `dates`,
-`status`, `authors`, `title`, `doi`, `edition`).
+`status`, `authors`, `title`, `doi`, `edition`). A record that omits `authority` is
+treated as a registry record, so a hand-written file cannot outrank Crossref by
+accident. `year_source` is a label you assert; nothing extracts it from a document.
 
 | State | Meaning |
 | --- | --- |
@@ -44,10 +48,19 @@ Rules that matter:
   `MISMATCH`.
 - **Verified metadata is not claim support.** `VERIFIED` says the bibliographic
   data matches; it says nothing about whether the source backs any claim.
+- Authors are compared by surname, in order, and by given-name initial when both
+  sides give one; organizations match by name tokens, not by substring. A citation
+  that states no edition when the record identifies one is `NEEDS_REVIEW`.
+- An empty sources file is an error (exit 1): nothing was verified.
+- The Crossref request is built only from a plain DOI; a string containing a
+  query, fragment, dot-segment or whitespace makes no request.
 - Exit code 0 only when every citation is `VERIFIED`; 3 otherwise.
 
 `paper --verify-sources --records FILE` runs the same comparison on the sources a
-paper cites. A `MISMATCH` makes the paper `BLOCKED`; any other state other than
+paper cites. Unlike `citations verify`, `paper --verify-sources` has no `--offline`
+mode and always contacts Crossref in addition to your records. `citations verify
+--check-links` also probes each DOI and URL with the SSRF-safe integrity verifier
+(`--timeout` sets its limit). A `MISMATCH` makes the paper `BLOCKED`; any other state other than
 `VERIFIED` makes it `NEEDS_REVIEW`.
 
 Example from a real case: NIST SP 800-161 Rev. 1 Update 1 carries a "How to Cite"
@@ -126,7 +139,7 @@ kept apart).
 | `INCOMPLETE` | A required deliverable, or evidence needed to check one (the post a reply answers), is missing. |
 | `NEEDS_REVISION` | A check found something to fix. |
 | `VERIFICATION_UNAVAILABLE` | A required check could not run (a provider was unreachable, no record source was configured). Not a pass. |
-| `READY_FOR_HUMAN_REVIEW` | Every required check ran and passed. A person still reads it. |
+| `READY_FOR_HUMAN_REVIEW` | Every *required* check ran and passed. A person still reads it. A check the package opted out of (`require_citation_verification: false`) is listed in `unavailable_checks` and `human_decisions`, not hidden. |
 
 These sit alongside the `paper` pipeline's `READY`/`NEEDS_REVIEW`/`BLOCKED` and
 `project validate`'s `READY_FOR_HUMAN_REVIEW`; they are not a replacement. Exit 0
@@ -135,6 +148,12 @@ only for `READY_FOR_HUMAN_REVIEW`; 3 otherwise. The JSON report lists
 saw, its status and its limits. A statement in a document or a model reply that
 something "was verified" is not evidence and does not change a result;
 semantic-review independence is stated only from recorded providers.
+
+`require_voice_match` and `require_naturalness` make an unavailable score (no
+identity named, no built profile, a document too short) `VERIFICATION_UNAVAILABLE`.
+Citations in a deliverable with no `sources` file are `VERIFICATION_UNAVAILABLE`
+too. Paths in a package spec must stay inside the spec's folder, and files over
+5 MB are refused.
 
 Scores such as Human Naturalness and Personal Voice Match are reported when
 HowlWriter can compute them. A short post (under 300 words for Voice Match, 250
@@ -157,7 +176,12 @@ voice effect only when both versions can be scored.
 
 The Google Docs publisher:
 
-1. refuses content that differs from the artifact's approved SHA-256;
+1. refuses content that differs from the artifact's approved SHA-256. The check
+   fails closed: a hash that is present but malformed is refused, and an empty
+   hash means nothing was asserted. The `publish` command and the web route hash
+   the same text they send, so there the check guards against corruption between
+   hashing and sending, not against a different approval; it is meaningful when a
+   pipeline approves text and publishes it later (`paper --publish`);
 2. for an update, writes only against the revision it read, re-checks that
    revision immediately before writing and relies on the destination to refuse a
    stale write, so a collaborator's edit is reported (`CONFLICT`) and never
@@ -166,13 +190,37 @@ The Google Docs publisher:
    citations, reference entries, the end of the text and the word count, and
    notes Markdown shown literally or elements the destination cannot carry;
 4. keeps a record of the approved artifact (hash, words, citations) beside the
-   local deliverables.
+   local deliverables. Only `paper --publish` supplies that location and the length
+   limits for the read-back; `publish` and the web route confirm content,
+   citations, references and ending but do not know your word limits.
+
+The read-back compares the paragraph sequence exactly: a missing, altered, merged,
+reordered, duplicated or extra paragraph (short ones included), a changed
+reference entry or a truncated end is `UNCONFIRMED`. Appending to an existing
+document requires the approved paragraphs to appear in order and the prior text to
+survive.
 
 `SUCCESS` means the destination confirmed the content. `UNCONFIRMED` means it was
 written but the read-back did not match, or could not be done. `CONFLICT` means
 nothing was written because the document changed. `FAILED` means nothing was
 published. Publishing still requires the existing owner authorization, and
-`replace` no longer asks the Docs API to delete the document's final newline.
+`replace` no longer asks the Docs API to delete the document's final newline. A
+folder move that fails after the write reports `UNCONFIRMED` (the document exists),
+not "nothing published". `publish --update-doc` now needs a destination that
+reports a revision id and accepts a revision-guarded write; one that does not is
+refused instead of written unguarded. The CLI, `paper` and the web response show
+the real status.
+
+## Untrusted text
+
+Peer posts, retrieved source text and documents under review go into prompts
+fenced as quoted data: every line is prefixed, delimiters, code fences and
+hidden or control characters are removed or defanged, and the label is a short
+identifier. Titles, authors and ids from retrieval are reduced to one plain line.
+Scanning folds compatibility characters, joiners and common lookalike letters, and
+is bounded in time and size. It is a tripwire, not a guarantee: leetspeak,
+other languages and encoded payloads are not detected. The fence and the standing
+rule are the defense; a reply that repeats an embedded instruction is flagged.
 
 ## What is not covered
 

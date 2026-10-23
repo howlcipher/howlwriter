@@ -54,6 +54,9 @@ def run_verify(args: argparse.Namespace) -> int:
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    if not sources:
+        print("error: the sources file lists no sources, so there is nothing to verify", file=sys.stderr)
+        return 1
     integrity = SourceIntegrityVerifier(timeout_seconds=args.timeout)
     if not args.offline:
         providers.append(CrossrefProvider(integrity))

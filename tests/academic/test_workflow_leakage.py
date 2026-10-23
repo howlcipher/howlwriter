@@ -125,3 +125,25 @@ def test_verify_sources_compares_citation_metadata_with_authoritative_records(tm
 def test_without_verify_sources_citation_metadata_is_reported_as_not_checked(tmp_path, monkeypatch):
     result = _run(tmp_path, monkeypatch, "Delegated authorization is the stronger control.")
     assert result.report.citation_metadata_status is None
+
+
+def test_an_edit_that_drops_a_citation_holds_the_paper_at_the_pipeline_level(tmp_path, monkeypatch):
+    """The transformation step (humanizing or safe rewriting) may not silently remove a citation."""
+    from howlwriter.academic import pipeline as pipeline_module
+    from howlwriter.domain.document import Document
+
+    real_rewrite = pipeline_module.SafeRewriter.rewrite
+
+    def dropping_rewrite(self, document, config):
+        result = real_rewrite(self, document, config)
+        result.document = Document.parse(result.document.text.replace(" (Oladimeji, 2025)", ""),
+                                         title=result.document.title, mode=result.document.mode)
+        return result
+
+    clean = _run(tmp_path, monkeypatch, "Delegated authorization is the stronger control.")
+    assert clean.report.citation_changes_after_edit == 0 and clean.report.status == "READY"
+
+    monkeypatch.setattr(pipeline_module.SafeRewriter, "rewrite", dropping_rewrite)
+    edited = _run(tmp_path, monkeypatch, "Delegated authorization is the stronger control.")
+    assert edited.report.citation_changes_after_edit >= 1
+    assert edited.report.status == "NEEDS_REVIEW"

@@ -75,3 +75,30 @@ def test_api_publish_success(tmp_path: Path):
     assert data["success"] is True
     assert data["document_id"] is not None
     assert "docs.google.com" in data["document_url"]
+
+
+def test_api_publish_of_a_file_with_windows_line_endings_is_not_refused_as_changed(tmp_path: Path):
+    # The approval hash must describe the text that is published, not the raw bytes the platform decoded.
+    fake = FakeGoogleDocsAdapter()
+    pub = GoogleDocsPublisher(adapter=fake)
+    register_publisher("google_docs", pub)
+    register_publisher("google-docs", pub)
+    doc_path = tmp_path / "crlf.md"
+    doc_path.write_bytes(b"# Report\r\n\r\nAll tests passed on the second run today.\r\n")
+    res = client.post("/api/publish", json={"file_path": str(doc_path), "destination": "google-docs",
+                                            "allow_unverified": True})
+    data = res.json()
+    assert data["success"] is True and data["status"] == "SUCCESS"
+
+
+def test_api_publish_reports_the_real_status_when_the_destination_does_not_confirm(tmp_path: Path):
+    fake = FakeGoogleDocsAdapter()
+    fake.truncate_tail_chars = 20
+    pub = GoogleDocsPublisher(adapter=fake)
+    register_publisher("google_docs", pub)
+    register_publisher("google-docs", pub)
+    doc_path = tmp_path / "doc.md"
+    doc_path.write_text("# Report\n\nAll of these tests passed on the second run today without incident.", encoding="utf-8")
+    data = client.post("/api/publish", json={"file_path": str(doc_path), "destination": "google-docs",
+                                             "allow_unverified": True}).json()
+    assert data["success"] is False and data["status"] == "UNCONFIRMED" and data["document_id"]
