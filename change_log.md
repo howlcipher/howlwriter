@@ -1,6 +1,6 @@
 # Change Log
 
-## Unreleased
+## 0.1.1
 
 * `citations verify` compares each source's authors, year, edition, title, DOI and identifier with canonical records (publisher records outrank registry records) and reports `VERIFIED`, `MISMATCH`, `INCOMPLETE`, `UNVERIFIABLE` or `NEEDS_REVIEW`; a provider outage is never a wrong citation, a year the records disagree about needs the publisher's own cite-as year, and verified metadata is never claim support. `paper --verify-sources --records` applies it to the cited sources.
 * Citations are re-checked after editing: dropped, added or changed citations and orphaned or missing references hold a `paper` for review.
