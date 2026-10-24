@@ -1,6 +1,6 @@
 # Change Log
 
-## Unreleased
+## 0.1.1
 
 * Pin the `plane` extra and the real integration CI checkout to reviewed HowlPlane `4ba3e71`, including malformed-state exit and published Frame artifact compatibility corrections. The CI checkout previously followed moving `main` despite being labeled pinned; it now tests the same immutable revision the extra installs.
 
