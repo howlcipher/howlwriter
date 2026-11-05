@@ -188,6 +188,28 @@ def test_repetitive_mini_conclusion_detected_when_configured():
     assert rules.AI_STYLE_REPETITIVE_MINI_CONCLUSION in codes
 
 
+def test_repetitive_paragraph_structure_ignores_figure_captions():
+    config = HowlWriterConfig(banned_patterns=["repetitive_paragraph_structure"])
+    text = (
+        "Figure 1. Sysmon Event ID 1 in Kibana Discover.\n\n"
+        "Figure 2. Windows Security Event ID 4720 in Kibana Discover.\n\n"
+        "Figure 3. Windows Security Event ID 4732 in Kibana Discover."
+    )
+    codes = _codes(text, config)
+    assert rules.AI_STYLE_REPETITIVE_PARAGRAPH_STRUCTURE not in codes
+
+
+def test_repetitive_paragraph_structure_flags_repeated_prose_openers():
+    config = HowlWriterConfig(banned_patterns=["repetitive_paragraph_structure"])
+    text = (
+        "Furthermore, the system failed.\n\n"
+        "Furthermore, logs were lost.\n\n"
+        "Furthermore, recovery took hours."
+    )
+    codes = _codes(text, config)
+    assert rules.AI_STYLE_REPETITIVE_PARAGRAPH_STRUCTURE in codes
+
+
 def test_paragraph_length_symmetry_detected_when_configured():
     config = HowlWriterConfig(banned_patterns=["paragraph_length_symmetry"])
     text = "A b c. D e f.\n\nG h i. J k l.\n\nM n o. P q r.\n\nS t u. V w x."

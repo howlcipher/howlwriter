@@ -84,8 +84,13 @@ def _ensure_howlplane_on_path() -> None:
         _add_checkout(explicit, first=True)
         return
     fallback = howlplane_root_from_env()
-    if fallback and importlib.util.find_spec("howlplane") is None:
-        _add_checkout(fallback, first=False)
+    if fallback:
+        try:
+            spec = importlib.util.find_spec("howlplane")
+        except (ValueError, AttributeError):
+            spec = None
+        if spec is None:
+            _add_checkout(fallback, first=False)
 
 
 #: Why HowlPlane could not be imported although it was found (a missing dependency

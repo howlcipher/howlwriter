@@ -41,6 +41,12 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
         help="Target folder name or ID in destination (e.g. cloud storage folder ID).",
     )
     parser.add_argument(
+        "--out",
+        dest="out",
+        default=None,
+        help="Target file or directory path for local / plain-text publishing.",
+    )
+    parser.add_argument(
         "--update-doc",
         dest="update_doc_id",
         default=None,
@@ -98,11 +104,11 @@ def run(args: argparse.Namespace) -> int:
 
     dest = PublishDestination(
         destination_type=args.destination,
-        target=args.folder or title,
+        target=args.out or args.folder or title,
         folder=args.folder,
         update_doc_id=args.update_doc_id,
         update_mode=args.update_mode,
-        metadata={"title": title},
+        metadata={"title": title, "out": args.out},
     )
 
     ctx = PublishContext(

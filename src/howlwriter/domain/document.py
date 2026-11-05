@@ -28,7 +28,9 @@ _SENTENCE_BOUNDARY = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(])")
 _ABBREVIATION_END = re.compile(
     r"(?:(?:^|\s|\()(?:[A-Za-z]\.){2,}"
     r"|\b(?:e\.g|i\.e|cf|vs|etc|Dr|Mr|Mrs|Ms|Prof|No|Nos|Fig|Vol|St|Inc|Ltd|Co"
-    r"|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept|Sep|Oct|Nov|Dec)\.)$"
+    r"|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept|Sep|Oct|Nov|Dec)\."
+    r"|(?:\n|^)\s*\(?\d{1,2}[\.\)]"
+    r")$"
 )
 
 

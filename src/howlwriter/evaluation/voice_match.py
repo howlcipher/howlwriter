@@ -549,10 +549,22 @@ def score_voice_match(
             )
 
     if words < MIN_WORDS:
-        report.reason = (
-            f"document has {words} words; a voice-match score needs at least {MIN_WORDS} "
-            "because shorter samples vary too much to rank"
-        )
+        if words >= 100:
+            report.confidence = "DIAGNOSTIC_ONLY"
+            report.confidence_basis = (
+                f"short-form sample ({words} words); stylistic distances computed descriptively "
+                f"with reduced confidence (below {MIN_WORDS} words)"
+            )
+            report.reason = (
+                f"document has {words} words; a voice-match score needs at least {MIN_WORDS} "
+                "because shorter samples vary too much to rank (DIAGNOSTIC_ONLY reported)"
+            )
+        else:
+            report.confidence = "UNAVAILABLE"
+            report.reason = (
+                f"document has {words} words; a voice-match score needs at least {MIN_WORDS} "
+                "because shorter samples vary too much to rank"
+            )
         return report
     leak = contamination(TextFingerprint.of(text), calibration)
     if leak:

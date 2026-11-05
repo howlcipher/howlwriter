@@ -25,6 +25,10 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
     )
     parser.add_argument("--json", action="store_true", help="Emit findings as JSON.")
     parser.add_argument(
+        "--platform", default=None, metavar="PLATFORM",
+        help="Check the text against platform conventions (e.g. 'linkedin'). Reports only; never edits.",
+    )
+    parser.add_argument(
         "--genre", default=None, metavar="GENRE",
         help="Check the text against an academic genre's conventions: academic_discussion, "
         "academic_peer_reply or academic_research_paper. Reports only; never edits.",
@@ -58,6 +62,10 @@ def run(args: argparse.Namespace) -> int:
                       sentence_index=f.sentence_index, severity=f.severity)
             for f in detect_leakage(text)
         ]
+    if args.platform:
+        from howlwriter.linting.platforms import check_platform_rules
+
+        matches = matches + check_platform_rules(text, args.platform)
 
     if args.json:
         print(json.dumps([m.to_dict() for m in matches], indent=2))
