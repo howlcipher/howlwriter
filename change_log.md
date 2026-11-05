@@ -1,5 +1,13 @@
 # Change Log
 
+## Unreleased
+
+* Fix PDF fallback data loss after column 80 by using ReportLab Platypus wrapping and pagination. Preserve headings, tables, captions, local figures, explicit page breaks, and page numbers. Include ReportLab in the PDF extra and report fallback failures.
+* Embed local Markdown figures and explicit page breaks in DOCX and Chromium PDF output. Close Chromium on rendering errors. Add regression coverage for long prose/code, tables, captions, figures, page breaks, and missing-image failures.
+* Preserve fenced command lines in DOCX without Markdown fragments. Keep fallback PDF title-page metadata in the body font and avoid single-line paragraph widows/orphans.
+* Set DOCX title and author metadata from the rendering context instead of retaining package defaults.
+* Protect literal inline-code wildcards from Markdown emphasis in PDF/HTML rendering; cover the exact query text in regression tests.
+
 ## 0.1.1
 
 * `citations verify` compares each source's authors, year, edition, title, DOI and identifier with canonical records (publisher records outrank registry records) and reports `VERIFIED`, `MISMATCH`, `INCOMPLETE`, `UNVERIFIABLE` or `NEEDS_REVIEW`; a provider outage is never a wrong citation, a year the records disagree about needs the publisher's own cite-as year, and verified metadata is never claim support. `paper --verify-sources --records` applies it to the cited sources.

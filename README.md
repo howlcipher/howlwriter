@@ -149,6 +149,13 @@ See [docs/architecture.md](docs/architecture.md) for the full walkthrough.
 - Local web application (FastAPI + React) with source/claim/verification and publishing UI
 - Deterministic local output management under `output/` with path-traversal prevention, collision safety, and `publication-manifest.json`
 - Multi-format deliverable renderers: Markdown with frontmatter, APA 7 DOCX (running head, hanging indents, tables, hyperlinks), PDF (Playwright headless Chromium with ReportLab fallback), and `CombinedDocument` for multi-section assignments
+  PDF exports fall back to ReportLab Platypus when Chromium is unavailable, with wrapped prose,
+  headings, tables, local Markdown figures, and explicit `<!-- pagebreak -->` blocks.
+  DOCX also embeds local Markdown figures, preserves fenced command lines, and honors those page breaks. For relative
+  figure paths, pass `RenderContext(metadata={"asset_base_dir": "/path/to/manuscript"})`.
+  The fallback uses standard PDF Times, Helvetica, or Courier fonts; it does not promise
+  pixel parity with Chromium or substitute evidence for missing image files.
+
 - Source and citation integrity verification (`howlwriter sources verify`) with per-hop redirect SSRF defense (blocking private/loopback/cloud-metadata IPs, loop detection, hop limits), socket peer IP verification against DNS rebinding, bounded streaming retrieval (capped at 1 MiB for HTML, uninspected for binaries), and Crossref DOI metadata matching with hybrid title similarity
 - Semantic source authority classification (`PRIMARY_LAW`, `STANDARD`, `GOVERNMENT`, `SCHOLARLY`, `VENDOR_PRIMARY`, etc.) and context-sensitive topic prioritization
 - Destination-neutral artifact publishing architecture with human authority gating, and native Google Docs publishing (`howlwriter google auth/status/logout`, `howlwriter publish`) with narrow scopes and plain-text replace/append modes (these do not preserve tables, images or formatting in an existing document)
