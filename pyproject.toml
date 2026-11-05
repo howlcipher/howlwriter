@@ -55,6 +55,7 @@ docx = [
 ]
 pdf = [
     "playwright>=1.40,<2.0",
+    "reportlab>=4.0,<6.0",
 ]
 gdocs = [
     "google-api-python-client>=2.100.0",

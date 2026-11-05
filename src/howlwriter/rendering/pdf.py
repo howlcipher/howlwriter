@@ -24,6 +24,36 @@ def _markdown_to_html(markdown_text: str, title: str, context: RenderContext) ->
         lines = block.split("\n")
         first = lines[0].strip()
 
+        if first == "<!-- pagebreak -->":
+            html_parts.append('<div style="break-before:page"></div>')
+            continue
+
+        figure = re.fullmatch(r"!\[([^\]]*)\]\(([^)]+)\)", block)
+        if figure:
+            import base64
+            import mimetypes
+            from pathlib import Path
+
+            image_path = Path(figure[2])
+            if not image_path.is_absolute():
+                image_path = Path(context.metadata.get("asset_base_dir", ".")) / image_path
+            image_path = image_path.resolve(strict=True)
+            mime = mimetypes.guess_type(image_path.name)[0]
+            if mime not in {"image/png", "image/jpeg", "image/gif", "image/webp"}:
+                raise ValueError("PDF figures must be PNG, JPEG, GIF, or WebP")
+            data = base64.b64encode(image_path.read_bytes()).decode("ascii")
+            html_parts.append(
+                f'<img alt="{html.escape(figure[1], quote=True)}" '
+                f'src="data:{mime};base64,{data}" '
+                'style="max-width:100%;max-height:8in;object-fit:contain" />'
+            )
+            continue
+
+        if first.startswith("```") and lines[-1].strip() == "```":
+            html_parts.append('<pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
+                              + html.escape("\n".join(lines[1:-1])) + '</pre>')
+            continue
+
         # Headings
         if first.startswith("# "):
             h_text = html.escape(first[2:].strip())
@@ -260,6 +290,19 @@ def _markdown_to_html(markdown_text: str, title: str, context: RenderContext) ->
 
 def _format_inline_html(text: str) -> str:
     """Escapes HTML and parses inline markdown links, bold, italic, and code."""
+    # Protect code before emphasis so literal KQL wildcards remain literal.
+    code_values: list[str] = []
+    code_prefix = "__HOWLWRITER_CODE_"
+    while code_prefix in text:
+        code_prefix += "_"
+
+    def save_code(match: re.Match) -> str:
+        index = len(code_values)
+        code_values.append(html.escape(match.group(1)))
+        return f"{code_prefix}{index}__"
+
+    text = re.sub(r"`([^`]+)`", save_code, text)
+
     # Temporarily extract links to avoid escaping their URLs
     links: list[tuple[str, str]] = []
 
@@ -276,11 +319,6 @@ def _format_inline_html(text: str) -> str:
     escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
     # Italic
     escaped = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", escaped)
-    # Code
-    escaped = re.sub(
-        r"`([^`]+)`", r'<code style="font-family: monospace;">\1</code>', escaped
-    )
-
     # Restore links
     for idx, (lt, lu) in enumerate(links):
         safe_lt = html.escape(lt)
@@ -290,6 +328,10 @@ def _format_inline_html(text: str) -> str:
             f'<a href="{safe_lu}">{safe_lt}</a>',
         )
 
+    for index, value in enumerate(code_values):
+        escaped = escaped.replace(
+            f"{code_prefix}{index}__", f'<code style="font-family: monospace;">{value}</code>'
+        )
     return escaped
 
 
@@ -331,10 +373,12 @@ class PdfRenderer(DocumentRenderer):
 
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
-                page = browser.new_page()
-                page.set_content(html_doc, wait_until="networkidle")
-                pdf_bytes = page.pdf(**pdf_options)
-                browser.close()
+                try:
+                    page = browser.new_page()
+                    page.set_content(html_doc, wait_until="networkidle")
+                    pdf_bytes = page.pdf(**pdf_options)
+                finally:
+                    browser.close()
 
             return RenderedArtifact(
                 format="pdf",
@@ -346,36 +390,20 @@ class PdfRenderer(DocumentRenderer):
         except Exception as playwright_exc:
             # Check for ReportLab fallback if available
             try:
-                import reportlab  # noqa: F401
-                # If reportlab is installed, implement minimal reportlab fallback
-                from reportlab.lib.pagesizes import letter
-                from reportlab.pdfgen import canvas
-                import io
+                from howlwriter.rendering.reportlab_pdf import render_reportlab
 
-                buf = io.BytesIO()
-                c = canvas.Canvas(buf, pagesize=letter)
-                c.setFont("Helvetica-Bold", 16)
-                c.drawString(72, 720, title)
-                c.setFont("Helvetica", 11)
-                y = 690
-                for line in document.text.split("\n"):
-                    if line.strip():
-                        c.drawString(72, y, line[:80])
-                        y -= 14
-                        if y < 72:
-                            c.showPage()
-                            y = 720
-                c.save()
+                pdf_bytes = render_reportlab(document.text, title, ctx)
                 return RenderedArtifact(
                     format="pdf",
-                    content=buf.getvalue(),
+                    content=pdf_bytes,
                     mime_type="application/pdf",
                     title=title,
                     filename_extension=".pdf",
                 )
-            except Exception:
+            except Exception as fallback_exc:
                 raise RuntimeError(
                     f"PDF rendering failed: Playwright browser error ({playwright_exc}). "
                     "Ensure chromium is installed (`python -m playwright install chromium`) "
-                    "or install reportlab with `pip install 'howlwriter[pdf]'`."
+                    f"ReportLab fallback error ({fallback_exc}). "
+                    "Install PDF dependencies with `pip install 'howlwriter[pdf]'`."
                 ) from playwright_exc

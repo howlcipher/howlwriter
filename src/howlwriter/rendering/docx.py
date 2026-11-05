@@ -188,6 +188,8 @@ class DocxRenderer(DocumentRenderer):
         title = ctx.title or document.title or "Untitled Document"
 
         doc = docx.Document()
+        doc.core_properties.title = title
+        doc.core_properties.author = ctx.author
 
         # Set margins from the formatting context
         for section in doc.sections:
@@ -253,6 +255,35 @@ class DocxRenderer(DocumentRenderer):
                 block = remaining
                 lines = block.split("\n")
                 first_line = lines[0].strip()
+
+            if first_line == "<!-- pagebreak -->":
+                doc.add_page_break()
+                continue
+
+            if first_line.startswith("```") and lines[-1].strip() == "```":
+                paragraph = doc.add_paragraph()
+                paragraph.paragraph_format.line_spacing = 1.0
+                paragraph.paragraph_format.space_after = Pt(6)
+                run = paragraph.add_run("\n".join(lines[1:-1]))
+                run.font.name = "Courier New"
+                run.font.size = Pt(9)
+                continue
+
+            figure = re.fullmatch(r"!\[([^\]]*)\]\(([^)]+)\)", block)
+            if figure:
+                from pathlib import Path
+
+                image_path = Path(figure[2])
+                if not image_path.is_absolute():
+                    image_path = Path(ctx.metadata.get("asset_base_dir", ".")) / image_path
+                section = doc.sections[-1]
+                picture = doc.add_picture(str(image_path.resolve(strict=True)))
+                width = section.page_width - section.left_margin - section.right_margin
+                height = section.page_height - section.top_margin - section.bottom_margin - Inches(.5)
+                scale = min(width / picture.width, height / picture.height, 1)
+                picture.width = int(picture.width * scale)
+                picture.height = int(picture.height * scale)
+                continue
 
             # Check if block is a markdown table
             if len(lines) >= 2 and "|" in first_line and "|" in lines[1]:
