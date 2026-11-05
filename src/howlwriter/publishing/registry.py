@@ -41,6 +41,14 @@ class PublisherRegistry:
             self._publishers[key] = publisher
             return publisher
 
+        # Built-in lazy resolution for plain_text / local export
+        if key in ("plain_text", "plain-text", "txt", "local", "text", "file"):
+            from howlwriter.publishing.plain_text import PlainTextPublisher
+
+            pub = PlainTextPublisher()
+            self._publishers[key] = pub
+            return pub
+
         # Built-in lazy resolution for google_docs
         if key in ("google_docs", "google-docs", "gdocs", "google"):
             from howlwriter.publishing.google.publisher import GoogleDocsPublisher
@@ -49,14 +57,16 @@ class PublisherRegistry:
             self._publishers[key] = pub
             return pub
 
-        supported = sorted(set(list(self._publishers.keys()) + list(self._factories.keys()) + ["google_docs"]))
+        builtin = ["google_docs", "plain_text", "local"]
+        supported = sorted(set(list(self._publishers.keys()) + list(self._factories.keys()) + builtin))
         raise UnsupportedDestinationError(
             f"Unsupported publishing destination '{destination_type}'. "
             f"Supported destinations: {', '.join(supported)}"
         )
 
     def list_supported(self) -> list[str]:
-        keys = set(self._publishers.keys()) | set(self._factories.keys()) | {"google_docs"}
+        builtins = {"google_docs", "plain_text", "local"}
+        keys = set(self._publishers.keys()) | set(self._factories.keys()) | builtins
         return sorted(keys)
 
 
@@ -66,6 +76,11 @@ _GLOBAL_REGISTRY = PublisherRegistry()
 def get_publisher(destination_type: str) -> ArtifactPublisher:
     """Convenience getter from global registry."""
     return _GLOBAL_REGISTRY.get(destination_type)
+
+
+def list_supported_destinations() -> list[str]:
+    """Convenience destination lister from global registry."""
+    return _GLOBAL_REGISTRY.list_supported()
 
 
 def register_publisher(

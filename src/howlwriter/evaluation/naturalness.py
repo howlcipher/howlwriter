@@ -842,11 +842,24 @@ def score_naturalness(
     report.locations = [loc for loc in measurement.locations if loc.kind in flagged][:60]
 
     if not measurement.sufficient:
-        report.reason = (
-            f"document has {measurement.words} words and {measurement.sentences} sentences; "
-            f"a score needs at least {MIN_WORDS} words and {MIN_SENTENCES} sentences, so "
-            "only descriptive measurements are shown"
-        )
+        if measurement.words >= 100:
+            report.confidence = "DIAGNOSTIC_ONLY"
+            report.confidence_basis = (
+                f"short-form sample ({measurement.words} words, {measurement.sentences} sentences); "
+                f"descriptive indicators computed with reduced confidence (below {MIN_WORDS} words)"
+            )
+            report.reason = (
+                f"document has {measurement.words} words and {measurement.sentences} sentences; "
+                f"a score needs at least {MIN_WORDS} words and {MIN_SENTENCES} sentences, so "
+                "only descriptive measurements are shown with DIAGNOSTIC_ONLY confidence"
+            )
+        else:
+            report.confidence = "UNAVAILABLE"
+            report.reason = (
+                f"document has {measurement.words} words and {measurement.sentences} sentences; "
+                f"a score needs at least {MIN_WORDS} words and {MIN_SENTENCES} sentences, so "
+                "only descriptive measurements are shown"
+            )
         return report
     if calibration is None:
         report.reason = (

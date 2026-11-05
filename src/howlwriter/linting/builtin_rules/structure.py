@@ -42,6 +42,11 @@ _MIN_WORDS_FOR_WORD_SYMMETRY = 15
 #: than towards flagging real writing.
 _WORD_SYMMETRY_CV_THRESHOLD = 0.12
 
+#: Formal captions (e.g. "Figure 1.", "Table 2:") are document metadata, not
+#: repetitive prose paragraphs. Counting them as paragraph openers causes false
+#: positives on lab and technical reports.
+_CAPTION_LINE = re.compile(r"^[#*\s]*(?:figure|table)\s+\d+[:.]", re.IGNORECASE)
+
 
 def check(document: Document, config: HowlWriterConfig) -> list[RuleMatch]:
     if "repetitive_paragraph_structure" not in config.banned_patterns:
@@ -51,6 +56,8 @@ def check(document: Document, config: HowlWriterConfig) -> list[RuleMatch]:
 
     openers = []
     for paragraph in document.paragraphs:
+        if _CAPTION_LINE.match(paragraph.raw_text):
+            continue
         found = _FIRST_WORD.match(paragraph.raw_text)
         openers.append(found.group(1).lower() if found else None)
 
