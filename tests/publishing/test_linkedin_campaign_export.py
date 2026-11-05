@@ -29,7 +29,7 @@ def test_micro_content_length_gate_returns_unavailable():
         "seconds. The trouble starts when the code looks idiomatic, compiles cleanly, and fails silently "
         "in production under high concurrency. Speed of generation does not equal speed of delivery."
     )
-    result = evaluate_text(short_text, voice="william-academic")
+    result = evaluate_text(short_text)
 
     # Naturalness must report UNAVAILABLE with informative explanation
     assert result["naturalness"]["status"] == "UNAVAILABLE"

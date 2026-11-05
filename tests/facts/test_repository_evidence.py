@@ -31,21 +31,42 @@ def test_rejects_post_30_evidence_mismatch():
     assert "PATH_NOT_FOUND" in finding_codes
 
 
-def test_accepts_valid_howlframe_evidence_control():
+def test_accepts_valid_howlframe_evidence_control(tmp_path: Path):
     """Positive control: Correctly bound HowlFrame claim citing real repository and paths."""
+    import subprocess
+    from howlwriter.facts.repository_evidence import _find_repo_root
+
+    repo_roots = None
+    real_hf = _find_repo_root("howlframe")
+    if real_hf is None or not (real_hf / "internal/vm/vm.go").exists():
+        hf_dir = tmp_path / "howlframe"
+        (hf_dir / "internal" / "vm").mkdir(parents=True)
+        (hf_dir / "internal/vm/vm.go").write_text("package vm\n", encoding="utf-8")
+        (hf_dir / "internal/vm/error.go").write_text("package vm\n", encoding="utf-8")
+        subprocess.run(["git", "init"], cwd=hf_dir, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "ci@example.com"], cwd=hf_dir, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "CI"], cwd=hf_dir, check=True, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=hf_dir, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "initial"], cwd=hf_dir, check=True, capture_output=True)
+        rev = subprocess.run(["git", "rev-parse", "HEAD"], cwd=hf_dir, check=True, capture_output=True, text=True).stdout.strip()
+        repo_roots = {"howlframe": hf_dir}
+        url_rev = f"https://github.com/howlcipher/howlframe (commit {rev})"
+    else:
+        url_rev = "https://github.com/howlcipher/howlframe (commit 41ee7b80c6a5eb6b08941f9415a88156b9d0875f)"
+
     valid_claim = {
         "claim_id": "POST_30-C1",
         "exact_evaluated_claim": "In our HowlFrame project, we took an alternative architectural path: a minimal, stack-based bytecode virtual machine implemented in Go.",
         "classification": "VERIFIED_IMPLEMENTATION",
         "source_document": "HowlFrame Virtual Machine Engine and Execution Limits",
-        "source_url_or_revision": "https://github.com/howlcipher/howlframe (commit 41ee7b80c6a5eb6b08941f9415a88156b9d0875f)",
+        "source_url_or_revision": url_rev,
         "exact_location": "internal/vm/vm.go & internal/vm/error.go",
         "verification_method": "Inspection of DefaultLimits.MaxInstructions (100,000 opcodes) and opcode dispatch loop",
         "limitations": "Instruction budgets govern VM bytecode execution cycles only; host I/O and external capability execution require host timeouts",
         "current_status": "VERIFIED"
     }
 
-    result = validate_repository_claim_evidence(valid_claim)
+    result = validate_repository_claim_evidence(valid_claim, repo_roots=repo_roots)
     assert result.is_valid is True
     assert result.status == "VERIFIED"
     assert len(result.findings) == 0

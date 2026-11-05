@@ -63,13 +63,22 @@ def _find_repo_root(repo_name: str, candidate_roots: dict[str, Path] | None = No
         if p.exists() and (p / ".git").exists():
             return p
 
-    # Standard dev environment search
-    search_dirs = [
-        Path.cwd(),
-        Path.cwd().parent,
-        Path("/run/media/howlcipher/tallgeese/dev"),
-        Path("/run/media/system/tallgeese/dev"),
-    ]
+    # Dynamic environment variable override
+    import os
+
+    env_dev = os.environ.get("HOWL_DEV_DIR")
+    search_dirs: list[Path] = [Path.cwd(), Path.cwd().parent]
+    if env_dev:
+        search_dirs.append(Path(env_dev))
+
+    # Search ancestor directories and their siblings portably
+    here = Path(__file__).resolve()
+    for ancestor in here.parents:
+        search_dirs.append(ancestor)
+        sibling = ancestor / repo_name
+        if sibling.exists() and (sibling / ".git").exists():
+            return sibling
+
     for base in search_dirs:
         candidate = base / repo_name
         if candidate.exists() and (candidate / ".git").exists():
