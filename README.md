@@ -359,6 +359,25 @@ accuracy, context and completeness without editing your text. The Google Docs
 publisher confirms a publication by reading it back. See
 [docs/reliability.md](docs/reliability.md) for the states, exit codes and limits.
 
+## LinkedIn post queue (in progress)
+
+`howlwriter linkedin` manages a private queue of LinkedIn posts in a directory you choose:
+versioned post files, a validated schedule (one post per calendar day, America/Detroit and
+08:30 by default), a persistent daily ledger, and a dry-run scheduling evaluation. It is
+deterministic and needs no model.
+
+```bash
+howlwriter linkedin --repo ~/howlwriter-linkedin-private init
+howlwriter linkedin --repo ~/howlwriter-linkedin-private add --title "Title" --text-file post.txt --date 2026-12-01
+howlwriter linkedin --repo ~/howlwriter-linkedin-private queue
+howlwriter linkedin --repo ~/howlwriter-linkedin-private evaluate
+```
+
+This milestone cannot contact LinkedIn and cannot approve a post: verification (HowlProof),
+human approval, and the LinkedIn transport are later milestones, and until they exist the
+code refuses to approve or send. See [docs/linkedin-publisher/](docs/linkedin-publisher/ROADMAP.md)
+for the roadmap, architecture, threat model, decisions and runbook.
+
 ## Using the local web UI
 
 ```bash

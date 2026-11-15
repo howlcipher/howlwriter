@@ -27,6 +27,8 @@ dev = [
     "playwright>=1.55,<2.0",
     # Pure-Python packet parsing, so packet-capture tests run without TShark.
     "dpkt>=1.9,<2.0",
+    # Holds the committed JSON Schemas and the run time parsers together (contract tests).
+    "jsonschema>=4.21",
     "howlwriter[web,corpus,publish]",
 ]
 sources = [
