@@ -38,6 +38,9 @@ from howlwriter.linkedin.store import ControlState, LedgerEntryState, QueueStore
 
 S = LifecycleState
 
+#: States in which a verification report may be attached or refreshed.
+VERIFIABLE_STATES = frozenset({S.DRAFT, S.READY_FOR_REVIEW, S.APPROVED, S.SCHEDULED, S.FAILED})
+
 
 class OperationRefused(ValueError):
     """The operation is not allowed in the current state. Nothing was changed."""
@@ -267,16 +270,45 @@ class QueueService:
             return self._save(reset, original, self._event(actor, "returned_to_draft"))
 
     def attach_verification(self, post_id: str, ref: ArtifactRef, *, actor: str) -> Post:
+        """Record a verification report the trusted verifier accepted.
+
+        Before approval this attaches the report. After approval it refreshes the
+        report for unchanged content (revalidation shortly before publication);
+        the approval stays because the content fingerprint is the same.
+        """
         with self.store.lock():
             original = self.store.load_post(post_id)
-            if original.state not in (S.DRAFT, S.READY_FOR_REVIEW):
+            if original.state not in VERIFIABLE_STATES:
                 raise OperationRefused(f"verification cannot be attached to a {original.state.value} post")
             self._require_artifact("verification", original, ref)
+            action = (
+                "verification_attached"
+                if original.state in (S.DRAFT, S.READY_FOR_REVIEW)
+                else "verification_refreshed"
+            )
             return self._save(
                 replace(original, verification_ref=ref),
                 original,
-                self._event(actor, "verification_attached", ref.path),
+                self._event(actor, action, ref.path),
             )
+
+    def withdraw_verification(self, post_id: str, *, actor: str, detail: str) -> Post:
+        """Record that verification blocked the post. Fail closed.
+
+        Any attached report is removed. A post that was already approved or
+        scheduled goes back to DRAFT and loses its approval, so it cannot be
+        published on the strength of an older, better result.
+        """
+        with self.store.lock():
+            original = self.store.load_post(post_id)
+            if original.state not in VERIFIABLE_STATES:
+                raise OperationRefused(f"a {original.state.value} post cannot be verified")
+            if original.state in (S.DRAFT, S.READY_FOR_REVIEW):
+                changed = replace(original, verification_ref=None)
+            else:
+                require_transition(original.state, S.DRAFT)
+                changed = replace(original, state=S.DRAFT, verification_ref=None, approval_ref=None)
+            return self._save(changed, original, self._event(actor, "verification_blocked", detail))
 
     def approve(self, post_id: str, ref: ArtifactRef, *, actor: str) -> Post:
         """Record an approval that the trusted verifier accepted. Never self-authorizing."""

@@ -373,9 +373,14 @@ howlwriter linkedin --repo ~/howlwriter-linkedin-private queue
 howlwriter linkedin --repo ~/howlwriter-linkedin-private evaluate
 ```
 
-This milestone cannot contact LinkedIn and cannot approve a post: verification (HowlProof),
-human approval, and the LinkedIn transport are later milestones, and until they exist the
-code refuses to approve or send. See [docs/linkedin-publisher/](docs/linkedin-publisher/ROADMAP.md)
+`howlwriter linkedin verify <id>` checks a post with the real HowlProof program (credential scan, declared
+claims, absolute wording) and with deterministic checks for formatting, Unicode, links,
+duplicates, privacy patterns and images, then stores a report. The verdict in the report
+is HowlProof's own; a post is either eligible for human approval or blocked. Links are
+contacted only with `--allow-network`, through `howlproof acquire`.
+
+Nothing here can contact LinkedIn or approve a post: human approval and the LinkedIn
+transport are later milestones, and until they exist the code refuses to approve or send. See [docs/linkedin-publisher/](docs/linkedin-publisher/ROADMAP.md)
 for the roadmap, architecture, threat model, decisions and runbook.
 
 ## Using the local web UI

@@ -17,8 +17,10 @@ import sys
 
 from howlwriter.linkedin.checks import has_errors
 from howlwriter.linkedin.models import MediaRef, Post, parse_utc
+from howlwriter.linkedin.howlproof import EXECUTABLE_ENV, HowlProofAdapter, find_executable
 from howlwriter.linkedin.service import DEFAULT, KEEP, QueueService
 from howlwriter.linkedin.store import QueueStore
+from howlwriter.linkedin.verification import CONTRACT_FILENAME, DEFAULT_CONTRACT, VerificationService
 from howlwriter.publishing.base import RevisionConflictError
 
 REPO_ENV = "HOWLWRITER_LINKEDIN_REPO"
@@ -123,6 +125,25 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
         "--apply", action="store_true", help="Apply the plan. Without it the plan is only shown."
     )
 
+    verify = command(
+        "verify",
+        _verify,
+        "Verify a post with HowlProof and the deterministic checks, and store the report. "
+        "This never approves or publishes.",
+        actor=True,
+    )
+    verify.add_argument("id")
+    verify.add_argument(
+        "--allow-network",
+        action="store_true",
+        help="Also contact each listed link through 'howlproof acquire' (public hosts only).",
+    )
+    verify.add_argument(
+        "--howlproof",
+        default=None,
+        help=f"Path to the howlproof executable (default: ${EXECUTABLE_ENV}, then PATH).",
+    )
+
     pause = command("pause", _pause, "Pause all scheduled publishing.", actor=True)
     pause.add_argument("--reason", default="")
     command("resume", _resume, "Resume scheduled publishing.", actor=True)
@@ -188,7 +209,7 @@ def _changed(args: argparse.Namespace, post: Post, verb: str) -> int:
 
 def _init(args: argparse.Namespace) -> int:
     store = _store(args)
-    created = store.initialize()
+    created = store.initialize({CONTRACT_FILENAME: DEFAULT_CONTRACT})
     config = store.load_config()
     _emit(
         args,
@@ -282,6 +303,46 @@ def _validate(args: argparse.Namespace) -> int:
         "\n".join(lines + [f"{args.id}: {'FAILED' if failed else 'passed the deterministic checks'}"]),
     )
     return 1 if failed else 0
+
+
+def _verify(args: argparse.Namespace) -> int:
+    store = _store(args)
+    adapter = HowlProofAdapter(find_executable(args.howlproof))
+    result = VerificationService(store, adapter).verify(
+        args.id, actor=args.actor, allow_network=args.allow_network
+    )
+    report = result.report
+    outcome = report["outcome"]
+    lines = [
+        f"{args.id}: HowlProof verdict {report['verdict'] or 'none (HowlProof gave no usable result)'}",
+        f"  report: {result.report_path}",
+    ]
+    for record in report["preflight"]:
+        lines.append(f"  {record['status']:<14} {record['id']}: {record['summary']}")
+    for check in report["howlproof"]["checks"]:
+        lines.append(f"  {check['status']:<14} howlproof {check['check_id']}: {check['summary']}")
+    lines += [f"  BLOCKER  {item}" for item in outcome["blockers"]]
+    lines += [f"  LIMIT    {item}" for item in outcome["limitations"]]
+    if result.withdrawn_reason:
+        lines.append(f"  BLOCKER  {result.withdrawn_reason}")
+    if result.eligible:
+        lines.append("Eligible for human approval. This is not an approval and nothing was published.")
+    else:
+        lines.append(f"Blocked. The post is now {result.post.state.value} with no verification attached.")
+    _emit(
+        args,
+        {
+            "id": args.id,
+            "eligible": result.eligible,
+            "attached": result.attached,
+            "state": result.post.state.value,
+            "report_path": result.report_path,
+            "withdrawn_reason": result.withdrawn_reason,
+            "report": report,
+        },
+        "\n".join(lines),
+    )
+    return 0 if result.eligible else 1
 
 
 def _submit(args: argparse.Namespace) -> int:

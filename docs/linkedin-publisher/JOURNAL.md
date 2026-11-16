@@ -64,3 +64,80 @@ Next authorized step
 
 None until the owner reviews M1. Recommended next: authorize M2, starting with a deep read
 of HowlProof's evaluators and bundle format.
+
+## 2026-11-16: M2 HowlProof integration (verified, at gate)
+
+Authorization: the owner replied "Continue as recommended" to the M1 report. The M1 report
+recommended starting M2 with a deep read of HowlProof. That was taken as authorization for
+M2 only. It was not taken as authorization to push, so the branch is still local.
+
+What was done
+
+1. Read HowlProof 0.2.0b1 in depth: command line, exit codes, configuration model, verdict
+   derivation, evidence bundle format, `secrets.scan`, `research.claims`, `docs.claims`,
+   `publication.*`, `acquire`. Ran the real program on a scratch post package to see its
+   actual output before writing any adapter code.
+2. Decided the split of work between HowlProof and HowlWriter (DECISIONS D13 to D19).
+3. Implemented `content_checks.py`, `howlproof.py`, `verification.py`, the `verify`
+   command, the report schema, the `verification_max_age_days` setting, and the starter
+   contract written by `init`.
+4. `attach_verification` now also refreshes a report on an approved or scheduled post;
+   new `withdraw_verification` records a blocked result and fails closed.
+5. No change to the HowlProof repository.
+
+Test evidence (final working tree, Python 3.14.4, one process, low priority, HowlProof
+0.2.0b1 on PATH)
+
+| Run | Command | Result |
+| --- | --- | --- |
+| LinkedIn tests | `pytest tests/linkedin -q` | 330 passed, 30 s (199 from M1, 131 new) |
+| Of which real HowlProof | `pytest tests/linkedin/test_howlproof_contract.py -q` | 20 passed |
+| Final regression | `pytest -q -m "not contract" --ignore=tests/docs` | 2,265 passed, 11 skipped, 17 failed, 278 s |
+| CI lint gate | `flake8 src/ --select=F821,F401` | clean |
+| Full flake8 on M2 files | new modules, the command module and the new test files | clean |
+| Python 3.11 | `python3.11 -m compileall` on the package and tests | compiles |
+| Live link check | `verify --allow-network` on a scratch post linking `https://example.com/` | REACHABLE, run once by hand |
+
+The 17 failures are the same untracked local release tests as in the M1 baseline. No
+tracked test fails.
+
+Not run: browser tests, the HowlPlane contract job, Python 3.11 to 3.13 test runs. The
+real HowlProof tests are skipped wherever HowlProof is not installed, which includes
+HowlWriter's CI.
+
+Test impact assessment
+
+- Behavior changed: new `verify` command; `init` creates three more entries
+  (`howlproof.post.yaml`, `claims/`, `verification/`); `attach_verification` accepts
+  approved, scheduled and failed posts; one new configuration key with a default.
+- Existing tests: all 199 M1 tests pass unchanged. None was edited or removed.
+- New coverage: happy path, each verdict, every error exit, forgery and staleness of
+  reports, lifecycle effects, the publish gate, and each deterministic rule with a
+  defective and a clean input.
+- Gap: exit 3, exit 4, timeouts and redirect handling are exercised with a scripted
+  stand-in only.
+
+Mistakes made and caught during this session
+
+- A one off script used to wrap long lines turned one parenthesized condition into a
+  tuple (always true) and one subscript into a tuple key. The tests failed immediately and
+  both were fixed by hand; the files were then scanned for the same pattern.
+- The private address pattern missed an address followed by a full stop. Found by a test,
+  fixed, and a regression case added.
+- The local path pattern matched paths inside public web addresses. Found by a test, fixed.
+
+Things a later session must know
+
+1. The report is tamper evident, not signed. Do not let M3 treat "the report verifies" as
+   trust. Options are in DECISIONS D16.
+2. M3 must show `outcome.limitations` to the approver and record what was accepted, and
+   must decide what a refreshed report means for an existing approval (D17).
+3. `VerificationGate` exists but nothing installs it. `RefuseAllGate` is still the default
+   and there is still no approve or publish command.
+4. Scratch repositories used for manual checks were under the session scratch directory
+   and are not part of the repository.
+
+Next authorized step
+
+None. Stop at the M2 gate. Recommended next: owner review of M2, a decision on pushing the
+branch, then M3 (human approval), which needs the private repository to exist.

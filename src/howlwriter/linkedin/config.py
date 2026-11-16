@@ -28,6 +28,7 @@ DEFAULTS: dict[str, Any] = {
     "publishing_enabled": False,
     "dry_run": True,
     "max_lateness_minutes": 180,
+    "verification_max_age_days": 7,
 }
 
 #: The one post per calendar day rule is a hard product invariant. The value is
@@ -36,6 +37,7 @@ DEFAULTS: dict[str, Any] = {
 MAX_POSTS_PER_DAY_CEILING = 1
 MAX_LATENESS_CEILING_MINUTES = 720
 MAX_ALLOWED_TIMES = 6
+MAX_VERIFICATION_AGE_CEILING_DAYS = 30
 
 _KEYS = frozenset(DEFAULTS) | {"schema"}
 
@@ -57,6 +59,7 @@ class PublisherConfig:
     publishing_enabled: bool
     dry_run: bool
     max_lateness_minutes: int
+    verification_max_age_days: int = 7
 
     @property
     def tzinfo(self) -> ZoneInfo:
@@ -72,6 +75,7 @@ class PublisherConfig:
             "publishing_enabled": self.publishing_enabled,
             "dry_run": self.dry_run,
             "max_lateness_minutes": self.max_lateness_minutes,
+            "verification_max_age_days": self.verification_max_age_days,
         }
 
 
@@ -138,6 +142,11 @@ def parse_config(data: Any) -> PublisherConfig:
     lateness = merged["max_lateness_minutes"]
     if not _is_int(lateness) or not 0 <= lateness <= MAX_LATENESS_CEILING_MINUTES:
         problems.append(f"max_lateness_minutes must be an integer from 0 to {MAX_LATENESS_CEILING_MINUTES}")
+    age = merged["verification_max_age_days"]
+    if not _is_int(age) or not 1 <= age <= MAX_VERIFICATION_AGE_CEILING_DAYS:
+        problems.append(
+            f"verification_max_age_days must be an integer from 1 to {MAX_VERIFICATION_AGE_CEILING_DAYS}"
+        )
 
     if problems:
         raise ConfigError(problems)
@@ -149,6 +158,7 @@ def parse_config(data: Any) -> PublisherConfig:
         publishing_enabled=merged["publishing_enabled"],
         dry_run=merged["dry_run"],
         max_lateness_minutes=lateness,
+        verification_max_age_days=age,
     )
 
 
@@ -183,4 +193,6 @@ def render_default_config() -> str:
         "dry_run: true\n"
         "# A due post is still published this many minutes after its slot (same calendar day only).\n"
         "max_lateness_minutes: 180\n"
+        "# A verification report older than this blocks publication until the post is verified again.\n"
+        "verification_max_age_days: 7\n"
     )

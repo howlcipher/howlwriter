@@ -203,3 +203,55 @@ that both create or change the same ledger file cannot both push.
 
 A passing M1 suite says the queue logic is correct. It says nothing about the live
 LinkedIn API.
+
+## 12. Verification (implemented in M2)
+
+Modules in `src/howlwriter/linkedin/`:
+
+| Module | Role |
+| --- | --- |
+| `content_checks.py` | Deterministic checks for what HowlProof has no evaluator for: format, Unicode, link consistency, duplicates, privacy patterns, image container and alt text, coverage of figures by declared claims |
+| `howlproof.py` | Adapter over the real `howlproof` program: `--version`, `evaluate`, `acquire`. Never produces a verdict |
+| `verification.py` | Package builder, report, `VerificationService`, `ReportVerifier` (the M2 `ArtifactVerifier`), `VerificationGate` (a `PublishGate`) |
+
+Flow of `howlwriter linkedin verify <id>`:
+
+```
+post + media + claims/<id>/         (private repository)
+        |
+        v
+package in a temporary directory:  post.txt, post.json, media/..., claims.json, evidence/...
+        |                                   tree digest computed by HowlWriter
+        +--> deterministic checks (content_checks)
+        +--> howlproof acquire --url ...     (only with --allow-network)
+        +--> howlproof evaluate <package> --config howlproof.post.yaml
+        |        --evidence-root verification/howlproof --json
+        v
+verification/<id>/<time>-<fingerprint>.json   report (schema howlwriter.linkedin_verification/v1)
+verification/howlproof/<run id>/              HowlProof's sealed bundle
+        |
+        v
+eligible: post.verification_ref = {path, sha256, content_fingerprint}
+blocked:  reference removed; an approved or scheduled post returns to DRAFT
+```
+
+Additions to the private repository layout: `howlproof.post.yaml`, `claims/<post id>/`,
+`verification/<post id>/`, `verification/howlproof/`, `verification/acquisitions/`.
+
+The report carries the post fingerprint, media facts, the package file list with hashes,
+evidence references with hashes, every check with its identity, method, status, findings
+and stated limitation, HowlProof's version and implementation hash, the contract hash,
+the time, HowlProof's verdict, and a derived outcome (`ELIGIBLE_FOR_HUMAN_APPROVAL` or
+`BLOCKED`) with blockers and limitations. Decisions D13 to D19 explain the choices.
+
+### What is real and what is mocked (M2)
+
+| Area | Evidence |
+| --- | --- |
+| HowlProof `evaluate` for all five verdicts, exit 2, `secrets.scan`, `research.claims`, `docs.claims`, bundle integrity, tree digest agreement | Real program, `tests/linkedin/test_howlproof_contract.py` (skipped where HowlProof is not installed) |
+| `howlproof acquire` refusing private, loopback, metadata, credential, non default port and non http addresses | Real program, same file. No connection is made |
+| `howlproof acquire` fetching a public page | Run once by hand against `https://example.com/` on 2026-11-16 (result REACHABLE). Not in the automated suite, which uses no network |
+| HowlProof exit 3 and 4, timeouts, malformed output, inconsistent exit codes | Scripted stand-in only (`tests/linkedin/proof_fakes.py`) |
+| Redirects to another host, 404, unsupported content type | Scripted stand-in only |
+| LinkedIn | Not contacted. No LinkedIn code exists |
+

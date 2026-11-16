@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "howlwriter.linkedin_verification/v1",
+  "title": "LinkedIn post verification report",
+  "description": "Written by 'howlwriter linkedin verify'. The verdict is HowlProof's own verdict, or null when HowlProof gave no usable result. A report never authorizes publication.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "post_id", "content_fingerprint", "created_at", "media", "package", "evidence",
+    "tools", "howlproof", "preflight", "links", "claims", "verdict", "outcome"
+  ],
+  "$defs": {
+    "verdict": {
+      "enum": ["PROVEN", "CONDITIONALLY_PROVEN", "REQUIRES_HUMAN", "REJECT", "INSUFFICIENT_EVIDENCE", null]
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "file": {
+      "type": "object",
+      "required": ["path", "sha256", "role"],
+      "properties": {
+        "path": {"type": "string"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "role": {"type": "string"}
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": {"type": "string"},
+        "severity": {"enum": ["error", "warning", "info"]},
+        "message": {"type": "string"}
+      }
+    }
+  },
+  "properties": {
+    "schema": {"const": "howlwriter.linkedin_verification/v1"},
+    "post_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,63}$"},
+    "content_fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "created_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"},
+    "media": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string"},
+          "sha256": {"$ref": "#/$defs/sha256"},
+          "bytes": {"type": "integer"},
+          "format": {"enum": ["png", "jpeg", "gif"]},
+          "width": {"type": "integer"},
+          "height": {"type": "integer"}
+        }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "tree_digest", "files", "problems"],
+      "properties": {
+        "schema": {"const": "howlwriter.linkedin_verification_package/v1"},
+        "tree_digest": {"$ref": "#/$defs/sha256"},
+        "files": {"type": "array", "items": {"$ref": "#/$defs/file"}},
+        "problems": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "evidence": {"type": "array", "items": {"$ref": "#/$defs/file"}},
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["howlwriter", "howlproof"],
+      "properties": {
+        "howlwriter": {"type": "string"},
+        "howlproof": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "implementation_hash"],
+          "properties": {
+            "version": {"type": ["string", "null"]},
+            "implementation_hash": {"type": ["string", "null"]}
+          }
+        }
+      }
+    },
+    "howlproof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "executed", "command", "exit_code", "error", "run_id", "version", "implementation_hash",
+        "verdict", "verdict_unusable", "deciding_rule", "rationale", "criteria", "checks", "findings",
+        "limitations", "unresolved_risks", "bundle_path", "manifest_sha256", "target_tree_digest", "contract"
+      ],
+      "properties": {
+        "executed": {"type": "boolean"},
+        "command": {"type": "array", "items": {"type": "string"}},
+        "exit_code": {"type": ["integer", "null"]},
+        "error": {"type": "string"},
+        "run_id": {"type": ["string", "null"]},
+        "version": {"type": ["string", "null"]},
+        "implementation_hash": {"type": ["string", "null"]},
+        "verdict": {"$ref": "#/$defs/verdict"},
+        "verdict_unusable": {"$ref": "#/$defs/verdict"},
+        "deciding_rule": {"type": ["string", "null"]},
+        "rationale": {"type": "array", "items": {"type": "string"}},
+        "criteria": {"type": "array", "items": {"type": "object"}},
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["check_id", "checker", "status", "summary", "limitation", "reason", "mode"],
+            "properties": {
+              "check_id": {"type": "string"},
+              "checker": {"type": "string"},
+              "status": {"enum": ["VERIFIED", "FAILED", "SKIPPED", "UNAVAILABLE", "NOT_APPLICABLE", "ERROR"]},
+              "summary": {"type": "string"},
+              "limitation": {"type": "string"},
+              "reason": {"type": "string"},
+              "mode": {"type": "string"}
+            }
+          }
+        },
+        "findings": {"type": "array", "items": {"type": "object", "required": ["blocking"]}},
+        "limitations": {"type": "array", "items": {"type": "string"}},
+        "unresolved_risks": {"type": "array", "items": {"type": "string"}},
+        "bundle_path": {"type": ["string", "null"]},
+        "manifest_sha256": {"type": ["string", "null"]},
+        "target_tree_digest": {"type": ["string", "null"]},
+        "contract": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "sha256"],
+          "properties": {"path": {"type": "string"}, "sha256": {"type": ["string", "null"]}}
+        }
+      }
+    },
+    "preflight": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "method", "status", "summary", "limitation", "reason", "findings"],
+        "properties": {
+          "id": {"type": "string"},
+          "method": {"type": "string"},
+          "status": {"enum": ["PASSED", "FAILED", "NOT_EXECUTED", "NOT_APPLICABLE", "ERROR"]},
+          "summary": {"type": "string"},
+          "limitation": {"type": "string"},
+          "reason": {"type": "string"},
+          "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}}
+        }
+      }
+    },
+    "links": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["network_allowed", "results"],
+      "properties": {
+        "network_allowed": {"type": "boolean"},
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "url", "status", "observed_url", "redirects", "acquisition_id", "content_sha256",
+              "retrieved_at", "detail", "cited_by_claims"
+            ],
+            "properties": {
+              "url": {"type": "string"},
+              "status": {"enum": ["REACHABLE", "BROKEN", "UNCONFIRMED", "NOT_CHECKED"]},
+              "observed_url": {"type": ["string", "null"]},
+              "redirects": {"type": "array", "items": {"type": "string"}},
+              "acquisition_id": {"type": ["string", "null"]},
+              "content_sha256": {"type": ["string", "null"]},
+              "retrieved_at": {"type": ["string", "null"]},
+              "detail": {"type": "string"},
+              "cited_by_claims": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_id", "check_id", "check_status", "claim_status", "evidence_status", "explanation"],
+        "properties": {
+          "claim_id": {"type": "string"},
+          "check_id": {"type": "string"},
+          "check_status": {"type": "string"},
+          "claim_status": {"type": "string"},
+          "evidence_status": {"type": "string"},
+          "explanation": {"type": "string"}
+        }
+      }
+    },
+    "verdict": {"$ref": "#/$defs/verdict"},
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "blockers", "limitations", "human_approval_required"],
+      "properties": {
+        "status": {"enum": ["ELIGIBLE_FOR_HUMAN_APPROVAL", "BLOCKED"]},
+        "blockers": {"type": "array", "items": {"type": "string"}},
+        "limitations": {"type": "array", "items": {"type": "string"}},
+        "human_approval_required": {"const": true}
+      }
+    }
+  }
+}

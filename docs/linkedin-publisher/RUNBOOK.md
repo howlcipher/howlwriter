@@ -3,9 +3,10 @@
 Sections marked "skeleton" describe milestones that are not built yet. Do not follow
 them as instructions until the roadmap marks that milestone VERIFIED.
 
-## What works today (M1)
+## What works today (M1 and M2)
 
-A local, deterministic post queue. Nothing in M1 can contact LinkedIn or approve a post.
+A local, deterministic post queue and verification through HowlProof. Nothing here can
+contact LinkedIn or approve a post.
 
 ### Set up a local publishing directory
 
@@ -14,8 +15,9 @@ howlwriter linkedin --repo ~/howlwriter-linkedin-private init
 export HOWLWRITER_LINKEDIN_REPO=~/howlwriter-linkedin-private
 ```
 
-This creates `publisher.yaml` (publishing off, dry run on), `posts/`, `media/`, `state/`,
-`ledger/` and a `.gitignore`. It does not create or contact any GitHub repository. Turn
+This creates `publisher.yaml` (publishing off, dry run on), `howlproof.post.yaml` (the
+HowlProof acceptance contract, yours to edit), `posts/`, `media/`, `claims/`,
+`verification/`, `state/`, `ledger/` and a `.gitignore`. It does not create or contact any GitHub repository. Turn
 the directory into a private Git repository yourself when you are ready.
 
 ### Daily commands
@@ -39,6 +41,51 @@ the directory into a private Git repository yourself when you are ready.
 | Archive | `howlwriter linkedin archive <id>` (never deletes from LinkedIn) |
 
 Add `--json` to any command for machine output and `--actor NAME` to label the audit entry.
+
+### Verify a post
+
+Requires the `howlproof` program on `PATH` (or `--howlproof PATH`, or
+`HOWLWRITER_HOWLPROOF`). Check it with `howlproof --version`.
+
+```bash
+howlwriter linkedin verify <id>                  # offline: no link is contacted
+howlwriter linkedin verify <id> --allow-network  # also fetch each listed link through howlproof acquire
+```
+
+Exit 0 means the post is eligible for human approval and the report is attached. Exit 1
+means it is blocked; the `BLOCKER` lines say why. Either way a report is written to
+`verification/<id>/` and HowlProof's sealed evidence to `verification/howlproof/`. Commit
+both. A report is never an approval.
+
+| Output line | Meaning |
+| --- | --- |
+| `HowlProof verdict ...` | HowlProof's own verdict, unchanged. `none` means HowlProof gave no usable result |
+| `BLOCKER` | Must be fixed. Edit the post, the claims or the contract, then verify again |
+| `LIMIT` | Not established by this verification. You accept these when you approve |
+
+### Declare factual claims
+
+A figure with a percent sign, currency or unit blocks verification until a claim covers
+it. Create `claims/<id>/claims.json` in the `howl.claim_bundle/v1` format and put each
+evidence file beside it (for example `claims/<id>/evidence/e1.json`), then verify again.
+The format, the check types (`fact_compare`, `text_presence`, `arithmetic`) and what each
+can establish are in HowlProof's `docs/research_claims.md`. To let HowlProof confirm a
+source, record it first with `howlproof acquire --store verification/acquisitions --url ...`
+and reference the acquisition from the evidence entry.
+
+Read the claim status in the report: `SUPPORTED` with `DETERMINISTIC_CHECK_ONLY` means the
+arithmetic holds on numbers you supplied, not that the numbers were checked.
+
+### Verification problems
+
+| Situation | What to do |
+| --- | --- |
+| "HowlProof did not run" | Install HowlProof or pass `--howlproof`. Nothing is treated as passed without it |
+| "HowlProof exited 2" | The contract is invalid. Run `howlproof validate howlproof.post.yaml` |
+| "required HowlProof check secrets.scan is absent" | Restore `secrets.scan` in the contract's `profiles` |
+| A previously verified post now reports changed evidence | Media, claims or evidence files changed. Verify again |
+| "the verification is N day(s) old" | Verify again. A scheduled post keeps its approval if the result is not weaker |
+| Verification of a scheduled post was blocked | The post returned to DRAFT and lost its approval. Fix it and go through review again |
 
 ### Change the schedule
 

@@ -29,6 +29,7 @@ from typing import Any, Iterator
 
 from howlwriter.linkedin.config import CONFIG_FILENAME, PublisherConfig, load_config, render_default_config
 from howlwriter.linkedin.models import (
+    ARTIFACT_PATH_PATTERN,
     FINGERPRINT_PATTERN,
     ID_PATTERN,
     HistoryEvent,
@@ -42,7 +43,7 @@ from howlwriter.publishing.base import RevisionConflictError
 CONTROL_SCHEMA = "howlwriter.linkedin_control/v1"
 LEDGER_SCHEMA = "howlwriter.linkedin_ledger_day/v1"
 LOCK_FILENAME = ".publisher.lock"
-GITIGNORE_LINES = (LOCK_FILENAME, "*.tmp")
+GITIGNORE_LINES = (LOCK_FILENAME, "*.tmp", "verification/howlproof/ledger.lock")
 
 
 class StoreError(RuntimeError):
@@ -234,11 +235,22 @@ class QueueStore:
 
     # Setup and locking
 
-    def initialize(self) -> list[str]:
-        """Create the repository layout. Existing files are never overwritten."""
+    def initialize(self, extra_files: dict[str, str] | None = None) -> list[str]:
+        """Create the repository layout. Existing files are never overwritten.
+
+        ``extra_files`` maps a root level file name to starter content.
+        """
         created: list[str] = []
+        extra_files = extra_files or {}
         self.root.mkdir(parents=True, exist_ok=True)
-        for directory in (self.posts_dir, self.root / "media", self.root / "state", self.root / "ledger"):
+        for directory in (
+            self.posts_dir,
+            self.root / "media",
+            self.root / "state",
+            self.root / "ledger",
+            self.root / "claims",
+            self.root / "verification",
+        ):
             directory.mkdir(parents=True, exist_ok=True)
             keep = directory / ".gitkeep"
             if not any(directory.iterdir()):
@@ -246,6 +258,10 @@ class QueueStore:
         if not self.config_path.exists():
             self._create_exclusive(self.config_path, render_default_config().encode("utf-8"))
             created.append(CONFIG_FILENAME)
+        for name, content in extra_files.items():
+            if not (self.root / name).exists():
+                self._create_exclusive(self.root / name, content.encode("utf-8"))
+                created.append(name)
         gitignore = self.root / ".gitignore"
         existing = gitignore.read_text(encoding="utf-8").splitlines() if gitignore.exists() else []
         missing = [line for line in GITIGNORE_LINES if line not in existing]
@@ -403,6 +419,31 @@ class QueueStore:
         if root not in candidate.parents:
             raise StoreError(f"media path leaves the repository: {relative_path!r}")
         return candidate
+
+    def artifact_file(self, relative_path: str) -> Path:
+        """Resolve a stored artifact (report, approval), refusing anything outside the repository."""
+        root = self.root.resolve()
+        if not ARTIFACT_PATH_PATTERN.match(relative_path) or ".." in relative_path.split("/"):
+            raise StoreError(f"invalid artifact path: {relative_path!r}")
+        candidate = (root / relative_path).resolve()
+        if root not in candidate.parents:
+            raise StoreError(f"artifact path leaves the repository: {relative_path!r}")
+        return candidate
+
+    def write_artifact(self, relative_path: str, payload: bytes) -> str:
+        """Create a new artifact file and return the path used. Never overwrites.
+
+        When the name is taken (two reports in the same second) a numeric suffix is added.
+        """
+        stem, dot, suffix = relative_path.rpartition(".")
+        for attempt in range(1, 100):
+            name = relative_path if attempt == 1 else f"{stem}-{attempt}{dot}{suffix}"
+            try:
+                self._create_exclusive(self.artifact_file(name), payload)
+            except FileExistsError:
+                continue
+            return name
+        raise StoreError(f"could not create a new artifact file for {relative_path!r}")
 
     # Ledger
 

@@ -108,6 +108,119 @@ because every operation would then conflict in Git.
 | GitHub Actions `schedule` with a timezone | M4 | Stated in the brief; not checked against GitHub documentation in this session. The design does not depend on it: two UTC cron entries per slot also work because runs are slot agnostic. |
 | LinkedIn Posts API version, `w_member_social`, token lifetime, image upload flow | M4 | Not checked in this session. No LinkedIn code exists yet. |
 | GitHub Free minutes for private repositories and how to block overage | M4 | Runbook section is a skeleton until verified. |
-| HowlProof coverage for link relevance, privacy scan of post text, duplicate detection | M2 | Only the command surface and profiles were read. |
+| HowlProof coverage for link relevance, privacy scan of post text, duplicate detection | Resolved in M2 | Read and exercised. See D13 for what HowlProof covers and what it does not. |
 | 3,000 character LinkedIn limit | M4 | Taken from the existing HowlWriter linter, not re-verified against LinkedIn. |
 | Alt text length limit | M4 | The stored bound of 4,000 characters is a storage limit, not a LinkedIn rule. |
+
+## D13. Which checks run in HowlProof and which in HowlWriter (M2)
+
+What HowlProof 0.2.0b1 really offers for a post, found by reading its source and running
+it:
+
+| Need | HowlProof capability | Used |
+| --- | --- | --- |
+| Credentials in the post | `secrets.scan` over the text files of the target | Yes, and required |
+| Factual claims | `research.claims` over a `howl.claim_bundle/v1` the author supplies. It never invents a check | Yes |
+| Absolute wording ("always", "never") | `docs.claims` over files named in the contract | Yes |
+| Fetching a link safely | `howlproof acquire --url` (public hosts only, every redirect re-checked, bounded) | Yes, opt in |
+| Whether a source supports a claim | Structural only: fact value and author chosen subject terms present in acquired bytes | Yes, through `research.claims` |
+| LinkedIn length and formatting, broken Unicode, link consistency | None | No |
+| Duplicate posts | None | No |
+| Internal hostnames, private paths, confidentiality markers | None (`secrets.scan` covers credential formats only) | No |
+| Image container, size, alt text for a single post | `publication.package.integrity` exists but requires a campaign package (`MANIFEST.json`, `SUMMARY.md`, `POSTS/`) and a 1200 by 675 minimum | No |
+| Extracting claims from prose | None, by design | No |
+| Judging what an image shows | None | No |
+
+| Option | For | Against |
+| --- | --- | --- |
+| A. HowlProof runs what it has; HowlWriter adds deterministic checks for the gaps and can only block or add limitations (chosen) | No fabricated verdict: the verdict field is HowlProof's word, copied. The gap checks are about LinkedIn and this queue, which HowlWriter owns. No change to a second repository. Works with the released HowlProof | Two kinds of result in one report. The HowlProof verdict does not reflect the gap checks, so the report needs a separate outcome |
+| B. Add new evaluators to HowlProof for every gap | One verdict covers everything | LinkedIn rules and this queue's history do not belong in a general verifier. Needs HowlProof fixtures, contract tests, regenerated docs and a release before HowlWriter can use it |
+| C. HowlWriter computes its own verdict | Simple | Forbidden: it would be a fabricated verdict |
+
+Chosen: A. Recorded gap for a later decision by the owner: a generic `privacy.scan`
+evaluator (internal hostnames, private addresses, local paths) would fit HowlProof's
+security adversary and could replace `privacy.patterns` here. It is not built, because it
+changes HowlProof's check catalog and that is the owner's call.
+
+No model is used anywhere in verification. Every check is labelled with its method
+(`deterministic` or `howlproof acquire`), so nothing is presented as judgment.
+
+## D14. The acceptance contract belongs to the operator
+
+HowlProof returns `INSUFFICIENT_EVIDENCE` when a target has no acceptance criteria, and
+its own bridge documentation says a bridge never writes them. `howlwriter linkedin init`
+therefore writes a starter `howlproof.post.yaml` once (like `howlproof init`), never
+overwrites it, passes it with `--config`, and records its SHA-256 in each report.
+
+Because the operator can edit the contract, HowlWriter enforces one floor of its own:
+`secrets.scan` must have run and reached `VERIFIED`, or the post is blocked whatever the
+verdict. A test proves a contract without the secret scan cannot make a post eligible.
+
+## D15. What each verdict means for the queue
+
+| HowlProof result | Effect |
+| --- | --- |
+| `PROVEN`, `CONDITIONALLY_PROVEN`, `REQUIRES_HUMAN` | Eligible for human approval. The rationale and every limitation are listed for the approver. Human approval is still required |
+| `REJECT`, `INSUFFICIENT_EVIDENCE` | Blocked |
+| Exit 2 (usage), 3 (internal), 4 (artifact changed), timeout, unreadable or inconsistent output, HowlProof missing | Blocked. The report verdict is null |
+| Any HowlProof check with status `ERROR` | Blocked |
+| Any deterministic check `FAILED` or `ERROR` | Blocked. The HowlProof verdict is still recorded unchanged |
+| A check that did not run (for example links without `--allow-network`) | Recorded as `NOT_EXECUTED` and listed as a limitation |
+
+| Option for unexecuted optional checks | For | Against |
+| --- | --- | --- |
+| A. List as a limitation the approver must see (chosen) | Posts can be verified offline; nothing is reported as done | The approver must read the list |
+| B. Block until every check ran | Strictest | Forces a network fetch for every post, and a link HowlProof cannot fetch (a PDF) would block forever |
+
+M3 must show the limitations to the approver and record which were accepted.
+
+## D16. Binding the report to the post and to HowlProof's evidence
+
+The post stores only a reference: report path, SHA-256 of the report bytes, and the content
+fingerprint. When a reference is attached, and again at publish time, HowlWriter
+recomputes everything it can:
+
+1. The report bytes match the stored hash and the report is for this post and fingerprint.
+2. The eligibility decision is derived again from the recorded checks; the stored
+   `outcome` block is not trusted.
+3. The sealed HowlProof bundle still matches its own integrity index, its manifest hash is
+   the one recorded, and its verdict equals the report's.
+4. The package is rebuilt from the post, media, claims and evidence on disk and its tree
+   digest must equal the digest HowlProof recorded for its target. HowlWriter computes
+   that digest independently; a contract test shows both programs agree.
+
+Limit: nothing is signed. A writer to the repository can forge a consistent report and
+bundle. HowlProof has `attest` and `verify-attestation` (SSH signatures); using them, or
+re-running verification inside the trusted approval workflow, is an M3 decision.
+
+## D17. Revalidation
+
+A verification report older than `verification_max_age_days` (default 7, range 1 to 30)
+blocks publication. `verify` may be run again on an approved or scheduled post:
+
+| Result of the new run | Effect |
+| --- | --- |
+| Eligible and the verdict is not weaker than before | Report replaced, approval kept (same content fingerprint) |
+| Blocked, or the verdict is weaker than before | Post returns to DRAFT and loses its approval |
+
+Open for M3: an approval will name the verification report it relied on. Whether a
+refreshed report with new limitations needs a new approval must be decided there.
+
+## D18. Links are checked through `howlproof acquire`, not by HowlWriter
+
+HowlWriter contains no HTTP client. Link contact is opt in (`verify --allow-network`) and
+goes through `howlproof acquire`, which already defends against private, loopback, link
+local and metadata addresses on every hop, pins the connection to the validated address,
+and bounds redirects, time and size. Writing a second fetcher would duplicate that risk.
+
+Consequences: only text content types are accepted, so a working PDF or image link is
+reported `UNCONFIRMED`; a 404 or 410 is `BROKEN` and blocks; a redirect to another host
+is a warning. A reachable link is never reported as support for the post.
+
+## D19. Declared claims
+
+Claims are authored, not extracted. The operator (or a drafting step whose output the
+operator reviews) writes `claims/<post id>/claims.json` in `howl.claim_bundle/v1` with its
+evidence files. The deterministic `claims.coverage` check blocks when the post text has a
+figure with a unit, percent sign or currency that no declared claim mentions, and warns
+on other bare numbers. It cannot see claims that carry no number.

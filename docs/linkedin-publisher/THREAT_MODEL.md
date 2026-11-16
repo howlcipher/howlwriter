@@ -33,10 +33,12 @@ design does not remove.
 | --- | --- | --- |
 | Text, link or image changed after approval | Approval is bound to a content fingerprint that the scheduler recomputes; an edit through the tool also resets the post to DRAFT | M1 done |
 | Post file edited by hand or by a script | Stale approval and stale stored fingerprint both block; the post is reported, not sent | M1 done |
-| Image bytes swapped under the same path | Media SHA-256 is part of the fingerprint and is rechecked by `validate` | M1 done (recheck at publish time: M4) |
+| Image bytes swapped under the same path | Media SHA-256 is part of the fingerprint and is rechecked by `validate` | M1 done; rechecked by the verification gate at publish time since M2 |
 | A draft skips review | Lifecycle table allows `PUBLISHING` only from `SCHEDULED`, and `APPROVED` only from review | M1 done |
 | Code path that approves without a human | No approve command; default verifier and gate refuse; empty gate list is refused | M1 done |
-| Forged approval or verification file | Tamper evident records checked by a trusted workflow | M3 |
+| Edited verification report, or a blocked report relabelled as eligible | Report hash in the post; eligibility recomputed from recorded checks; sealed HowlProof bundle and package tree digest rechecked | M2 done (tamper evident, not authenticated) |
+| Fully forged report plus matching forged bundle by someone with write access | Signed or workflow produced records | M3 |
+| Forged approval file | Tamper evident records checked by a trusted workflow | M3 |
 | Approval by an unauthorized GitHub actor | Compare the workflow actor's numeric account id with a configured trusted id | M3 |
 | Identity taken from post content or an AI report | Identity will come only from the GitHub workflow context | M3 |
 | A second route to LinkedIn that skips the gates | LinkedIn is not in the generic `publish --to` registry (decision D2) | M1 done |
@@ -59,7 +61,9 @@ design does not remove.
 | Threat | Control | Status |
 | --- | --- | --- |
 | Token stored in a post, config, log or record | No field holds a secret; transport and checkpoint exceptions are stored and reported by type only, never by message | M1 done for records; M4 for the transport and logs |
-| Secret or internal detail inside post text | HowlProof privacy and secret checks | M2 |
+| Credential inside post text, alt text or claims | HowlProof `secrets.scan`, required for every report | M2 done |
+| Internal hostname, private address, local path or confidentiality marker in the post | Deterministic `privacy.patterns` check blocks | M2 done (patterns only) |
+| Credential reprinted in a report | HowlProof masks matches; the report copies titles and locations, not evidence excerpts | M2 done |
 | Link with embedded credentials | `URL_INVALID` check rejects user or password in a URL | M1 done |
 | Drafts leak through a public Pages site | Separate public repository with static assets only; leak test on the build | M6 |
 | Path traversal through post ids or media paths | Strict id pattern; media and artifact paths confined to the repository | M1 done |
@@ -68,9 +72,14 @@ design does not remove.
 
 | Threat | Control | Status |
 | --- | --- | --- |
-| Link checker used to reach private or local addresses | Deny private, loopback and link local ranges; re-check after each redirect | M2 |
-| HTTP 200 treated as proof of a claim | Reachability and support are separate findings | M2 |
-| Instructions hidden in fetched or imported text | Treat as data; publishing path runs no model | M2, and by design in M1 |
+| Link checker used to reach private or local addresses | No fetch code in HowlWriter. `howlproof acquire` refuses non public addresses on every hop; contract tests confirm the refusals without connecting | M2 done |
+| HTTP 200 treated as proof of a claim | Reachability is one check with a stated limit; support is decided only by `research.claims` | M2 done |
+| Instructions hidden in fetched or imported text | Fetched bytes are stored by HowlProof and never interpreted; verification runs no model | M2 done |
+| A weakened HowlProof contract makes everything pass | Contract hash recorded; `secrets.scan` required regardless of the contract | M2 done |
+| HowlProof missing, failing or timing out read as a pass | Any such case yields a null verdict and a blocked report | M2 done |
+| Evidence or media swapped after verification | Package rebuilt and its digest compared at attach and publish time | M2 done |
+| Stale verification used weeks later | `verification_max_age_days` gate | M2 done |
+| Files smuggled into the package through the claims directory | Symbolic links, reserved names and oversized files are refused and block | M2 done |
 | Local dashboard reachable from the network or another site | Loopback bind, origin and CSRF checks, no credentials sent to the browser | M5 |
 
 ### Supply chain and workflow integrity
@@ -102,6 +111,28 @@ design does not remove.
 8. In M1 the `actor` in audit entries is a label the caller supplies (`--actor`). It is a
    record of what was claimed, not an authenticated identity. Authenticated identity
    arrives with M3 and applies to approvals.
+
+9. Verification reports and HowlProof bundles are tamper evident, not authenticated.
+   Anyone who can write to the repository can produce a consistent forged pair. The
+   approval boundary (M3) must not treat a report as trusted merely because it verifies.
+10. The deterministic checks are patterns. They do not find reworded duplicates, claims
+    without a number, confidential material without a marker, or anything inside an image.
+11. `claims.coverage` trusts the author to declare a claim honestly. A declared claim that
+    HowlProof finds inconclusive does not block; it is listed for the approver.
+12. A HowlProof `PROVEN` can rest on arithmetic over numbers the author supplied. The
+    report states this for each such claim (`DETERMINISTIC_CHECK_ONLY`).
+
+## M2 security review notes
+
+- One new subprocess call site (`howlproof.subprocess_runner`): fixed argument list, no
+  shell, bounded timeout, standard input closed.
+- No HTTP client was added to HowlWriter. Network contact happens only inside
+  `howlproof acquire`, only with `--allow-network`.
+- The package is built in a private temporary directory and removed afterwards.
+- HowlProof is called with paths relative to the repository so its sealed bundle holds
+  no home directory path. The bundle does record the temporary package path.
+- Report and bundle paths are confined to `verification/`; a reference outside the post's
+  own report directory is refused.
 
 ## M1 security review notes
 

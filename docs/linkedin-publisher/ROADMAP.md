@@ -14,8 +14,8 @@ milestone, and continue only the next authorized work.
 | Milestone | Status |
 | --- | --- |
 | M0 Audit and architecture | COMPLETE |
-| M1 Private post queue and scheduler | VERIFIED (at gate, awaiting owner review) |
-| M2 HowlProof integration | NOT_STARTED |
+| M1 Private post queue and scheduler | COMPLETE |
+| M2 HowlProof integration | VERIFIED (at gate, awaiting owner review) |
 | M3 Human approval | NOT_STARTED |
 | M4 LinkedIn and GitHub Actions | NOT_STARTED |
 | M5 Local management dashboard | NOT_STARTED |
@@ -43,7 +43,8 @@ milestone, and continue only the next authorized work.
 
 ## M1. Private post queue and scheduler
 
-- Status: VERIFIED (2026-11-15). Stopped at the gate as instructed.
+- Status: COMPLETE. Verified 2026-11-15; the owner authorized continuing on 2026-11-16.
+  Still open from M1: the branch is not pushed, so CI has not run it on Python 3.11 to 3.13.
 - Scope: versioned post schema, external validated configuration, lifecycle, scheduling
   engine, persistence with compare and swap, daily ledger, publish protocol against mocked
   transports, CLI.
@@ -91,27 +92,56 @@ milestone, and continue only the next authorized work.
 
 ## M2. HowlProof integration
 
-- Status: NOT_STARTED
-- Scope: adapter over the real HowlProof CLI or API; publishing verification profile
-  (claims, links, images, privacy and security, content quality); machine readable report
-  stored as a separate artifact; a real `ArtifactVerifier` for verification references.
-- Acceptance criteria: only real HowlProof commands used; all five verdicts preserved;
-  errors, missing evidence and incomplete runs block; report contains post fingerprint,
-  evidence references and fingerprints, check identities, results, findings, limitations,
-  timestamp, tool and version provenance, verdict; only executed checks reported as done;
-  no fabricated `PROVEN`.
-- Implementation tasks: read HowlProof evaluators and bundle format in depth; decide what
-  belongs in HowlProof versus HowlWriter and record gaps; link checker with redirect and
-  private network defenses; image format, size, dimension and alt text checks; secret and
-  privacy scan of post text; duplicate detection against the queue and history;
-  revalidation rule for time sensitive evidence.
-- Test requirements: contract tests against the installed HowlProof; adapter tests for
-  each verdict and for error exits 2, 3 and 4; link safety tests with a local fake server
-  only; no live network in the default suite.
-- Security checks: request forgery defenses; untrusted fetched text handled as data.
-- Dependencies: M1. May need changes in the HowlProof repository.
-- Evidence: none yet.
-- Known limitations: to be recorded.
+- Status: VERIFIED (2026-11-16). Stopped at the gate.
+- Scope: adapter over the real HowlProof program; publishing verification (claims, links,
+  images, privacy and security, content quality); machine readable report stored as a
+  separate artifact; a real `ArtifactVerifier` for verification references; a publish
+  gate for verification.
+- Acceptance criteria and where each is proven (`tests/linkedin/`):
+
+| Criterion | Evidence |
+| --- | --- |
+| Only real HowlProof commands and flags are used | `test_the_commands_and_flags_the_adapter_uses_exist` (reads `howlproof interop`), `test_only_real_howlproof_subcommands_and_flags_are_used` |
+| All five verdicts preserved, never rewritten | Real program: clean post CONDITIONALLY_PROVEN, credential REJECT, arithmetic claim PROVEN, unevaluable criterion INSUFFICIENT_EVIDENCE, expired exclusion REQUIRES_HUMAN (`test_howlproof_contract.py`). Scripted: `test_howlproof_verdict_is_preserved_and_decides_eligibility` |
+| No fabricated PROVEN | `test_missing_howlproof_blocks_with_no_verdict`, `test_howlproof_error_exits_block_with_no_verdict`, `test_exit_code_that_disagrees_with_the_printed_verdict_is_rejected`, `test_unreadable_or_incomplete_output_is_never_a_verdict`, `test_verdict_upgraded_inside_the_report_is_caught_by_the_sealed_bundle` |
+| Errors, missing evidence and incomplete runs block | `test_timeout_blocks`, `test_errored_howlproof_check_blocks_even_under_an_approvable_verdict`, `test_check_fault_blocks`, `test_missing_contract_blocks`, `test_malformed_claim_bundle_errors_and_blocks` |
+| Report holds fingerprint, evidence references and hashes, check identities, results, findings, limitations, time, tool and version provenance, verdict | `test_clean_post_gets_a_report_and_a_reference`, `test_report_matches_the_published_schema` |
+| Only executed checks are reported as done | `test_links_are_not_contacted_without_opt_in_and_are_reported_as_not_executed`, `test_missing_howlproof_blocks_with_no_verdict` |
+| Claims: supported, refuted, unverifiable kept apart; invented metrics caught | `test_supported_arithmetic_claim_reaches_real_proven_with_its_limit_stated`, `test_refuted_claim_is_rejected_by_the_real_claim_evaluator`, `test_unverifiable_empirical_claim_stays_unresolved`, `test_measured_figure_without_a_declared_claim_blocks` |
+| Links: syntax, https, redirects, response, destination, relevance; 200 is not proof | `test_link_in_text_must_be_declared_and_https`, `test_link_destination_rules`, `test_link_results_come_from_howlproof_acquire` |
+| Unsafe redirects and private networks | `test_real_acquire_refuses_unsafe_destinations_before_connecting` (real program) |
+| Images: format, size, dimensions, alt text, fingerprint; no claim of visual verification | `test_image_header_is_read_for_each_supported_format`, `test_image_defects_block` |
+| Privacy and security | `test_credential_in_the_post_is_rejected_by_the_real_secret_scan`, `test_privacy_patterns` |
+| Content quality: formatting, length, duplicates, Unicode, link consistency | `test_content_checks.py` |
+| Human approval still required after PROVEN | `test_proven_still_requires_human_approval_and_cannot_be_approved_here` |
+| Revalidation before publication | `test_gate_requires_revalidation_after_the_configured_age`, `test_revalidation_of_a_scheduled_post_keeps_its_approval`, `test_failed_or_weaker_revalidation_withdraws_a_scheduled_post` |
+| Forged, edited or stale reports refused | `test_blocked_report_cannot_be_attached_by_editing_its_outcome`, `test_tampered_or_missing_howlproof_bundle_is_rejected`, `test_claims_or_media_changed_after_verification_invalidate_it`, `test_reference_outside_the_posts_own_report_directory_is_rejected` |
+
+- Implementation tasks: done (ARCHITECTURE.md section 12, DECISIONS D13 to D19).
+- Test requirements: met. 131 new tests. 20 of them run the real HowlProof program and are
+  skipped where it is not installed, which includes HowlWriter's CI today. No test uses
+  the network.
+- Security checks: THREAT_MODEL.md, "M2 security review notes".
+- Dependencies: M1. No change was made to the HowlProof repository.
+- Evidence command: `pytest tests/linkedin -q` with `howlproof` on `PATH`, and the core
+  suite `pytest -q -m "not contract" --ignore=tests/docs`. Results are in `JOURNAL.md`.
+- Known limitations:
+  1. Reports and bundles are tamper evident, not signed (DECISIONS D16). M3 must add trust.
+  2. Claims are declared by the author. Statements without a number are not detected, and
+     no model reads the post.
+  3. Image checks cover the container and alt text only. Image source and provenance are
+     not recorded, and nothing looks at what an image shows.
+  4. Link relevance is structural and only for links that are the recorded source of a
+     declared claim. Link contact is opt in.
+  5. HowlProof exit 3 and 4, timeouts, redirects to another host, 404 and unsupported
+     content types are covered with a scripted stand-in only.
+  6. The real HowlProof tests ran against 0.2.0b1 on this machine. CI does not install
+     HowlProof, so CI cannot detect a future incompatible HowlProof release.
+  7. HowlProof gaps recorded, not built: a generic privacy evaluator, and an image
+     evaluator for single posts (DECISIONS D13).
+  8. The verification gate exists but no command installs it; the publish run still
+     refuses everything until M3 and M4.
+  9. The private repository does not exist yet, so nothing was verified against real posts.
 
 ## M3. Human approval
 
