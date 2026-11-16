@@ -162,7 +162,7 @@ def test_proven_still_requires_human_approval_and_cannot_be_approved_here(store,
     assert result.report["outcome"]["limitations"], "standing limitations are always listed"
 
     verification.queue.submit_for_review(post.id, actor="tester")
-    with pytest.raises(OperationRefused, match="M3"):
+    with pytest.raises(OperationRefused, match="not accepted here"):
         verification.queue.approve(post.id, ref_for(post), actor="tester")
     assert reload(store, post).state is S.READY_FOR_REVIEW
 
@@ -608,7 +608,7 @@ def test_claims_or_media_changed_after_verification_invalidate_it(store, service
 
 def test_verifier_still_refuses_approval_artifacts(store, service, verification):
     post = draft(service)
-    assert "M3" in ReportVerifier(store).problems("approval", post, ref_for(post))[0]
+    assert "not accepted here" in ReportVerifier(store).problems("approval", post, ref_for(post))[0]
 
 
 # Publish gate

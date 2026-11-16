@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import sys
 
+from howlwriter.linkedin.approval import ApprovalService
 from howlwriter.linkedin.checks import has_errors
 from howlwriter.linkedin.models import MediaRef, Post, parse_utc
 from howlwriter.linkedin.howlproof import EXECUTABLE_ENV, HowlProofAdapter, find_executable
@@ -142,6 +143,35 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
         "--howlproof",
         default=None,
         help=f"Path to the howlproof executable (default: ${EXECUTABLE_ENV}, then PATH).",
+    )
+
+    command(
+        "review",
+        _review,
+        "Show exactly what an approval would cover, and the values to confirm. Changes nothing.",
+    ).add_argument("id")
+
+    approve = command(
+        "approve",
+        _approve,
+        "Record a human approval. Works only inside the trusted GitHub approval workflow.",
+    )
+    approve.add_argument("id")
+    approve.add_argument("--fingerprint", required=True, help="Content fingerprint shown by 'review'.")
+    approve.add_argument(
+        "--limitations-digest", required=True, help="Limitations digest shown by 'review'."
+    )
+
+    authorize = command(
+        "authorize-schedule",
+        _authorize_schedule,
+        "Authorize an approved post's date and time. Works only inside the trusted GitHub approval "
+        "workflow; verification and approval are kept.",
+    )
+    authorize.add_argument("id")
+    authorize.add_argument("--date", default=None, help="New local date, YYYY-MM-DD (default: keep).")
+    authorize.add_argument(
+        "--time", default=None, help="New time HH:MM, or 'default' (default: keep the current one)."
     )
 
     pause = command("pause", _pause, "Pause all scheduled publishing.", actor=True)
@@ -343,6 +373,60 @@ def _verify(args: argparse.Namespace) -> int:
         "\n".join(lines),
     )
     return 0 if result.eligible else 1
+
+
+def _approval_service(args: argparse.Namespace) -> ApprovalService:
+    # Identity and the approval key come from the process environment GitHub provides, never from
+    # command line arguments or repository files.
+    return ApprovalService(_store(args), os.environ)
+
+
+def _review(args: argparse.Namespace) -> int:
+    review = _approval_service(args).review(args.id)
+    schedule = review["schedule"]
+    report = review["verification"]
+    lines = [
+        f"{review['post_id']}  {review['state']}  {review['title']}",
+        f"  schedule:     {schedule['date'] or 'no date'} {schedule['time'] or 'default time'}",
+        f"  links:        {', '.join(review['urls']) or 'none'}",
+    ]
+    for item in review["media"]:
+        lines.append(f"  image:        {item['path']} sha256 {item['sha256']}")
+        lines.append(f"  alt text:     {item['alt_text']}")
+    if report:
+        lines.append(f"  verification: {report['path']} ({report['created_at']})")
+        lines.append(f"  verdict:      HowlProof {report['verdict']} (advisory; it does not approve)")
+    lines += ["", "----- post text -----", review["text"], "----- end of post text -----", ""]
+    lines.append(f"Approving accepts these {len(review['limitations'])} limitation(s):")
+    lines += [f"  LIMIT    {item}" for item in review["limitations"]]
+    lines += [f"  BLOCKER  {item}" for item in review["blockers"]]
+    if review["approvable"]:
+        lines += [
+            "",
+            "To approve, start the approval workflow on GitHub yourself with:",
+            f"  post_id:            {review['post_id']}",
+            f"  fingerprint:        {review['content_fingerprint']}",
+            f"  limitations_digest: {review['limitations_digest']}",
+            "This command approved nothing.",
+        ]
+    else:
+        lines.append("This post cannot be approved yet.")
+    _emit(args, review, "\n".join(lines))
+    return 0 if review["approvable"] else 1
+
+
+def _approve(args: argparse.Namespace) -> int:
+    post = _approval_service(args).approve(
+        args.id, fingerprint=args.fingerprint, accepted_limitations_digest=args.limitations_digest
+    )
+    return _changed(args, post, "approved")
+
+
+def _authorize_schedule(args: argparse.Namespace) -> int:
+    post = _approval_service(args).authorize_schedule(
+        args.id, new_date=args.date, new_time=_time_argument(args.time)
+    )
+    return _changed(args, post, "schedule authorized")
 
 
 def _submit(args: argparse.Namespace) -> int:

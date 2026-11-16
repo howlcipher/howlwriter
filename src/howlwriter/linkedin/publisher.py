@@ -67,10 +67,10 @@ class PublishGate(Protocol):
 
 
 class RefuseAllGate:
-    """Fail closed default until the verification (M2) and approval (M3) gates exist."""
+    """Fail closed default: a coordinator built without real gates cannot publish."""
 
     def blockers(self, post: Post) -> list[str]:
-        return ["no trusted verification and approval gates are installed (milestones M2 and M3)"]
+        return ["no trusted verification and approval gates are installed (see approval.publish_gates)"]
 
 
 class RunOutcome(str, enum.Enum):

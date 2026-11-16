@@ -15,8 +15,8 @@ milestone, and continue only the next authorized work.
 | --- | --- |
 | M0 Audit and architecture | COMPLETE |
 | M1 Private post queue and scheduler | COMPLETE |
-| M2 HowlProof integration | VERIFIED (at gate, awaiting owner review) |
-| M3 Human approval | NOT_STARTED |
+| M2 HowlProof integration | COMPLETE |
+| M3 Human approval | IN_PROGRESS (built and tested locally; live workflow run blocked on the private repository) |
 | M4 LinkedIn and GitHub Actions | NOT_STARTED |
 | M5 Local management dashboard | NOT_STARTED |
 | M6 Secure GitHub Pages | NOT_STARTED |
@@ -92,7 +92,7 @@ milestone, and continue only the next authorized work.
 
 ## M2. HowlProof integration
 
-- Status: VERIFIED (2026-11-16). Stopped at the gate.
+- Status: COMPLETE. Verified 2026-11-16; the owner replied "continue" to the M2 report.
 - Scope: adapter over the real HowlProof program; publishing verification (claims, links,
   images, privacy and security, content quality); machine readable report stored as a
   separate artifact; a real `ArtifactVerifier` for verification references; a publish
@@ -145,24 +145,53 @@ milestone, and continue only the next authorized work.
 
 ## M3. Human approval
 
-- Status: NOT_STARTED
-- Scope: approval through an authenticated GitHub `workflow_dispatch`; trusted account id
-  check; tamper evident approval record; a real `ArtifactVerifier` for approvals and a
-  real `PublishGate`.
-- Acceptance criteria: approval references the exact content fingerprint, media
-  fingerprints, verification artifact, verdict and accepted limitations, actor, workflow
-  run identity and timestamp; any content change invalidates it; scheduling changes are
-  separately audited; forged records and unauthorized actors are rejected in tests; limits
-  documented.
-- Implementation tasks: approval record schema; signing or authentication controlled by
-  the trusted workflow; approve workflow; verifier; gate; documentation of token and
-  branch protection requirements for AI agents.
-- Test requirements: bypass and forgery attack tests; unauthorized actor tests.
-- Security checks: identity only from the workflow context; AI agents cannot write to the
-  approval path.
-- Dependencies: M1, M2. Needs the private repository (owner authorization to create).
-- Evidence: none yet.
-- Known limitations: to be recorded.
+- Status: IN_PROGRESS (2026-11-16). Implemented and tested locally. One acceptance
+  criterion is BLOCKED: the approval workflow has never run on GitHub, because the private
+  repository does not exist and creating it needs the owner's authorization. M3 is not
+  VERIFIED until that run has been observed.
+- Scope: approval through an authenticated GitHub `workflow_dispatch`; trusted account ID
+  check; authenticated approval record; a real `ArtifactVerifier` for approvals and a
+  real `PublishGate`; separately authorized schedule changes.
+- Acceptance criteria and where each is proven (`tests/linkedin/test_approval.py`):
+
+| Criterion | Evidence |
+| --- | --- |
+| Approval references content fingerprint, media fingerprints, verification artifact, verdict, accepted limitations, actor, workflow run and time | `test_owner_dispatch_records_an_approval_that_names_everything_it_covers`, `test_records_match_the_published_schemas` |
+| Actor checked against a configured numeric account ID | `test_anything_but_the_owners_own_dispatch_is_refused` (18 cases) |
+| Identity never taken from a post, a login name or a command line argument | `test_a_name_in_the_post_or_the_login_never_authorizes`, `test_review_and_approve_commands` |
+| Approver confirms the exact content and limitations | `test_the_approver_must_confirm_the_exact_content_and_limitations`, `test_content_changed_between_review_and_approval_is_refused` |
+| Only a verified, recent, submitted post can be approved | `test_unverified_blocked_stale_or_unsubmitted_posts_cannot_be_approved` |
+| Forged or altered records are rejected | `test_record_signed_with_another_key_is_rejected_everywhere`, `test_any_edit_to_a_genuine_record_breaks_its_authentication` (8 cases), `test_post_file_edited_to_say_approved_does_not_publish`, `test_genuine_approval_cannot_be_moved_to_another_post_or_path`, `test_schedule_record_cannot_stand_in_for_an_approval`, `test_service_refuses_to_attach_an_approval_the_verifier_rejects` |
+| Nothing is reported as authenticated without the key | `test_without_the_key_nothing_is_reported_as_authenticated` |
+| Any text or link change invalidates the approval | `test_editing_through_the_product_discards_the_approval`, `test_content_changed_by_hand_after_approval_is_blocked`; media bytes: M2 `test_claims_or_media_changed_after_verification_invalidate_it` |
+| Scheduling change keeps verification and approval, and is separately authorized and audited | `test_schedule_change_keeps_approval_but_needs_its_own_authorization`, `test_schedule_authorization_needs_the_trusted_run_and_a_valid_approval`, `test_forged_or_borrowed_schedule_authorizations_are_ignored`, `test_post_approved_without_a_date_needs_the_date_authorized` |
+| Evidence made stale or weaker after approval needs a new approval | `test_refreshed_report_with_a_new_limitation_needs_a_new_approval`, `test_weaker_verdict_reattached_by_hand_needs_a_new_approval`, `test_refreshed_report_with_nothing_new_keeps_the_approval`, `test_old_approval_expires` |
+| Human approval required even for PROVEN | `test_proven_post_is_not_approved_until_the_human_approves` |
+| Publishing run needs both gates | `test_valid_approval_lets_the_run_reach_the_transport_once`, `test_run_without_the_key_or_with_an_unauthorized_day_sends_nothing` (scripted transport) |
+| The key is never stored or shown | `test_the_key_is_never_shown_or_stored` |
+| Approval workflow is dispatch only, single key holder, no input reaches the shell unquoted | `test_approval_workflow_template_is_narrow` (static check of the template) |
+| The approval workflow works on GitHub for the owner and refuses others | NOT EXECUTED. Needs the private repository |
+
+- Evidence: `.venv/bin/python -m pytest tests/linkedin -q` gives 388 passed (58 new in
+  `test_approval.py`). GitHub was not contacted.
+- Known limitations:
+  1. Never run on GitHub. The meaning of `GITHUB_ACTOR_ID`, `GITHUB_TRIGGERING_ACTOR`,
+     `GITHUB_RUN_ATTEMPT` and `GITHUB_WORKFLOW_REF` is taken from memory of GitHub's
+     documentation and was not re-read or observed in this session (DECISIONS D12).
+  2. The key authenticates the workflow, not the person. Whoever can dispatch the workflow
+     with the owner's token, or change a workflow that receives the secret, can approve
+     (THREAT_MODEL limits 1 and 13).
+  3. Withdrawing an approval is repository state. Someone with write access can restore
+     the exact approved content, report and record; only key rotation revokes for certain
+     (`test_restoring_withdrawn_approved_content_by_hand_is_a_known_limit`).
+  4. Verification reports are still unsigned. The approver approves the content shown and
+     the report as presented; the approval workflow rechecks the report but does not
+     re-run HowlProof (DECISIONS D23).
+  5. A change to `default_publish_time` moves posts that have no time override without a
+     schedule authorization. Bulk rescheduling needs one authorization per post.
+  6. The workflow template uses action tags, not commit pins, and installs HowlWriter
+     from GitHub; the owner must pin both before first use.
+  7. No publish command exists. `publish_gates` is ready for M4 to install.
 
 ## M4. LinkedIn and GitHub Actions
 

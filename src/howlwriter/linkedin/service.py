@@ -5,9 +5,9 @@ audit event recorded in the same write. Nothing here sends anything anywhere.
 
 Verification reports and approvals are separate artifacts. This service only
 attaches a reference to one after an injected verifier accepts it, and the
-default verifier refuses everything, so until the real HowlProof adapter (M2)
-and the real approval boundary (M3) exist, no post can become APPROVED through
-the product. That is deliberate: there is no placeholder approval.
+default verifier refuses everything. Reports are checked by
+``verification.ReportVerifier`` and approvals by ``approval.ApprovalVerifier``;
+there is no placeholder approval.
 """
 
 from __future__ import annotations
@@ -62,13 +62,10 @@ class ArtifactVerifier(Protocol):
 
 
 class RefuseAllVerifier:
-    """Fail closed default. Replaced by the HowlProof adapter (M2) and approval service (M3)."""
+    """Fail closed default, used whenever no real verifier is supplied."""
 
     def problems(self, kind: str, post: Post, ref: ArtifactRef) -> list[str]:
-        milestone = "M2 (HowlProof integration)" if kind == "verification" else "M3 (human approval)"
-        return [
-            f"{kind} artifacts cannot be accepted yet: the trusted check arrives in milestone {milestone}"
-        ]
+        return [f"{kind} artifacts are refused: no trusted verifier is installed for this operation"]
 
 
 def new_post_id(title: str) -> str:

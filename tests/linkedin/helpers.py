@@ -32,7 +32,7 @@ class FakeClock:
 
 
 class AcceptAllVerifier:
-    """Test stand-in for the trusted M2 and M3 checks. Never shipped."""
+    """Test stand-in for the trusted verification and approval checks. Never shipped."""
 
     def problems(self, kind, post, ref):
         return []

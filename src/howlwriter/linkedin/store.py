@@ -250,6 +250,7 @@ class QueueStore:
             self.root / "ledger",
             self.root / "claims",
             self.root / "verification",
+            self.root / "approvals",
         ):
             directory.mkdir(parents=True, exist_ok=True)
             keep = directory / ".gitkeep"

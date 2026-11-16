@@ -87,10 +87,10 @@ def test_modified_image_bytes_are_detected(service, store):
 
 
 def test_nothing_can_be_approved_with_the_default_verifier(store, clock):
-    """Until M2 and M3 exist the product has no way to mark a post verified or approved."""
+    """Without a real verifier the service has no way to mark a post verified or approved."""
     real = QueueService(store, clock)
     post = real.add_draft(title="Draft", text="Body", actor="tester", scheduled_date="2026-11-20")
-    with pytest.raises(OperationRefused, match="M2"):
+    with pytest.raises(OperationRefused, match="no trusted verifier"):
         real.attach_verification(post.id, ref_for(post, "verification"), actor="tester")
     real.submit_for_review(post.id, actor="tester")
     with pytest.raises(OperationRefused):

@@ -81,18 +81,25 @@ def test_draft_lifecycle_through_the_cli(repo, capsys, tmp_path):
     assert run_json(repo, capsys, "queue")["queue"] == []
 
 
-def test_cli_cannot_approve_or_schedule_without_the_trusted_boundary(repo, capsys, tmp_path):
-    """There is deliberately no approve command, and schedule refuses an unapproved post."""
+def test_cli_cannot_approve_or_schedule_without_the_trusted_boundary(repo, capsys, tmp_path, monkeypatch):
+    """Approve exists but only works inside the trusted workflow; there is no publish command."""
+    for name in ("GITHUB_ACTIONS", "GITHUB_ACTOR_ID", "HOWLWRITER_LINKEDIN_APPROVAL_KEY"):
+        monkeypatch.delenv(name, raising=False)
     post_id = add(repo, capsys, tmp_path, "Unapproved", "Hello.", "--date", "2099-01-05")["id"]
     run(repo, capsys, "submit", post_id)
     assert "cannot move" in run(repo, capsys, "schedule", post_id, expect=1).err
     with pytest.raises(SystemExit) as usage:
         main(["linkedin", "--repo", str(repo), "approve", post_id])
-    assert usage.value.code == 1
+    assert usage.value.code == 1, "approve needs the values the approver confirmed"
     capsys.readouterr()
+    refused = run(
+        repo, capsys, "approve", post_id, "--fingerprint", "x", "--limitations-digest", "y", expect=1
+    ).err
+    assert "not authorized" in refused
+    assert run_json(repo, capsys, "show", post_id)["state"] == "READY_FOR_REVIEW"
     parser = build_parser()
     subcommands = parser._subparsers._group_actions[0].choices["linkedin"]._subparsers._group_actions[0].choices
-    assert not {"approve", "publish", "run", "send"} & set(subcommands)
+    assert not {"publish", "run", "send"} & set(subcommands)
 
 
 def test_validate_exits_nonzero_on_blocking_findings(repo, capsys, tmp_path):

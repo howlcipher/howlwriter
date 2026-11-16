@@ -141,3 +141,36 @@ Next authorized step
 
 None. Stop at the M2 gate. Recommended next: owner review of M2, a decision on pushing the
 branch, then M3 (human approval), which needs the private repository to exist.
+
+## 2026-11-16: M3 human approval (built locally, live run blocked)
+
+Authorization: the owner replied "continue" to the M2 report. That report named M3 as the
+next milestone and listed pushing the branch and creating the private repository as
+separate decisions. "continue" was taken as authorization for M3 work that stays local.
+Nothing was pushed and no repository was created.
+
+What was done
+
+1. Decided how approvals are authenticated and where identity comes from (DECISIONS D20
+   to D25), closing the questions D16 and D17 left open.
+2. Added `approval.py`: trust settings and run identity from the environment, approval
+   and schedule records with HMAC-SHA256, `ApprovalVerifier`, `ApprovalGate`,
+   `publish_gates`, `ApprovalService` (`review`, `approve`, `authorize_schedule`).
+3. Added commands `review`, `approve`, `authorize-schedule`; setting
+   `approval_max_age_days`; two record schemas; `approvals/` in `init`.
+4. `verify` on an approved post now also withdraws it when the new report lists a
+   limitation the approval did not accept.
+5. Added a workflow template under `docs/linkedin-publisher/workflows/`.
+6. Updated four older tests whose wording said approval did not exist yet. The behavior
+   they protect (refusal without a trusted verifier or gate) is unchanged.
+
+Mistake caught by the tests: a command line test assumed the real clock was far from the
+test clock. It was the same day, so the command approved instead of refusing. The test now
+uses the real clock throughout.
+
+Not done, and why
+
+- The workflow has not run on GitHub: no private repository exists. M3 stays IN_PROGRESS.
+- GitHub variable semantics and secret exposure rules were not re-verified (D12).
+
+Next: owner decisions listed in ROADMAP M3 and the session report.

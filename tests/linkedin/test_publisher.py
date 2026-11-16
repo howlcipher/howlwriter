@@ -75,7 +75,7 @@ def test_both_switches_are_required(service, store, clock, switches, expected):
 def test_default_gate_refuses_everything(due, store, clock):
     transport = FakeTransport()
     report = PublishCoordinator(store, transport, clock=clock).run()
-    assert report.outcome is RunOutcome.BLOCKED and "M2" in report.messages[0]
+    assert report.outcome is RunOutcome.BLOCKED and "no trusted verification and approval gates" in report.messages[0]
     assert transport.calls == [] and store.load_post(due.id).state is S.SCHEDULED
 
 

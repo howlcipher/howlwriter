@@ -100,8 +100,9 @@ repository holds data only.
 
 Injected dependencies (protocols): `Clock`, `ArtifactVerifier`, `PublishGate`,
 `PostTransport`, and a `checkpoint` callable. The defaults for `ArtifactVerifier` and
-`PublishGate` refuse everything, so the shipped code cannot approve or send until M2 to M4
-install real implementations.
+`PublishGate` refuse everything. Real implementations: `verification.ReportVerifier` and
+`VerificationGate` (M2), `approval.ApprovalVerifier` and `ApprovalGate` (M3). No transport
+exists until M4, so nothing can be sent.
 
 ## 5. Private repository layout
 
@@ -112,7 +113,7 @@ media/...                      local images referenced by posts
 state/control.json             global pause switch with audit trail
 ledger/<year>/<date>.json      one file per local calendar day
 verification/...               HowlProof reports (M2)
-approvals/...                  approval records (M3)
+approvals/<id>/...             approval and schedule authorization records (M3)
 .github/workflows/...          scheduled and manual workflows (M3, M4)
 ```
 
@@ -255,3 +256,48 @@ the time, HowlProof's verdict, and a derived outcome (`ELIGIBLE_FOR_HUMAN_APPROV
 | Redirects to another host, 404, unsupported content type | Scripted stand-in only |
 | LinkedIn | Not contacted. No LinkedIn code exists |
 
+## 13. Human approval (implemented in M3, not yet run on GitHub)
+
+`src/howlwriter/linkedin/approval.py`. Decisions D20 to D25.
+
+```
+owner, locally          howlwriter linkedin review <id>
+                        prints text, links, media, verdict, limitations,
+                        content fingerprint, limitations digest
+owner, on GitHub        Actions > LinkedIn approve > Run workflow (main)
+                        inputs: post id, fingerprint, limitations digest
+trusted workflow run    howlwriter linkedin approve ...
+                        1. run identity: manual dispatch, first attempt, main,
+                           named workflow, GITHUB_ACTOR_ID == trusted ID
+                        2. post is READY_FOR_REVIEW, report genuine and recent
+                        3. fingerprint and digest equal what is in the repository now
+                        4. write approvals/<id>/<time>-<fp8>.json with an HMAC
+                        5. post becomes APPROVED; workflow commits and pushes
+publishing run (M4)     approval.publish_gates: VerificationGate + ApprovalGate
+```
+
+An approval record (`howlwriter.linkedin_approval/v1`) holds the post ID, content
+fingerprint, media paths and hashes, the verification report (path, hash, time, verdict,
+status, HowlProof run and manifest hash), the accepted limitations and their digest, the
+approved schedule, the actor (numeric ID and login), the workflow run (repository and its
+ID, run ID and attempt, workflow ref, event, ref, commit), the time, and the
+authentication code. A schedule authorization
+(`howlwriter.linkedin_schedule_authorization/v1`) names the approval by hash, the previous
+and the new slot, and carries the same identity and authentication.
+
+`ApprovalGate` accepts a post only when the record's hash matches the reference, its
+structure is exact, its authentication code verifies with the key, the actor is the
+trusted ID, the run identity is the trusted workflow, the post ID, fingerprint and media
+match the post now, the approval is not too old, the attached report is the approved one
+or a refresh that is no worse, and the post's slot is the approved one or an authorized
+one.
+
+### What is real and what is mocked (M3)
+
+| Area | Evidence |
+| --- | --- |
+| Record creation, authentication, every refusal and forgery case | Real code, `tests/linkedin/test_approval.py` |
+| GitHub run identity | A dictionary shaped like the variables GitHub sets. GitHub was not contacted and the workflow has never run |
+| HowlProof inside these tests | Scripted stand-in (`proof_fakes.py`) |
+| Publishing through both gates | Scripted transport. Says nothing about LinkedIn |
+| Workflow file | Template, parsed and checked statically only |

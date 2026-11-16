@@ -29,6 +29,7 @@ DEFAULTS: dict[str, Any] = {
     "dry_run": True,
     "max_lateness_minutes": 180,
     "verification_max_age_days": 7,
+    "approval_max_age_days": 30,
 }
 
 #: The one post per calendar day rule is a hard product invariant. The value is
@@ -38,6 +39,7 @@ MAX_POSTS_PER_DAY_CEILING = 1
 MAX_LATENESS_CEILING_MINUTES = 720
 MAX_ALLOWED_TIMES = 6
 MAX_VERIFICATION_AGE_CEILING_DAYS = 30
+MAX_APPROVAL_AGE_CEILING_DAYS = 90
 
 _KEYS = frozenset(DEFAULTS) | {"schema"}
 
@@ -60,6 +62,7 @@ class PublisherConfig:
     dry_run: bool
     max_lateness_minutes: int
     verification_max_age_days: int = 7
+    approval_max_age_days: int = 30
 
     @property
     def tzinfo(self) -> ZoneInfo:
@@ -76,6 +79,7 @@ class PublisherConfig:
             "dry_run": self.dry_run,
             "max_lateness_minutes": self.max_lateness_minutes,
             "verification_max_age_days": self.verification_max_age_days,
+            "approval_max_age_days": self.approval_max_age_days,
         }
 
 
@@ -147,6 +151,11 @@ def parse_config(data: Any) -> PublisherConfig:
         problems.append(
             f"verification_max_age_days must be an integer from 1 to {MAX_VERIFICATION_AGE_CEILING_DAYS}"
         )
+    approval_age = merged["approval_max_age_days"]
+    if not _is_int(approval_age) or not 1 <= approval_age <= MAX_APPROVAL_AGE_CEILING_DAYS:
+        problems.append(
+            f"approval_max_age_days must be an integer from 1 to {MAX_APPROVAL_AGE_CEILING_DAYS}"
+        )
 
     if problems:
         raise ConfigError(problems)
@@ -159,6 +168,7 @@ def parse_config(data: Any) -> PublisherConfig:
         dry_run=merged["dry_run"],
         max_lateness_minutes=lateness,
         verification_max_age_days=age,
+        approval_max_age_days=approval_age,
     )
 
 
@@ -195,4 +205,6 @@ def render_default_config() -> str:
         "max_lateness_minutes: 180\n"
         "# A verification report older than this blocks publication until the post is verified again.\n"
         "verification_max_age_days: 7\n"
+        "# An approval older than this no longer permits publication; the post must be approved again.\n"
+        "approval_max_age_days: 30\n"
     )

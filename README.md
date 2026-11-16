@@ -379,8 +379,11 @@ duplicates, privacy patterns and images, then stores a report. The verdict in th
 is HowlProof's own; a post is either eligible for human approval or blocked. Links are
 contacted only with `--allow-network`, through `howlproof acquire`.
 
-Nothing here can contact LinkedIn or approve a post: human approval and the LinkedIn
-transport are later milestones, and until they exist the code refuses to approve or send. See [docs/linkedin-publisher/](docs/linkedin-publisher/ROADMAP.md)
+`howlwriter linkedin review <id>` shows exactly what an approval would cover. Approval itself is
+recorded only by a GitHub Actions workflow you start yourself: it checks your numeric GitHub
+account ID and writes an authenticated record that names the content, the verification report
+and the limitations you accepted. That workflow is built and tested locally but has not run on
+GitHub yet. Nothing here can contact LinkedIn: the transport is a later milestone. See [docs/linkedin-publisher/](docs/linkedin-publisher/ROADMAP.md)
 for the roadmap, architecture, threat model, decisions and runbook.
 
 ## Using the local web UI

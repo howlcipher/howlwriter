@@ -35,12 +35,16 @@ design does not remove.
 | Post file edited by hand or by a script | Stale approval and stale stored fingerprint both block; the post is reported, not sent | M1 done |
 | Image bytes swapped under the same path | Media SHA-256 is part of the fingerprint and is rechecked by `validate` | M1 done; rechecked by the verification gate at publish time since M2 |
 | A draft skips review | Lifecycle table allows `PUBLISHING` only from `SCHEDULED`, and `APPROVED` only from review | M1 done |
-| Code path that approves without a human | No approve command; default verifier and gate refuse; empty gate list is refused | M1 done |
+| Code path that approves without a human | `approve` works only inside the trusted workflow run; default verifier and gate refuse; empty gate list is refused | M1 done; M3 built |
 | Edited verification report, or a blocked report relabelled as eligible | Report hash in the post; eligibility recomputed from recorded checks; sealed HowlProof bundle and package tree digest rechecked | M2 done (tamper evident, not authenticated) |
-| Fully forged report plus matching forged bundle by someone with write access | Signed or workflow produced records | M3 |
-| Forged approval file | Tamper evident records checked by a trusted workflow | M3 |
-| Approval by an unauthorized GitHub actor | Compare the workflow actor's numeric account id with a configured trusted id | M3 |
-| Identity taken from post content or an AI report | Identity will come only from the GitHub workflow context | M3 |
+| Fully forged report plus matching forged bundle by someone with write access | Not prevented. The approval binds the report hash the owner was shown; the owner must read the post (decision D23) | Open; candidate for M4 |
+| Forged approval file | HMAC-SHA256 with a key held only as an Actions secret; checked at approval and at publish time | M3 built, tested locally |
+| Approval by an unauthorized GitHub actor | `GITHUB_ACTOR_ID` compared with the configured numeric ID; first attempt manual dispatch of the named workflow on main only | M3 built; never run on GitHub |
+| Identity taken from post content or an AI report | Identity comes only from the run environment; no `--actor` on `approve` | M3 built |
+| Approved post moved to another day | Approval records its schedule; a different slot needs an authenticated schedule record | M3 built |
+| Genuine approval reused for another post, other content, or a weaker report | Record names post, fingerprint, media, report hash, verdict and accepted limitations; all rechecked | M3 built |
+| Content swapped between review and approval | Approver passes the fingerprint and limitations digest they saw; the workflow recomputes both | M3 built |
+| Very old approval used | `approval_max_age_days` (default 30) | M3 built |
 | A second route to LinkedIn that skips the gates | LinkedIn is not in the generic `publish --to` registry (decision D2) | M1 done |
 | Publishing switched on by accident | Two independent switches, both off by default, in a human edited file | M1 done |
 
@@ -121,6 +125,37 @@ design does not remove.
     HowlProof finds inconclusive does not block; it is listed for the approver.
 12. A HowlProof `PROVEN` can rest on arithmetic over numbers the author supplied. The
     report states this for each such claim (`DETERMINISTIC_CHECK_ONLY`).
+
+13. The approval key is a repository Actions secret. A workflow that someone with write
+    access pushes can ask for it, on any branch, unless GitHub settings prevent that. So
+    the approval boundary holds only against parties who cannot push workflows to the
+    private repository and cannot use the owner's token. Give AI drafting agents no push
+    access to that repository; let them hand over drafts another way (a pull request from
+    a fork, or files the owner commits).
+14. The approval job installs HowlWriter and its dependencies before the step that
+    receives the key. A compromised dependency in that job could read the key. Pin the
+    HowlWriter commit and keep the job's dependencies minimal.
+15. A valid approval stays valid for its content and day until it expires, even after the
+    owner withdraws it in the queue, if someone restores the files by hand. Rotate the key
+    to revoke for certain.
+16. The local `approve` command can be run by anyone with made up `GITHUB_*` variables and
+    their own key. The local post file then says APPROVED. Every holder of the real key
+    rejects that record, so it cannot publish; do not read the state field as proof.
+17. The publishing job holds the same key and could create approvals. It is trusted code;
+    M4 must keep it free of any path that writes approval records.
+
+## M3 security review notes
+
+- No new dependency, no network code, no subprocess. `hmac`, `hashlib` and `json` only.
+- The authentication code is compared with `hmac.compare_digest`. A domain prefix keeps
+  the code from being valid for any other purpose.
+- The key is read from the environment, kept out of `repr`, never written to a record,
+  a log line or an error message. A malformed key is reported without echoing it.
+- Record paths are confined to `approvals/<post id>/`; schedule records cannot be used as
+  approvals; links and oversized files are refused.
+- When the authentication code fails, no other field of the record is reported on.
+- Workflow template: dispatch trigger only, `contents: write` only, inputs passed through
+  environment variables, the key given to one step, re-runs and other branches skipped.
 
 ## M2 security review notes
 

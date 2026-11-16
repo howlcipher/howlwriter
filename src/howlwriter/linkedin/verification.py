@@ -882,6 +882,15 @@ class VerificationService:
                     f"the verdict weakened from {previous_verdict} to {report['verdict']} after approval; "
                     "the post needs a fresh review"
                 )
+        accepted = self._accepted_limitations(post) if eligible else None
+        if eligible and accepted is not None:
+            extra = [item for item in report["outcome"]["limitations"] if item not in accepted]
+            if extra:
+                eligible = False
+                reason = (
+                    f"the new report lists {len(extra)} limitation(s) the approval did not accept "
+                    f"(first: {extra[0][:200]}); the post needs a fresh review"
+                )
         if eligible:
             ref = ArtifactRef(relative, sha256_bytes(payload), post.computed_fingerprint())
             updated = self.queue.attach_verification(post.id, ref, actor=actor)
@@ -893,6 +902,23 @@ class VerificationService:
             detail=f"{relative}: {detail}"[:1500],
         )
         return VerificationResult(report, relative, False, False, updated, reason)
+
+    def _accepted_limitations(self, post: Post) -> list[str] | None:
+        """The limitation list a recorded approval accepted, or None when there is none to read.
+
+        This is a courtesy check so a refresh that outgrows the approval is caught
+        at once. The authoritative check is the approval gate at publish time.
+        """
+        if post.approval_ref is None or post.state not in (S.APPROVED, S.SCHEDULED, S.FAILED):
+            return None
+        try:
+            data = json.loads(self.store.artifact_file(post.approval_ref.path).read_bytes())
+        except (OSError, StoreError, ValueError):
+            return None
+        accepted = data.get("accepted_limitations") if isinstance(data, dict) else None
+        if not isinstance(accepted, list):
+            return None
+        return [item for item in accepted if isinstance(item, str)]
 
     def _previous_verdict(self, post: Post) -> str | None:
         if post.verification_ref is None:
@@ -916,7 +942,7 @@ class ReportVerifier:
 
     Limit: the report is not signed. Someone who can write to the repository
     can produce a consistent forged report and bundle. That is addressed by the
-    trusted approval workflow in milestone M3, not here.
+    human approval boundary (``approval.py``), which binds the report an approver saw.
     """
 
     def __init__(self, store: QueueStore) -> None:
@@ -924,7 +950,7 @@ class ReportVerifier:
 
     def problems(self, kind: str, post: Post, ref: ArtifactRef) -> list[str]:
         if kind != "verification":
-            return [f"{kind} artifacts cannot be accepted yet: the trusted check arrives in milestone M3"]
+            return [f"{kind} artifacts are not accepted here; approvals are checked by the approval verifier"]
         report, problems = self.load(post, ref)
         if report is None or problems:
             return problems
@@ -991,7 +1017,8 @@ class ReportVerifier:
 class VerificationGate:
     """Publish time gate: the attached verification must still be genuine and recent.
 
-    This gate alone never allows a publication. The approval gate (M3) is also required.
+    This gate alone never allows a publication. The approval gate is also required;
+    use ``approval.publish_gates`` to build both.
     """
 
     def __init__(self, store: QueueStore, clock: Clock | None = None) -> None:

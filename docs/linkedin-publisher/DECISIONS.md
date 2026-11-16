@@ -111,6 +111,9 @@ because every operation would then conflict in Git.
 | HowlProof coverage for link relevance, privacy scan of post text, duplicate detection | Resolved in M2 | Read and exercised. See D13 for what HowlProof covers and what it does not. |
 | 3,000 character LinkedIn limit | M4 | Taken from the existing HowlWriter linter, not re-verified against LinkedIn. |
 | Alt text length limit | M4 | The stored bound of 4,000 characters is a storage limit, not a LinkedIn rule. |
+| `GITHUB_ACTOR_ID`, `GITHUB_TRIGGERING_ACTOR`, `GITHUB_RUN_ATTEMPT`, `GITHUB_WORKFLOW_REF` semantics | M3 live run | Used from memory of GitHub's documentation; not re-read or observed in this session. |
+| Which workflows and branches can read a repository Actions secret, and whether environment secrets with required reviewers are available for private repositories on the free plan | M3 live run | Not verified. The design assumes the weaker case: any workflow a writer can push may read repository secrets. |
+| Current commit SHAs for `actions/checkout` and `actions/setup-python` | M3 live run | The template uses tags; pins must be looked up and checked by the owner. |
 
 ## D13. Which checks run in HowlProof and which in HowlWriter (M2)
 
@@ -224,3 +227,80 @@ operator reviews) writes `claims/<post id>/claims.json` in `howl.claim_bundle/v1
 evidence files. The deterministic `claims.coverage` check blocks when the post text has a
 figure with a unit, percent sign or currency that no declared claim mentions, and warns
 on other bare numbers. It cannot see claims that carry no number.
+
+## D20. How an approval record is authenticated (M3)
+
+| Option | Pros | Cons |
+| --- | --- | --- |
+| A. HMAC-SHA256 with a key held as a GitHub Actions secret (chosen) | Free; standard library only; nothing to install on the runner; a repository writer without the key cannot forge a record | Symmetric: the publishing job can also create records; the key authenticates the workflow, not the person; rotation voids existing approvals |
+| B. SSH signature through HowlProof `attest` | Asymmetric, so the publishing job needs no secret; reuses HowlProof | HowlProof must be installed on the runner; the private key is still an Actions secret with the same exposure; more moving parts |
+| C. GitHub artifact attestations (Sigstore) | No long lived key | Not available for private repositories on the free plan as far as known; adds a network dependency to publishing |
+| D. No key: at publish time ask the GitHub API who ran the approval run | No secret to steal | Run inputs are not returned by the API, so the record cannot be bound to the run without more machinery; needs a token and a live API in the publish path |
+
+A was chosen. D is a candidate extra check for M4, once the GitHub API is in the publish
+path anyway. The record is canonical JSON; the code covers every field except itself.
+
+## D21. Where identity and trust come from
+
+The trusted account is the numeric ID in `HOWLWRITER_LINKEDIN_APPROVER_ID`, set from a
+GitHub Actions variable. It is compared with `GITHUB_ACTOR_ID`. The approval run must be a
+first attempt `workflow_dispatch` of `.github/workflows/linkedin-approve.yml` on
+`refs/heads/main`, and the triggering actor must equal the actor. Neither the trusted ID
+nor the key is read from a repository file, because an agent that can write files could
+change them. The `approve` command has no `--actor` option.
+
+| Alternative | Why not |
+| --- | --- |
+| Trusted ID in `publisher.yaml` | A repository writer could name themselves |
+| Compare login names | Logins can be renamed and reused; the numeric ID is stable |
+| Allow re-runs | A re-run keeps the original actor while someone else triggers it |
+
+## D22. The approver confirms what they saw
+
+`howlwriter linkedin review <id>` prints the text, links, image hash and alt text, the
+HowlProof verdict, every limitation, and two values: the content fingerprint and a digest
+of the limitation list. The approver passes both to the workflow. The workflow recomputes
+them and refuses on any difference, so content changed between review and dispatch is not
+approved, and "accepted limitations" means the list that was on screen.
+
+Pro: binds the human decision to exact bytes. Con: two long values to paste. A dashboard
+(M5) can carry them for the owner.
+
+## D23. Report trust, and reports refreshed after approval (closes the D16 and D17 questions)
+
+Reports stay unsigned. The approval names one report by hash. The approval workflow
+rechecks that report the same way M2 does but does not run HowlProof.
+
+| Option | Pros | Cons |
+| --- | --- | --- |
+| A. Recheck only; bind by hash (chosen) | Runner needs only HowlWriter; small trusted job | A forged report that verifies can still mislead the approver |
+| B. Re-run HowlProof inside the approval workflow | The report is produced by trusted code | HowlProof and its dependencies run in the job that holds the key; evidence files must be in the repository; longer job |
+
+B can be added in M4 when the runner setup is real. Until then the owner should treat the
+report as advice and read the post.
+
+A report refreshed after approval is covered by the approval only when its verdict is not
+weaker and every limitation it lists was in the accepted list. Otherwise `verify` returns
+the post to DRAFT, and the approval gate refuses it even if the reference is put back by
+hand.
+
+## D24. Schedule changes
+
+The approval records the date and time override it was given for. `reschedule` still
+works for anyone and is audited, but the approval gate then blocks the post until the
+owner runs the workflow's `authorize-schedule` action, which writes an authenticated
+schedule record naming the approval and the new slot. Verification and approval are kept.
+
+| Option | Pros | Cons |
+| --- | --- | --- |
+| A. Separate authenticated schedule record (chosen) | A repository writer cannot move an approved post to another day; content approval untouched | One workflow run per moved post |
+| B. Schedule not covered by approval | Simple | Anyone with write access picks the publication day |
+| C. Schedule inside the content fingerprint | One mechanism | Every date change voids verification and approval, which the brief rules out |
+
+## D25. Expiry and revocation
+
+An approval older than `approval_max_age_days` (default 30, range 1 to 90) no longer
+permits publication. Withdrawing an approval (`edit`, returning to draft, a blocked
+verification) clears the reference in the post file. That is not cryptographic: the
+record still exists in Git history. Rotating the key is the hard revocation and voids
+every outstanding approval.

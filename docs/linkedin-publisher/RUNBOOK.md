@@ -3,10 +3,11 @@
 Sections marked "skeleton" describe milestones that are not built yet. Do not follow
 them as instructions until the roadmap marks that milestone VERIFIED.
 
-## What works today (M1 and M2)
+## What works today (M1 to M3, local only)
 
-A local, deterministic post queue and verification through HowlProof. Nothing here can
-contact LinkedIn or approve a post.
+A local, deterministic post queue, verification through HowlProof, and the approval
+boundary. Nothing here can contact LinkedIn. Approval needs the GitHub workflow below,
+which has not been run yet (see ROADMAP M3).
 
 ### Set up a local publishing directory
 
@@ -117,13 +118,50 @@ arithmetic holds on numbers you supplied, not that the numbers were checked.
 | "changed (revision ...)" error | Someone else changed the record first. Run the command again. |
 | Ledger or control file reported unreadable | Restore the file from Git history. Do not delete a ledger file to "unblock" a day. |
 
-## Hosted publishing (skeleton, M3 and M4)
+### Approving a post (M3: built, not yet run on GitHub)
 
-To be written and verified in M3 and M4:
+One time setup in the private repository, by the owner:
+
+1. Copy `docs/linkedin-publisher/workflows/linkedin-approve.yml` to
+   `.github/workflows/linkedin-approve.yml` on `main`. Pin the two actions to commit SHAs
+   you have checked.
+2. Create the key and store it as the Actions secret `LINKEDIN_APPROVAL_KEY`:
+   `openssl rand -hex 32`. Do not save it anywhere else.
+3. Set the Actions variable `LINKEDIN_APPROVER_ID` to your numeric GitHub account ID
+   (shown by `gh api user --jq .id`), and `HOWLWRITER_COMMIT` to the HowlWriter commit to
+   install.
+4. Protect `main` and do not give AI agents push access to this repository.
+
+For each post:
+
+1. `howlwriter linkedin verify <id>`, then `howlwriter linkedin submit <id>`. Commit and push.
+2. `howlwriter linkedin review <id>`. Read the text, links, image details and every
+   limitation. The command prints `fingerprint` and `limitations_digest`.
+3. On GitHub, open Actions, "LinkedIn approve", "Run workflow" on `main`, action
+   `approve`, and paste the post ID and the two values. Do this yourself.
+4. Pull. The post is APPROVED; `howlwriter linkedin schedule <id>` queues it.
+
+To move an approved post: run the same workflow with action `authorize-schedule` and the
+new date or time. A local `reschedule` of an approved post is recorded but blocks
+publication until it is authorized this way.
+
+| Message | Meaning |
+| --- | --- |
+| "not authorized: ..." | The run is not your own first attempt dispatch of the approval workflow on `main`, or the key or approver ID is not configured |
+| "the fingerprint you confirmed is not the post's current content" | The post changed after you reviewed it. Review again |
+| "the record was made with a different approval key" | The key was rotated, or the record was made elsewhere. Approve again |
+| "the schedule ... was not authorized" | Run `authorize-schedule`, or move the post back to its approved slot |
+| "the approval is N day(s) old" | Approve again (`approval_max_age_days`) |
+
+To revoke every outstanding approval, replace the `LINKEDIN_APPROVAL_KEY` secret.
+
+## Hosted publishing (skeleton, M4)
+
+To be written and verified in M4:
 
 1. Create the private repository (owner action; needs explicit authorization).
-2. Configure the trusted GitHub account id for approvals.
-3. Approve a post through the manual workflow.
+2. Run the approval workflow once and record what GitHub actually reports (closes M3).
+3. Install `approval.publish_gates` in the publishing job.
 4. LinkedIn developer application, OAuth setup flow, and storing the token as a GitHub
    encrypted secret.
 5. Token expiry monitoring and re-authorization before expiry.

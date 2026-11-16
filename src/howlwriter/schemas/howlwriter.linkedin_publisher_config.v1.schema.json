@@ -61,6 +61,12 @@
       "minimum": 1,
       "maximum": 30,
       "default": 7
+    },
+    "approval_max_age_days": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 90,
+      "default": 30
     }
   }
 }
