@@ -174,3 +174,25 @@ Not done, and why
 - GitHub variable semantics and secret exposure rules were not re-verified (D12).
 
 Next: owner decisions listed in ROADMAP M3 and the session report.
+
+## 2026-11-17: pull request, private repository
+
+Authorization: the owner replied "Do all recommendations" to the M3 report. Those were:
+open a pull request, create the private repository with only the approval workflow and
+an empty queue (the owner adds the key and account ID), and hold M4 until a real
+approval run has been observed.
+
+What was done
+
+1. Scanned the branch diff for personal data and secrets (none), pushed
+   `feat/linkedin-publisher`, opened pull request #43.
+2. Pinned `actions/checkout` (v7.0.1) and `actions/setup-python` (v7.1.0) by commit in the
+   template, with a test that keeps every action pinned.
+3. Created `howlcipher/howlwriter-linkedin-private` as private (confirmed through the API),
+   pushed the `init` layout, the workflow and a README, and set the non-secret variable
+   `HOWLWRITER_COMMIT`. GitHub lists the workflow as active.
+4. Observed that branch protection is unavailable for this private repository on the free
+   plan (HTTP 403) and corrected the runbook, which had asked for it.
+
+Not done: the approval key and approver ID are for the owner to set; no workflow run was
+started; M4 not started.

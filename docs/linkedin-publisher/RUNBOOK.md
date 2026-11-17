@@ -130,7 +130,9 @@ One time setup in the private repository, by the owner:
 3. Set the Actions variable `LINKEDIN_APPROVER_ID` to your numeric GitHub account ID
    (shown by `gh api user --jq .id`), and `HOWLWRITER_COMMIT` to the HowlWriter commit to
    install.
-4. Protect `main` and do not give AI agents push access to this repository.
+4. Do not give AI agents, or any token other than your own, push access to this
+   repository. Branch protection is not available here: GitHub answered "Upgrade to
+   GitHub Pro or make this repository public" for this private repository on 2026-11-17.
 
 For each post:
 

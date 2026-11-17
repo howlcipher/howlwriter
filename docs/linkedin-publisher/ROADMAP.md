@@ -145,10 +145,11 @@ milestone, and continue only the next authorized work.
 
 ## M3. Human approval
 
-- Status: IN_PROGRESS (2026-11-16). Implemented and tested locally. One acceptance
-  criterion is BLOCKED: the approval workflow has never run on GitHub, because the private
-  repository does not exist and creating it needs the owner's authorization. M3 is not
-  VERIFIED until that run has been observed.
+- Status: IN_PROGRESS. Implemented and tested locally (2026-11-16). The private repository
+  `howlwriter-linkedin-private` was created on 2026-11-17 with the approval workflow and an
+  empty queue. One acceptance criterion is still open: the workflow has not run. It needs
+  the owner to add the key and account ID and start a run. M3 is not VERIFIED until that
+  run has been observed.
 - Scope: approval through an authenticated GitHub `workflow_dispatch`; trusted account ID
   check; authenticated approval record; a real `ArtifactVerifier` for approvals and a
   real `PublishGate`; separately authorized schedule changes.
@@ -170,7 +171,7 @@ milestone, and continue only the next authorized work.
 | Publishing run needs both gates | `test_valid_approval_lets_the_run_reach_the_transport_once`, `test_run_without_the_key_or_with_an_unauthorized_day_sends_nothing` (scripted transport) |
 | The key is never stored or shown | `test_the_key_is_never_shown_or_stored` |
 | Approval workflow is dispatch only, single key holder, no input reaches the shell unquoted | `test_approval_workflow_template_is_narrow` (static check of the template) |
-| The approval workflow works on GitHub for the owner and refuses others | NOT EXECUTED. Needs the private repository |
+| The approval workflow works on GitHub for the owner and refuses others | NOT EXECUTED. Repository exists; waits on the owner's setup and first run |
 
 - Evidence: `.venv/bin/python -m pytest tests/linkedin -q` gives 388 passed (58 new in
   `test_approval.py`). GitHub was not contacted.

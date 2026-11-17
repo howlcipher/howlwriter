@@ -91,7 +91,7 @@ design does not remove.
 | Threat | Control | Status |
 | --- | --- | --- |
 | Compromised action or dependency reads the LinkedIn token | Pin actions by commit, minimal dependencies on the runner, minimal `GITHUB_TOKEN` permissions, secrets only in the publish job | M4 |
-| Workflow file changed to drop a check | Protect the default branch and review workflow changes | M3, M4 |
+| Workflow file changed to drop a check | Branch protection is unavailable for private repositories on GitHub Free (observed 2026-11-17). Only the owner's own token may push to the private repository; review every workflow change | Open (platform limit) |
 | Push trigger loop burns Actions minutes | No push trigger on publishing workflows; path filters | M4 |
 
 ## Limits that will remain
