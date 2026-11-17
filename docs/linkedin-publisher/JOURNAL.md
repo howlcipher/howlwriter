@@ -196,3 +196,31 @@ What was done
 
 Not done: the approval key and approver ID are for the owner to set; no workflow run was
 started; M4 not started.
+
+## 2026-11-17: pre-merge review fixes
+
+Authorization: the owner said "Merge and continue". The shipping rules require an
+independent review before a merge, so one was run on PR #43 (medium depth). It reported
+nine findings; all were checked against the code and seven were defects:
+
+1. Local `reschedule` and `reschedule-all` moved approved posts and kept the approval,
+   but the approval gate then blocked them. They now refuse; approved posts move only
+   through `authorize-schedule` (`authorized=True` internally).
+2. The approval's own slot and every older schedule authorization stayed valid, so a
+   superseded slot could be replayed. Now only the newest authenticated authorization
+   counts (ordered by `authorized_at`, then the same second collision suffix). More than
+   200 records blocks instead of silently ignoring the rest. Deleting the newest record
+   is a documented limit (THREAT_MODEL 18).
+3. The link check on approval records ran on the resolved path and never fired. It now
+   checks each component of the path as written.
+4. A dry run returned DRY_RUN before the gates ran. It now reports BLOCKED with reasons.
+5. A stop between saving the closed post and updating the ledger left an INTENT entry
+   that kept the day used. Recovery now copies the post's closed outcome to the ledger.
+6. `verify` decided from a snapshot taken before HowlProof ran without the lock. It now
+   refuses to attach or withdraw when the post's revision changed; the report is kept.
+7. Shared helpers: `_VERDICT_RANK` and `_dump` are imported instead of duplicated.
+
+The double slot check on FAILED reschedule was removed as part of fix 1. Tests: eight new
+regression tests; ten older tests that moved approved posts locally were changed to use
+unapproved dated drafts, `authorized=True` (standing in for the workflow) or a direct
+file edit (the untrusted move the gate must catch).

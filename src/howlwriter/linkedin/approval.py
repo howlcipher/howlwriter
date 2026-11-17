@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Callable, Mapping
@@ -42,8 +43,8 @@ from howlwriter.linkedin.models import (
     parse_utc,
 )
 from howlwriter.linkedin.service import KEEP, DEFAULT, Clock, OperationRefused, QueueService, SystemClock
-from howlwriter.linkedin.store import QueueStore, StoreError
-from howlwriter.linkedin.verification import ReportVerifier, VerificationGate, sha256_bytes
+from howlwriter.linkedin.store import QueueStore, StoreError, _dump
+from howlwriter.linkedin.verification import _VERDICT_RANK, ReportVerifier, VerificationGate, sha256_bytes
 
 S = LifecycleState
 
@@ -64,8 +65,8 @@ MIN_KEY_CHARS = 43  # 256 bits written in base64; `openssl rand -hex 32` gives 6
 MAX_KEY_CHARS = 512
 MAX_SCHEDULE_RECORDS = 200
 MAX_RECORD_BYTES = 1024 * 1024
+_COLLISION_SUFFIX = re.compile(r"Z-(\d{1,2})\.json$")
 _DOMAIN = b"howlwriter.linkedin.approval.v1\x00"
-_VERDICT_RANK = {verdict: rank for rank, verdict in enumerate(VERDICTS)}
 
 
 class ApprovalRefused(OperationRefused):
@@ -376,10 +377,6 @@ def _post_schedule(post: Post) -> dict[str, str | None]:
     return {"date": post.scheduled_date, "time": post.scheduled_time}
 
 
-def _dump(record: dict[str, Any]) -> bytes:
-    return (json.dumps(record, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
-
-
 # Checking stored records
 
 
@@ -409,7 +406,12 @@ class ApprovalVerifier:
     def _read(self, path: str, expected_sha256: str | None) -> tuple[Any, str]:
         try:
             file = self.store.artifact_file(path)
-            if file.is_symlink() or file.stat().st_size > MAX_RECORD_BYTES:
+            # artifact_file resolves links, so check the path as written, one component at a time.
+            unresolved, linked = self.store.root, False
+            for part in path.split("/"):
+                unresolved = unresolved / part
+                linked = linked or unresolved.is_symlink()
+            if linked or file.stat().st_size > MAX_RECORD_BYTES:
                 return None, "the record file is a link or too large"
             payload = file.read_bytes()
         except (OSError, StoreError):
@@ -507,37 +509,67 @@ class ApprovalVerifier:
         return []
 
     def schedule_problems(self, post: Post, record: dict[str, Any]) -> list[str]:
-        """Is the post's present date and time one the approver authorized?"""
+        """Is the post's present date and time the one the approver authorized most recently?
+
+        Only the newest authenticated authorization for this approval counts; an
+        older slot, including the one in the approval itself, is superseded and
+        cannot be replayed. Deleting the newest record is not detected here (see
+        THREAT_MODEL.md, limit 18).
+        """
         wanted = _post_schedule(post)
-        if record["schedule"] == wanted:
+        current, problem = self._authorized_schedule(post, record)
+        if problem:
+            return [problem]
+        if current == wanted:
             return []
+        shown = f"{wanted['date'] or 'no date'} {wanted['time'] or 'default time'}"
+        return [
+            f"the schedule {shown} was not authorized: the approver's most recent authorization is for "
+            f"{current['date'] or 'no date'} {current['time'] or 'default time'}"
+        ]
+
+    def _authorized_schedule(
+        self, post: Post, record: dict[str, Any]
+    ) -> tuple[dict[str, str | None], str]:
+        """The newest authenticated schedule for this approval, or the approval's own schedule."""
         directory = self.store.root / APPROVALS_DIR / post.id
         try:
-            names = sorted(
+            names = [
                 entry.name
                 for entry in directory.iterdir()
                 if entry.name.startswith(SCHEDULE_PREFIX) and entry.name.endswith(".json")
-            )
+            ]
         except OSError:
             names = []
-        for name in reversed(names[-MAX_SCHEDULE_RECORDS:]):
+        if len(names) > MAX_SCHEDULE_RECORDS:
+            return {}, (
+                f"the post has {len(names)} schedule records (limit {MAX_SCHEDULE_RECORDS}); "
+                "it needs a new approval"
+            )
+        approval = (
+            {"path": post.approval_ref.path, "sha256": post.approval_ref.sha256}
+            if post.approval_ref is not None
+            else None
+        )
+        newest: tuple[str, int, str] | None = None
+        schedule: dict[str, str | None] = record["schedule"]
+        for name in names:
             candidate, problem = self._read(f"{APPROVALS_DIR}/{post.id}/{name}", None)
             if problem or schedule_record_problems(candidate) or self._identity_problems(candidate):
                 continue
             if (
-                candidate["post_id"] == post.id
-                and candidate["content_fingerprint"] == post.computed_fingerprint()
-                and post.approval_ref is not None
-                and candidate["approval"]
-                == {"path": post.approval_ref.path, "sha256": post.approval_ref.sha256}
-                and candidate["schedule"] == wanted
+                candidate["post_id"] != post.id
+                or candidate["content_fingerprint"] != post.computed_fingerprint()
+                or candidate["approval"] != approval
+                or candidate["authorized_at"] < record["approved_at"]
             ):
-                return []
-        shown = f"{wanted['date'] or 'no date'} {wanted['time'] or 'default time'}"
-        return [
-            f"the schedule {shown} was not authorized: it differs from the approved schedule and no "
-            "authenticated schedule authorization matches it"
-        ]
+                continue
+            # write_artifact adds "-2", "-3" to a name taken in the same second.
+            suffix = _COLLISION_SUFFIX.search(name)
+            key = (candidate["authorized_at"], int(suffix.group(1)) if suffix else 1, name)
+            if newest is None or key > newest:
+                newest, schedule = key, candidate["schedule"]
+        return schedule, ""
 
 
 class ApprovalGate:
@@ -691,7 +723,11 @@ class ApprovalService:
             moved = post
             if new_date is not None or new_time != KEEP:
                 moved = self.queue.reschedule(
-                    post_id, actor=self.context.audit_actor(), new_date=new_date, new_time=new_time
+                    post_id,
+                    actor=self.context.audit_actor(),
+                    new_date=new_date,
+                    new_time=new_time,
+                    authorized=True,
                 )
             at, stamp = self._stamp()
             record = sign(

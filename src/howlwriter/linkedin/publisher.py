@@ -166,14 +166,18 @@ class PublishCoordinator:
             if evaluation.action is not Action.PUBLISH or evaluation.candidate_id is None:
                 return report(RunOutcome.NOTHING, None, *evaluation.notes)
             post = self.store.load_post(evaluation.candidate_id)
+            # The gates only read, so a dry run evaluates them too and rehearses the real decision.
+            blockers = [reason for gate in self.gates for reason in gate.blockers(post)]
             if config.dry_run:
+                if blockers:
+                    return report(
+                        RunOutcome.BLOCKED, post.id, "dry run: a real run would block this post", *blockers
+                    )
                 return report(
                     RunOutcome.DRY_RUN, post.id, "dry run: this post would be sent; nothing was sent"
                 )
             if not config.publishing_enabled:
                 return report(RunOutcome.DISABLED, post.id, "publishing is disabled; nothing was sent")
-
-            blockers = [reason for gate in self.gates for reason in gate.blockers(post)]
             if blockers:
                 return report(RunOutcome.BLOCKED, post.id, *blockers)
 
@@ -322,16 +326,28 @@ class PublishCoordinator:
             self._finish(post, located[0] if located else day, AttemptOutcome.AMBIGUOUS, None, detail)
             recovered.append(post.id)
 
-        # A day claimed for a post that never reached PUBLISHING: nothing was sent, release it.
+        # An INTENT entry left behind. If the post never recorded the attempt, nothing was
+        # sent: release the day. If the post already closed the attempt (the run stopped
+        # between saving the post and updating the ledger), copy the post's outcome.
         today = local_date(self.clock.now(), config.tzinfo)
         ledger = self.store.load_ledger_day(today)
+        closed_states = {
+            AttemptOutcome.SUCCESS: LedgerEntryState.PUBLISHED,
+            AttemptOutcome.FAILED: LedgerEntryState.RELEASED,
+            AttemptOutcome.AMBIGUOUS: LedgerEntryState.UNCERTAIN,
+        }
         for entry in ledger.entries if ledger else ():
             if entry.state is not LedgerEntryState.INTENT:
                 continue
-            owner = snapshot.by_id(entry.post_id)
-            if owner is None or not any(a.attempt_id == entry.attempt_id for a in owner.attempts):
-                self.store.update_ledger_entry(
-                    today, entry.attempt_id, LedgerEntryState.RELEASED, format_utc(self.clock.now())
-                )
-                recovered.append(f"ledger:{entry.attempt_id}")
+            owner = self.store.load_snapshot().by_id(entry.post_id)
+            attempts = owner.attempts if owner else ()
+            attempt = next((a for a in attempts if a.attempt_id == entry.attempt_id), None)
+            if attempt is None:
+                state = LedgerEntryState.RELEASED
+            elif owner.state is not S.PUBLISHING and attempt.outcome in closed_states:
+                state = closed_states[attempt.outcome]
+            else:
+                continue
+            self.store.update_ledger_entry(today, entry.attempt_id, state, format_utc(self.clock.now()))
+            recovered.append(f"ledger:{entry.attempt_id}")
         return tuple(recovered)

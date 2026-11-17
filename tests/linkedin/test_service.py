@@ -8,7 +8,7 @@ import pytest
 from howlwriter.linkedin.models import IllegalTransitionError, LifecycleState, MediaRef
 from howlwriter.linkedin.service import DEFAULT, OperationRefused, QueueService
 from howlwriter.publishing.base import RevisionConflictError
-from tests.linkedin.helpers import approved_post, make_service, ref_for, scheduled_post
+from tests.linkedin.helpers import approved_post, dated_draft, make_service, ref_for, scheduled_post
 
 S = LifecycleState
 
@@ -185,19 +185,35 @@ def test_past_dates_and_unsupported_times_are_refused(service):
         service.add_draft(title="Bad", text="Body", actor="tester", scheduled_date="2026-02-30")
 
 
-def test_reschedule_is_audited_and_keeps_approval(service):
+def test_authorized_reschedule_is_audited_and_keeps_approval(service):
     post = scheduled_post(service, "Queued", "2026-11-20")
-    moved = service.reschedule(post.id, actor="owner", new_date="2026-12-31", new_time="09:00")
+    moved = service.reschedule(
+        post.id, actor="owner", new_date="2026-12-31", new_time="09:00", authorized=True
+    )
     assert (moved.scheduled_date, moved.scheduled_time, moved.state) == ("2026-12-31", "09:00", S.SCHEDULED)
     assert moved.approval_is_current and moved.verification_is_current
     assert moved.history[-1].action == "rescheduled" and moved.history[-1].actor == "owner"
     assert "2026-11-20 default -> 2026-12-31 09:00" in moved.history[-1].detail
-    back = service.reschedule(post.id, actor="owner", new_time=DEFAULT)
+    back = service.reschedule(post.id, actor="owner", new_time=DEFAULT, authorized=True)
     assert back.scheduled_time is None and back.scheduled_date == "2026-12-31"
 
 
+def test_local_reschedule_of_an_approved_post_is_refused(service):
+    """Review finding: a local move kept the approval but the gate then blocked the post."""
+    post = scheduled_post(service, "Queued", "2026-11-20")
+    with pytest.raises(OperationRefused, match="authorize-schedule"):
+        service.reschedule(post.id, actor="owner", new_date="2026-12-31")
+    with pytest.raises(OperationRefused, match="authorize-schedule"):
+        service.reschedule(post.id, actor="owner", new_time="09:00")
+    assert service.store.load_post(post.id).scheduled_date == "2026-11-20"
+    same = service.reschedule(post.id, actor="owner", new_date="2026-11-20")
+    assert same.scheduled_date == "2026-11-20", "keeping the slot is not a move"
+    draft = dated_draft(service, "Draft", "2026-11-21")
+    assert service.reschedule(draft.id, actor="owner", new_date="2026-11-22").scheduled_date == "2026-11-22"
+
+
 def test_reschedule_across_leap_day_and_year_end(service):
-    post = scheduled_post(service, "Leap", "2027-12-31")
+    post = dated_draft(service, "Leap", "2027-12-31")
     assert service.reschedule(post.id, actor="tester", new_date="2028-02-29").scheduled_date == "2028-02-29"
     with pytest.raises(ValueError):
         service.reschedule(post.id, actor="tester", new_date="2027-02-29")
@@ -229,8 +245,10 @@ def _dates(service):
 
 
 def test_bulk_shift_moves_every_eligible_future_post(service, clock):
-    scheduled_post(service, "A", "2026-11-17")
-    scheduled_post(service, "B", "2026-11-18")
+    dated_draft(service, "A", "2026-11-17")
+    ready = dated_draft(service, "B", "2026-11-18")
+    service.attach_verification(ready.id, ref_for(ready, "verification"), actor="tester")
+    service.submit_for_review(ready.id, actor="tester")
     service.add_draft(title="C", text="Body", actor="tester", scheduled_date="2026-11-19")
     service.add_draft(title="Undated", text="Body", actor="tester")
     plan = service.plan_bulk_reschedule(shift_days=7)
@@ -238,20 +256,28 @@ def test_bulk_shift_moves_every_eligible_future_post(service, clock):
     applied = service.apply_bulk_reschedule(actor="owner", shift_days=7)
     assert applied == plan and len(plan.moves) == 3
     assert _dates(service) == {"A": "2026-11-24", "B": "2026-11-25", "C": "2026-11-26", "Undated": None}
-    moved = next(post for post in service.store.load_snapshot().posts if post.title == "A")
-    assert moved.approval_is_current and moved.history[-1].detail.startswith("bulk:")
+    moved = next(post for post in service.store.load_snapshot().posts if post.title == "B")
+    assert moved.verification_is_current and moved.history[-1].detail.startswith("bulk:")
+
+
+def test_bulk_shift_refuses_to_move_approved_posts(service):
+    dated_draft(service, "Draft", "2026-11-17")
+    scheduled_post(service, "Approved", "2026-11-18")
+    plan = service.apply_bulk_reschedule(actor="owner", shift_days=7)
+    assert not plan.is_applicable and any("authorize-schedule" in item for item in plan.conflicts)
+    assert _dates(service) == {"Draft": "2026-11-17", "Approved": "2026-11-18"}, "all or nothing"
 
 
 def test_bulk_shift_by_one_day_does_not_collide_with_itself(service):
     for title, day in (("A", "2026-11-17"), ("B", "2026-11-18"), ("C", "2026-11-19")):
-        scheduled_post(service, title, day)
+        dated_draft(service, title, day)
     assert service.apply_bulk_reschedule(actor="owner", shift_days=1).is_applicable
     assert _dates(service) == {"A": "2026-11-18", "B": "2026-11-19", "C": "2026-11-20"}
 
 
 def test_bulk_shift_is_all_or_nothing_on_conflict(service):
-    scheduled_post(service, "A", "2026-11-17")
-    scheduled_post(service, "B", "2026-11-20")
+    dated_draft(service, "A", "2026-11-17")
+    dated_draft(service, "B", "2026-11-20")
     plan = service.apply_bulk_reschedule(actor="owner", shift_days=3, from_date="2026-11-17")
     assert plan.is_applicable
     scheduled_post(service, "Fixed", "2026-11-19")
@@ -268,7 +294,7 @@ def test_bulk_shift_into_the_past_is_refused(service):
 
 
 def test_bulk_time_change_validates_the_slot(service):
-    scheduled_post(service, "A", "2026-11-17")
+    dated_draft(service, "A", "2026-11-17")
     assert not service.plan_bulk_reschedule(new_time="07:45").is_applicable
     service.apply_bulk_reschedule(actor="owner", new_time="09:00")
     assert service.store.load_snapshot().posts[0].scheduled_time == "09:00"
@@ -282,8 +308,8 @@ def test_bulk_reschedule_handles_an_empty_queue(service):
 
 def test_bulk_reschedule_spans_dst_month_and_year_boundaries(service, clock):
     clock.set("2026-12-20T12:00:00Z")
-    scheduled_post(service, "Year end", "2026-12-31")
-    scheduled_post(service, "Leap eve", "2028-02-28")
+    dated_draft(service, "Year end", "2026-12-31")
+    dated_draft(service, "Leap eve", "2028-02-28")
     service.apply_bulk_reschedule(actor="owner", shift_days=1)
     assert _dates(service) == {"Year end": "2027-01-01", "Leap eve": "2028-02-29"}
 

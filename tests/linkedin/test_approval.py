@@ -117,6 +117,12 @@ def gate_blockers(store, clock, post_id: str, env: dict[str, str] | None = None)
     return [reason for gate in ap.publish_gates(store, trust, clock) for reason in gate.blockers(post)]
 
 
+def move_by_hand(store, post_id: str, date: str | None, time: str | None = None):
+    """What anything with write access can do: edit the post file directly, bypassing the service."""
+    post = store.load_post(post_id)
+    return store.save_post(replace(post, scheduled_date=date, scheduled_time=time), post.revision)
+
+
 def record_of(store, post_id: str) -> tuple[Path, dict]:
     path = store.artifact_file(store.load_post(post_id).approval_ref.path)
     return path, json.loads(path.read_text(encoding="utf-8"))
@@ -519,7 +525,9 @@ def test_schedule_change_keeps_approval_but_needs_its_own_authorization(
     store, service, verification, approvals, clock
 ):
     post = approved_and_scheduled(service, verification, approvals)
-    moved = service.reschedule(post.id, actor="agent", new_date="2026-11-18")
+    with pytest.raises(OperationRefused, match="authorize-schedule"):
+        service.reschedule(post.id, actor="agent", new_date="2026-11-18")
+    moved = move_by_hand(store, post.id, "2026-11-18")
     assert moved.state is S.SCHEDULED and moved.approval_is_current and moved.verification_is_current
     blockers = gate_blockers(store, clock, post.id)
     assert len(blockers) == 1 and "schedule 2026-11-18 default time was not authorized" in blockers[0]
@@ -532,10 +540,46 @@ def test_schedule_change_keeps_approval_but_needs_its_own_authorization(
     assert authorized.history[-1].actor == "github:owner#1001"
     assert gate_blockers(store, clock, post.id) == []
 
-    service.reschedule(post.id, actor="agent", new_date="2026-11-24")
+    move_by_hand(store, post.id, "2026-11-24")
     assert "was not authorized" in gate_blockers(store, clock, post.id)[0]
-    service.reschedule(post.id, actor="agent", new_date="2026-11-20", new_time="default")
-    assert gate_blockers(store, clock, post.id) == [], "the originally approved slot stays authorized"
+
+
+def test_superseded_schedules_cannot_be_replayed(store, service, verification, approvals, clock):
+    """Review finding: the approved slot and older authorizations used to stay valid forever."""
+    post = approved_and_scheduled(service, verification, approvals)
+    approvals.authorize_schedule(post.id, new_date="2026-11-23")
+    approvals.authorize_schedule(post.id, new_date="2026-11-25")  # same second: written as "-2"
+    names = sorted(p.name for p in (store.root / "approvals" / post.id).iterdir() if "schedule-" in p.name)
+    assert len(names) == 2 and names[0].endswith("Z-2.json"), "the newer name sorts first"
+    assert gate_blockers(store, clock, post.id) == []
+    for day, time in (("2026-11-20", None), ("2026-11-23", None)):
+        move_by_hand(store, post.id, day, time)
+        blockers = gate_blockers(store, clock, post.id)
+        assert len(blockers) == 1 and "most recent authorization is for 2026-11-25" in blockers[0]
+    clock.advance(seconds=5)
+    approvals.authorize_schedule(post.id, new_date=None)  # the owner authorizes the current slot again
+    assert gate_blockers(store, clock, post.id) == []
+
+
+def test_too_many_schedule_records_block_instead_of_being_ignored(
+    store, service, verification, approvals, clock, monkeypatch
+):
+    post = approved_and_scheduled(service, verification, approvals)
+    monkeypatch.setattr(ap, "MAX_SCHEDULE_RECORDS", 2)
+    for day in ("2026-11-23", "2026-11-24", "2026-11-25"):
+        approvals.authorize_schedule(post.id, new_date=day)
+    assert "3 schedule records (limit 2)" in gate_blockers(store, clock, post.id)[0]
+
+
+def test_a_linked_approval_record_is_refused(store, service, verification, approvals, clock):
+    """Review finding: the link check ran on the resolved path, so it never fired."""
+    post = approved_and_scheduled(service, verification, approvals)
+    path, _record = record_of(store, post.id)
+    copy = store.root / "elsewhere.json"
+    copy.write_bytes(path.read_bytes())
+    path.unlink()
+    path.symlink_to(copy)
+    assert "link or too large" in gate_blockers(store, clock, post.id)[0]
 
 
 def test_schedule_authorization_needs_the_trusted_run_and_a_valid_approval(
@@ -571,7 +615,7 @@ def test_forged_or_borrowed_schedule_authorizations_are_ignored(
     forged = ap.sign({k: v for k, v in record.items() if k != "authentication"}, OTHER_KEY.encode())
     (directory / "schedule-99999999T000001Z.json").write_text(json.dumps(forged), encoding="utf-8")
     (directory / "schedule-99999999T000002Z.json").write_text("not json", encoding="utf-8")
-    service.reschedule(post.id, actor="agent", new_date="2026-11-25")
+    move_by_hand(store, post.id, "2026-11-25")
     assert "was not authorized" in gate_blockers(store, clock, post.id)[0]
 
 
@@ -580,7 +624,9 @@ def test_post_approved_without_a_date_needs_the_date_authorized(
 ):
     post = ready(service, verification, date=None)
     approve(approvals, post.id)
-    service.reschedule(post.id, actor="agent", new_date="2026-11-20")
+    with pytest.raises(OperationRefused, match="authorize-schedule"):
+        service.reschedule(post.id, actor="agent", new_date="2026-11-20")
+    move_by_hand(store, post.id, "2026-11-20")
     approvals.queue.schedule(post.id, actor="agent")
     assert "was not authorized" in gate_blockers(store, clock, post.id)[0]
     approvals.authorize_schedule(post.id, new_date=None)
@@ -681,7 +727,7 @@ def test_run_without_the_key_or_with_an_unauthorized_day_sends_nothing(
     store, service, verification, approvals, clock
 ):
     post = approved_and_scheduled(service, verification, approvals)
-    service.reschedule(post.id, actor="agent", new_date="2026-11-19")
+    move_by_hand(store, post.id, "2026-11-19")
     go_live(store)
     clock.set("2026-11-19T13:30:00Z")
     for env in (publish_env(), publish_env(**{ap.KEY_ENV: None})):

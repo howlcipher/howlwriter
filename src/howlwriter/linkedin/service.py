@@ -40,6 +40,11 @@ S = LifecycleState
 
 #: States in which a verification report may be attached or refreshed.
 VERIFIABLE_STATES = frozenset({S.DRAFT, S.READY_FOR_REVIEW, S.APPROVED, S.SCHEDULED, S.FAILED})
+#: Why a local command may not move an approved post.
+APPROVED_MOVE_REFUSAL = (
+    "an approved post is moved only by the approval workflow (action authorize-schedule), which "
+    "records that the approver authorized the new slot; a local move would be blocked at publish time"
+)
 
 
 class OperationRefused(ValueError):
@@ -364,9 +369,20 @@ class QueueService:
     # Scheduling
 
     def reschedule(
-        self, post_id: str, *, actor: str, new_date: str | None = None, new_time: str = KEEP
+        self,
+        post_id: str,
+        *,
+        actor: str,
+        new_date: str | None = None,
+        new_time: str = KEEP,
+        authorized: bool = False,
     ) -> Post:
         """Change one post's date or time. A scheduling change keeps verification and approval.
+
+        An approved post can only be moved by the approval workflow
+        (``authorize-schedule``), which passes ``authorized=True`` and records a
+        signed schedule authorization. A local move of an approved post is
+        refused: the approval gate would block it at publish time.
 
         A FAILED post is put back in the queue by this call: that is the only
         retry path, and it is always an explicit, audited human action.
@@ -382,11 +398,15 @@ class QueueService:
             )
             if day is None:
                 raise OperationRefused("a date is required: the post has none yet")
-            self._check_slot(config, post_id, day, slot or config.default_publish_time)
+            changes_slot = day != original.scheduled_date or slot != original.scheduled_time
+            if original.approval_ref is not None and changes_slot and not authorized:
+                raise OperationRefused(APPROVED_MOVE_REFUSAL)
             moved = replace(original, scheduled_date=day, scheduled_time=slot)
             if original.state is S.FAILED:
                 self._require_schedulable(config, moved, day, slot)
                 moved = replace(moved, state=S.SCHEDULED)
+            else:
+                self._check_slot(config, post_id, day, slot or config.default_publish_time)
             before = Move(post_id, original.scheduled_date or "none", day, original.scheduled_time, slot)
             detail = before.describe()
             return self._save(moved, original, self._event(actor, "rescheduled", detail))
@@ -426,6 +446,8 @@ class QueueService:
                 conflicts.append(f"{post.id} and {targets[target]} would both land on {target}")
             targets.setdefault(target, post.id)
             if target != post.scheduled_date or slot != post.scheduled_time:
+                if post.approval_ref is not None:
+                    conflicts.append(f"{post.id} is approved: {APPROVED_MOVE_REFUSAL}")
                 moves.append(Move(post.id, post.scheduled_date or "", target, post.scheduled_time, slot))
         return BulkPlan(moves=tuple(moves), conflicts=tuple(conflicts))
 

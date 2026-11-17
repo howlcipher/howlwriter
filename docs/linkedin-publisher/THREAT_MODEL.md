@@ -143,6 +143,10 @@ design does not remove.
     rejects that record, so it cannot publish; do not read the state field as proof.
 17. The publishing job holds the same key and could create approvals. It is trusted code;
     M4 must keep it free of any path that writes approval records.
+18. Only the newest authenticated schedule authorization counts, so an older slot cannot
+    be replayed. Someone with write access can still delete the newest schedule record,
+    which brings back the one before it (or the approval's own slot). Git history shows
+    the deletion; key rotation voids every record.
 
 ## M3 security review notes
 
@@ -152,7 +156,15 @@ design does not remove.
 - The key is read from the environment, kept out of `repr`, never written to a record,
   a log line or an error message. A malformed key is reported without echoing it.
 - Record paths are confined to `approvals/<post id>/`; schedule records cannot be used as
-  approvals; links and oversized files are refused.
+  approvals; links (checked on the path as written, component by component) and oversized
+  files are refused.
+- Pre-merge review of PR #43 (2026-11-17) found and closed: a local `reschedule` that kept
+  the approval but left the post blocked at publish time (now refused for approved posts);
+  replay of a superseded schedule (now newest wins, limit 18); a link check that ran on
+  the resolved path and never fired; a dry run that skipped the gates; a ledger entry
+  left at INTENT when a run stopped between the post and ledger writes; and `verify`
+  deciding from a post snapshot taken before HowlProof ran (now refused if the post
+  changed).
 - When the authentication code fails, no other field of the record is reported on.
 - Workflow template: dispatch trigger only, `contents: write` only, inputs passed through
   environment variables, the key given to one step, re-runs and other branches skipped.

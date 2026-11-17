@@ -687,3 +687,22 @@ def test_verify_command_without_howlproof_exits_nonzero_and_reports_no_verdict(t
     assert main(["linkedin", "--repo", str(repo), "verify", post_id, "--howlproof", absent]) == 1
     text_out = capsys.readouterr().out
     assert "HowlProof verdict none" in text_out and "Blocked." in text_out
+
+
+def test_a_post_changed_during_verification_is_not_attached_or_withdrawn(store, service, clock, fake):
+    """Review finding: verify decided from a snapshot taken before HowlProof ran without the lock."""
+    from howlwriter.linkedin.howlproof import HowlProofAdapter
+
+    post = draft(service)
+
+    def runner(argv, cwd, timeout):
+        if argv[1] == "evaluate":
+            service.update_content(post.id, actor="owner", title="Renamed while HowlProof ran")
+        return fake(argv, cwd, timeout)
+
+    verification = VerificationService(store, HowlProofAdapter("howlproof-fake", runner), clock)
+    with pytest.raises(OperationRefused, match="changed while it was being verified"):
+        verification.verify(post.id, actor="tester")
+    stored = reload(store, post)
+    assert stored.verification_ref is None and stored.history[-1].action != "verification_blocked"
+    assert list((store.root / "verification" / post.id).iterdir()), "the report itself is kept"

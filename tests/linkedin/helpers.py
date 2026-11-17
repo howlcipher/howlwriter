@@ -104,6 +104,13 @@ def scheduled_post(service: QueueService, title: str, date: str, time: str | Non
     return service.schedule(post.id, actor="tester")
 
 
+def dated_draft(service: QueueService, title: str, date: str, time: str | None = None) -> Post:
+    """An unapproved post with a date: local commands may still move it."""
+    return service.add_draft(
+        title=title, text=f"{title}. Body text.", actor="tester", scheduled_date=date, scheduled_time=time
+    )
+
+
 def make_coordinator(store, clock, transport, **kwargs) -> PublishCoordinator:
     counter = iter(range(1, 10000))
     kwargs.setdefault("gates", [AllowGate()])

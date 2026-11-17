@@ -873,6 +873,25 @@ class VerificationService:
         payload = (json.dumps(report, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
         relative = self.store.write_artifact(relative, payload)
 
+        with self.store.lock():
+            # HowlProof ran without the lock. Decide only against the post it was run for.
+            if self.store.load_post(post.id).revision != post.revision:
+                raise OperationRefused(
+                    f"the post changed while it was being verified; the report {relative} was kept but "
+                    "not attached. Run verify again"
+                )
+            return self._decide(post, report, relative, payload, previous_verdict, actor)
+
+    def _decide(
+        self,
+        post: Post,
+        report: dict[str, Any],
+        relative: str,
+        payload: bytes,
+        previous_verdict: str | None,
+        actor: str,
+    ) -> VerificationResult:
+        """Attach an eligible report, or withdraw. Called under the store lock."""
         eligible = report["outcome"]["status"] == ELIGIBLE
         reason = ""
         if eligible and post.state in (S.APPROVED, S.SCHEDULED, S.FAILED) and previous_verdict is not None:

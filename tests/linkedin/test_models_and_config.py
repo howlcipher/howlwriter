@@ -165,7 +165,9 @@ def test_fingerprint_changes_with_text_links_and_media():
 
 def test_fingerprint_ignores_schedule_and_title(service):
     post = approved_post(service, "Stable", "2026-11-20")
-    moved = service.reschedule(post.id, actor="tester", new_date="2026-11-25", new_time="09:00")
+    moved = service.reschedule(
+        post.id, actor="tester", new_date="2026-11-25", new_time="09:00", authorized=True
+    )
     retitled = service.update_content(post.id, actor="tester", title="A new internal title")
     assert post.computed_fingerprint() == moved.computed_fingerprint() == retitled.computed_fingerprint()
     assert retitled.approval_is_current and retitled.state is S.APPROVED

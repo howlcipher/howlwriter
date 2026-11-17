@@ -113,8 +113,8 @@ arithmetic holds on numbers you supplied, not that the numbers were checked.
 | --- | --- |
 | `evaluate` says `QUEUE_INVALID` | `howlwriter linkedin list` names the bad file and its problems. Fix or restore it with Git. Nothing publishes until it is fixed. |
 | `evaluate` says `IN_FLIGHT` | A run was interrupted. The next real run marks the post `UNCERTAIN`. Then reconcile. |
-| A post is `UNCERTAIN` | Look at your LinkedIn profile. If the post is there: `howlwriter linkedin reconcile <id> --published <post id or URL>`. If it is not: `howlwriter linkedin reconcile <id> --not-published`, then `reschedule` to retry. Never guess. |
-| A post is `FAILED` | Read the attempt detail with `show <id> --json`. Fix the cause, then `reschedule` it. |
+| A post is `UNCERTAIN` | Look at your LinkedIn profile. If the post is there: `howlwriter linkedin reconcile <id> --published <post id or URL>`. If it is not: `howlwriter linkedin reconcile <id> --not-published`, then re-queue it with `authorize-schedule`. Never guess. |
+| A post is `FAILED` | Read the attempt detail with `show <id> --json`. Fix the cause, then re-queue it with the approval workflow's `authorize-schedule` action. |
 | "changed (revision ...)" error | Someone else changed the record first. Run the command again. |
 | Ledger or control file reported unreadable | Restore the file from Git history. Do not delete a ledger file to "unblock" a day. |
 
@@ -143,16 +143,21 @@ For each post:
    `approve`, and paste the post ID and the two values. Do this yourself.
 4. Pull. The post is APPROVED; `howlwriter linkedin schedule <id>` queues it.
 
-To move an approved post: run the same workflow with action `authorize-schedule` and the
-new date or time. A local `reschedule` of an approved post is recorded but blocks
-publication until it is authorized this way.
+To move an approved post, or to put a FAILED approved post back in the queue on a new
+day: run the same workflow with action `authorize-schedule` and the new date or time.
+Local `reschedule` and `reschedule-all` move only posts that are not approved yet. Only
+the most recent authorization counts: moving a post back to an earlier slot needs a new
+authorization too.
+
+A dry run now evaluates the verification and approval gates as well, so it reports
+BLOCKED with the reasons when a real run would block.
 
 | Message | Meaning |
 | --- | --- |
 | "not authorized: ..." | The run is not your own first attempt dispatch of the approval workflow on `main`, or the key or approver ID is not configured |
 | "the fingerprint you confirmed is not the post's current content" | The post changed after you reviewed it. Review again |
 | "the record was made with a different approval key" | The key was rotated, or the record was made elsewhere. Approve again |
-| "the schedule ... was not authorized" | Run `authorize-schedule`, or move the post back to its approved slot |
+| "the schedule ... was not authorized" | Someone moved the post file by hand. Run `authorize-schedule` for the slot you want |
 | "the approval is N day(s) old" | Approve again (`approval_max_age_days`) |
 
 To revoke every outstanding approval, replace the `LINKEDIN_APPROVAL_KEY` secret.

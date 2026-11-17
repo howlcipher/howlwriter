@@ -287,10 +287,13 @@ hand.
 
 ## D24. Schedule changes
 
-The approval records the date and time override it was given for. `reschedule` still
-works for anyone and is audited, but the approval gate then blocks the post until the
-owner runs the workflow's `authorize-schedule` action, which writes an authenticated
+The approval records the date and time override it was given for. An approved post is
+moved only by the workflow's `authorize-schedule` action, which writes an authenticated
 schedule record naming the approval and the new slot. Verification and approval are kept.
+Local `reschedule` and `reschedule-all` refuse to move an approved post (amended
+2026-11-17 after the PR #43 review: they used to move it and leave it blocked at publish
+time). Only the newest authenticated schedule counts; the approval's own slot and older
+authorizations are superseded and cannot be replayed (THREAT_MODEL limit 18).
 
 | Option | Pros | Cons |
 | --- | --- | --- |

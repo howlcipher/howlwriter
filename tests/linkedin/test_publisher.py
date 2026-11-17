@@ -96,6 +96,25 @@ def test_any_blocking_gate_stops_the_send(due, store, clock):
     assert transport.calls == [] and store.load_ledger_day(DAY) is None
 
 
+def test_a_dry_run_reports_what_the_gates_would_block(service, store, clock):
+    """Review finding: a dry run said "would be sent" for posts the real run blocks."""
+    class Blocker:
+        def blockers(self, post):
+            return ["the approval is 31 day(s) old (limit 30)"]
+
+    write_config(store, publishing_enabled=True, dry_run=True)
+    post = scheduled_post(service, "Due today", "2026-11-16")
+    clock.set(SLOT)
+    transport = FakeTransport()
+    report = make_coordinator(store, clock, transport, gates=[Blocker()]).run()
+    assert report.outcome is RunOutcome.BLOCKED and report.post_id == post.id
+    assert report.messages == (
+        "dry run: a real run would block this post",
+        "the approval is 31 day(s) old (limit 30)",
+    )
+    assert transport.calls == [] and store.load_ledger_day(DAY) is None and store.load_post(post.id) == post
+
+
 # Success, failure, ambiguity
 
 
@@ -190,7 +209,10 @@ def test_reconcile_as_not_published_allows_an_explicit_retry(due, service, store
     failed = service.reconcile(due.id, actor="owner", was_published=False)
     assert failed.state is S.FAILED and ledger_states(store) == [LedgerEntryState.RELEASED]
     assert coordinator.run().outcome is RunOutcome.NOTHING, "a FAILED post is not retried on its own"
-    requeued = service.reschedule(due.id, actor="owner", new_date="2026-11-16", new_time="09:00")
+    # authorized=True stands in for the approval workflow's authorize-schedule action.
+    requeued = service.reschedule(
+        due.id, actor="owner", new_date="2026-11-16", new_time="09:00", authorized=True
+    )
     assert requeued.state is S.SCHEDULED
     clock.set("2026-11-16T14:00:00Z")
     assert coordinator.run().outcome is RunOutcome.PUBLISHED
@@ -249,7 +271,7 @@ def test_a_fresh_coordinator_has_no_memory_and_still_respects_the_day(due, servi
     transport = FakeTransport()
     make_coordinator(store, clock, transport).run()
     other = scheduled_post(service, "Other", "2026-11-18")
-    service.reschedule(other.id, actor="tester", new_date="2026-11-17")
+    service.reschedule(other.id, actor="tester", new_date="2026-11-17", authorized=True)
     clock.set("2026-11-17T03:00:00Z")  # still 16 November in Detroit
     assert make_coordinator(store, clock, transport).run().outcome is RunOutcome.NOTHING
     clock.set("2026-11-17T13:30:00Z")
@@ -361,6 +383,25 @@ def test_failed_intent_checkpoint_sends_nothing(due, store, clock):
     report = make_coordinator(store, clock, transport, checkpoint=checkpoint).run()
     assert report.outcome is RunOutcome.FAILED and transport.calls == []
     assert store.load_post(due.id).state is S.FAILED
+    assert ledger_states(store) == [LedgerEntryState.RELEASED]
+
+
+def test_a_ledger_left_at_intent_after_the_post_closed_is_repaired(due, store, clock, monkeypatch):
+    """Review finding: a crash between saving the post and the ledger kept the day used forever."""
+    def checkpoint(label):
+        raise RuntimeError("push rejected")
+
+    def crash(*args, **kwargs):
+        raise OSError("disk full")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "update_ledger_entry", crash)
+        with pytest.raises(OSError):
+            make_coordinator(store, clock, FakeTransport(), checkpoint=checkpoint).run()
+    assert store.load_post(due.id).state is S.FAILED
+    assert ledger_states(store) == [LedgerEntryState.INTENT]
+    report = make_coordinator(store, clock, FakeTransport()).run()
+    assert any(item.startswith("ledger:") for item in report.recovered)
     assert ledger_states(store) == [LedgerEntryState.RELEASED]
 
 

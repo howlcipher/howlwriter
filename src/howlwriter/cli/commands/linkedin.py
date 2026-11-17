@@ -108,7 +108,11 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
     evaluate.add_argument("--at", default=None, help="Evaluate as of this UTC time (YYYY-MM-DDTHH:MM:SSZ).")
 
     reschedule = command(
-        "reschedule", _reschedule, "Reschedule one post (keeps verification and approval).", actor=True
+        "reschedule",
+        _reschedule,
+        "Reschedule one unapproved post, or re-queue a FAILED post on its authorized slot. "
+        "Approved posts move only through the approval workflow (authorize-schedule).",
+        actor=True,
     )
     reschedule.add_argument("id")
     reschedule.add_argument("--date", default=None, help="New local date, YYYY-MM-DD.")
@@ -117,7 +121,10 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
     )
 
     bulk = command(
-        "reschedule-all", _reschedule_all, "Reschedule every eligible future post (plan first).", actor=True
+        "reschedule-all",
+        _reschedule_all,
+        "Reschedule every eligible unapproved future post (plan first).",
+        actor=True,
     )
     bulk.add_argument("--shift-days", type=int, default=0, help="Move each post by this many days.")
     bulk.add_argument("--time", default=None, help="Set this time on each post, or 'default'.")

@@ -145,7 +145,7 @@ DRAFT -> READY_FOR_REVIEW -> APPROVED -> SCHEDULED -> PUBLISHING -> PUBLISHED ->
 
 - Editing content from any editable state returns to `DRAFT` and discards both references.
 - `SCHEDULED -> APPROVED` is an individual cancellation.
-- `FAILED` re-enters the queue only through an explicit `reschedule`.
+- `FAILED` re-enters the queue only through an explicit, audited move: `authorize-schedule` in the approval workflow once the post is approved.
 - `UNCERTAIN` leaves only through `reconcile`, a human statement after checking LinkedIn.
 - `ARCHIVED` is terminal. Archiving a published record never touches LinkedIn.
 
