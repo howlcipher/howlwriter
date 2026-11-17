@@ -359,6 +359,34 @@ accuracy, context and completeness without editing your text. The Google Docs
 publisher confirms a publication by reading it back. See
 [docs/reliability.md](docs/reliability.md) for the states, exit codes and limits.
 
+## LinkedIn post queue (in progress)
+
+`howlwriter linkedin` manages a private queue of LinkedIn posts in a directory you choose:
+versioned post files, a validated schedule (one post per calendar day, America/Detroit and
+08:30 by default), a persistent daily ledger, and a dry-run scheduling evaluation. It is
+deterministic and needs no model.
+
+```bash
+howlwriter linkedin --repo ~/howlwriter-linkedin-private init
+howlwriter linkedin --repo ~/howlwriter-linkedin-private add --title "Title" --text-file post.txt --date 2026-12-01
+howlwriter linkedin --repo ~/howlwriter-linkedin-private queue
+howlwriter linkedin --repo ~/howlwriter-linkedin-private evaluate
+```
+
+`howlwriter linkedin verify <id>` checks a post with the real HowlProof program (credential scan, declared
+claims, absolute wording) and with deterministic checks for formatting, Unicode, links,
+duplicates, privacy patterns and images, then stores a report. The verdict in the report
+is HowlProof's own; a post is either eligible for human approval or blocked. Links are
+contacted only with `--allow-network`, through `howlproof acquire`.
+
+`howlwriter linkedin review <id>` shows exactly what an approval would cover. Approval itself is
+recorded only by a GitHub Actions workflow you start yourself: it checks your numeric GitHub
+account ID and writes an authenticated record that names the content, the verification report
+and the limitations you accepted. An approved post moves to another day only through the same
+workflow (`authorize-schedule`). That workflow is built and tested locally but has not run on
+GitHub yet. Nothing here can contact LinkedIn: the transport is a later milestone. See [docs/linkedin-publisher/](docs/linkedin-publisher/ROADMAP.md)
+for the roadmap, architecture, threat model, decisions and runbook.
+
 ## Using the local web UI
 
 ```bash

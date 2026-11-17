@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/howlcipher/howlwriter/schemas/howlwriter.linkedin_schedule_authorization.v1.schema.json",
+  "title": "howlwriter.linkedin_schedule_authorization/v1",
+  "description": "The trusted human's authorization of a date and time for an already approved LinkedIn post. Content, verification and approval are unchanged. Authenticated like an approval record.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "post_id",
+    "content_fingerprint",
+    "approval",
+    "previous",
+    "schedule",
+    "actor",
+    "workflow",
+    "authorized_at",
+    "authentication"
+  ],
+  "properties": {
+    "schema": {
+      "const": "howlwriter.linkedin_schedule_authorization/v1"
+    },
+    "post_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "content_fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "previous": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "time"
+      ],
+      "properties": {
+        "date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "time": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        }
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "time"
+      ],
+      "properties": {
+        "date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "time": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "login"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9]{1,20}$"
+        },
+        "login": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "repository_id",
+        "run_id",
+        "run_attempt",
+        "workflow_ref",
+        "event",
+        "ref",
+        "sha"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "repository_id": {
+          "type": "string",
+          "pattern": "^[0-9]{1,20}$"
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[0-9]{1,20}$"
+        },
+        "run_attempt": {
+          "type": "string",
+          "pattern": "^[0-9]{1,20}$"
+        },
+        "workflow_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "event": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "sha": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+        }
+      }
+    },
+    "authorized_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "authentication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "key_id",
+        "mac"
+      ],
+      "properties": {
+        "method": {
+          "const": "hmac-sha256"
+        },
+        "key_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "mac": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

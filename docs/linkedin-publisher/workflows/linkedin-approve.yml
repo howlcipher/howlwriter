@@ -1,0 +1,105 @@
+# TEMPLATE for the private publishing repository: copy to .github/workflows/linkedin-approve.yml
+# on its default branch (main). STATUS: written and statically checked, never run on GitHub.
+# See docs/linkedin-publisher/RUNBOOK.md, "Approving a post", before first use.
+#
+# Before first use (repository Settings, Secrets and variables, Actions):
+#   secret   LINKEDIN_APPROVAL_KEY    output of: openssl rand -hex 32   (never commit it)
+#   variable LINKEDIN_APPROVER_ID     your numeric GitHub account ID (not your login name)
+#   variable HOWLWRITER_COMMIT        the full HowlWriter commit SHA to install
+# Actions are pinned to release commits (checked 2026-11-17: signed, latest releases).
+#
+# The key authenticates this workflow, not a person. Anything that can start this workflow
+# with your GitHub token, or change a workflow that receives the secret, can approve.
+
+name: LinkedIn approve
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "approve a reviewed post, or authorize a date for an already approved post"
+        type: choice
+        options:
+          - approve
+          - authorize-schedule
+        default: approve
+      post_id:
+        description: "Post ID"
+        required: true
+        type: string
+      fingerprint:
+        description: "approve: content fingerprint shown by 'howlwriter linkedin review'"
+        required: false
+        type: string
+      limitations_digest:
+        description: "approve: limitations digest shown by 'howlwriter linkedin review'"
+        required: false
+        type: string
+      date:
+        description: "authorize-schedule: new date YYYY-MM-DD (empty keeps the current date)"
+        required: false
+        type: string
+      time:
+        description: "authorize-schedule: new time HH:MM or 'default' (empty keeps the current time)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: linkedin-queue
+  cancel-in-progress: false
+
+jobs:
+  record:
+    name: Record the owner's decision
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install HowlWriter at the pinned commit
+        env:
+          HOWLWRITER_COMMIT: ${{ vars.HOWLWRITER_COMMIT }}
+        run: |
+          set -euo pipefail
+          case "$HOWLWRITER_COMMIT" in
+            *[!0-9a-f]*|"") echo "HOWLWRITER_COMMIT must be a full commit SHA" >&2; exit 1 ;;
+          esac
+          python -m pip install "howlwriter @ git+https://github.com/howlcipher/howlwriter@${HOWLWRITER_COMMIT}"
+      - name: Record the decision
+        env:
+          HOWLWRITER_LINKEDIN_APPROVAL_KEY: ${{ secrets.LINKEDIN_APPROVAL_KEY }}
+          HOWLWRITER_LINKEDIN_APPROVER_ID: ${{ vars.LINKEDIN_APPROVER_ID }}
+          ACTION: ${{ inputs.action }}
+          POST_ID: ${{ inputs.post_id }}
+          FINGERPRINT: ${{ inputs.fingerprint }}
+          LIMITATIONS_DIGEST: ${{ inputs.limitations_digest }}
+          NEW_DATE: ${{ inputs.date }}
+          NEW_TIME: ${{ inputs.time }}
+        run: |
+          set -euo pipefail
+          if [ "$ACTION" = "approve" ]; then
+            howlwriter linkedin --repo . approve "$POST_ID" \
+              --fingerprint "$FINGERPRINT" --limitations-digest "$LIMITATIONS_DIGEST"
+          else
+            options=()
+            if [ -n "$NEW_DATE" ]; then options+=(--date "$NEW_DATE"); fi
+            if [ -n "$NEW_TIME" ]; then options+=(--time "$NEW_TIME"); fi
+            howlwriter linkedin --repo . authorize-schedule "$POST_ID" "${options[@]}"
+          fi
+      - name: Commit the record
+        env:
+          POST_ID: ${{ inputs.post_id }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- posts approvals
+          git commit -m "chore(linkedin): ${ACTION} recorded by run ${GITHUB_RUN_ID}"
+          git push origin HEAD:main
