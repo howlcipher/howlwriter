@@ -123,8 +123,8 @@ arithmetic holds on numbers you supplied, not that the numbers were checked.
 One time setup in the private repository, by the owner:
 
 1. Copy `docs/linkedin-publisher/workflows/linkedin-approve.yml` to
-   `.github/workflows/linkedin-approve.yml` on `main`. Pin the two actions to commit SHAs
-   you have checked.
+   `.github/workflows/linkedin-approve.yml` on `main`. The two actions are pinned to
+   release commits; check them again when you update the pins.
 2. Create the key and store it as the Actions secret `LINKEDIN_APPROVAL_KEY`:
    `openssl rand -hex 32`. Do not save it anywhere else.
 3. Set the Actions variable `LINKEDIN_APPROVER_ID` to your numeric GitHub account ID

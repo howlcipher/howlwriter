@@ -783,3 +783,9 @@ def test_approval_workflow_template_is_narrow():
     for step in job["steps"]:
         assert "${{" not in step.get("run", ""), "inputs reach the shell only through environment variables"
     assert "pull_request" not in text and "secrets.LINKEDIN_APPROVAL_KEY" in text
+    import re
+
+    for step in job["steps"]:
+        if "uses" in step:
+            pinned = re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", step["uses"])
+            assert pinned, "actions must be pinned by commit"

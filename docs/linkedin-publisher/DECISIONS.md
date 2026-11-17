@@ -113,7 +113,7 @@ because every operation would then conflict in Git.
 | Alt text length limit | M4 | The stored bound of 4,000 characters is a storage limit, not a LinkedIn rule. |
 | `GITHUB_ACTOR_ID`, `GITHUB_TRIGGERING_ACTOR`, `GITHUB_RUN_ATTEMPT`, `GITHUB_WORKFLOW_REF` semantics | M3 live run | Used from memory of GitHub's documentation; not re-read or observed in this session. |
 | Which workflows and branches can read a repository Actions secret, and whether environment secrets with required reviewers are available for private repositories on the free plan | M3 live run | Not verified. The design assumes the weaker case: any workflow a writer can push may read repository secrets. |
-| Current commit SHAs for `actions/checkout` and `actions/setup-python` | M3 live run | The template uses tags; pins must be looked up and checked by the owner. |
+| Current commit SHAs for `actions/checkout` and `actions/setup-python` | Resolved 2026-11-17 | Pinned to v7.0.1 `3d3c42e` and v7.1.0 `6d4fd22`, both signed latest releases. |
 
 ## D13. Which checks run in HowlProof and which in HowlWriter (M2)
 

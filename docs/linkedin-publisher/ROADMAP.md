@@ -189,8 +189,8 @@ milestone, and continue only the next authorized work.
      re-run HowlProof (DECISIONS D23).
   5. A change to `default_publish_time` moves posts that have no time override without a
      schedule authorization. Bulk rescheduling needs one authorization per post.
-  6. The workflow template uses action tags, not commit pins, and installs HowlWriter
-     from GitHub; the owner must pin both before first use.
+  6. The workflow installs HowlWriter from GitHub at the commit in `HOWLWRITER_COMMIT`,
+     with its dependencies unpinned beyond `pyproject.toml` (THREAT_MODEL limit 14).
   7. No publish command exists. `publish_gates` is ready for M4 to install.
 
 ## M4. LinkedIn and GitHub Actions
