@@ -30,6 +30,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from howlwriter.domain.locking import file_lock
 from howlwriter.projects.models import (
     PROJECT_SCHEMA,
     BrowserAction,
@@ -114,6 +115,15 @@ class ProjectWorkspace:
             privacy.ensure_private_dir(self.directory / sub)
         return self.directory
 
+    def locked(self):
+        """Hold the workspace lock for one short load-modify-save cycle.
+
+        Reentrant per thread; also excludes other processes. Never hold it
+        while walking files or waiting on a browser or model.
+        """
+        self.ensure()
+        return file_lock(self.directory)
+
     # --- json helpers -------------------------------------------------
 
     def _read(self, name: str, default: Any) -> Any:
@@ -172,9 +182,10 @@ class ProjectWorkspace:
         return self._read("research.json", {"entries": []}).get("entries", [])
 
     def append_research(self, entry: dict) -> None:
-        entries = self.load_research()
-        entries.append({"at": utc_now(), **entry})
-        self._write("research.json", {"entries": entries})
+        with self.locked():
+            entries = self.load_research()
+            entries.append({"at": utc_now(), **entry})
+            self._write("research.json", {"entries": entries})
 
     def load_questions(self) -> list[dict]:
         return self._read("questions.json", {"questions": []}).get("questions", [])
@@ -191,10 +202,15 @@ class ProjectWorkspace:
     # --- browser actions (append-only) ---------------------------------
 
     def append_action(self, action: BrowserAction) -> None:
-        self.ensure()
         path = self.directory / "actions.jsonl"
-        existing = path.read_text(encoding="utf-8") if path.is_file() else ""
-        privacy.write_private_text(path, existing + json.dumps(action.to_dict(), sort_keys=True) + "\n")
+        line = (json.dumps(action.to_dict(), sort_keys=True) + "\n").encode("utf-8")
+        with self.locked():
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, privacy.FILE_MODE)
+            try:
+                os.write(fd, line)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
 
     def load_actions(self) -> list[BrowserAction]:
         path = self.directory / "actions.jsonl"

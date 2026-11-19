@@ -26,12 +26,14 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
 from typing import Any
 
 import yaml
 
+from howlwriter.domain.locking import file_lock
 from howlwriter.voice.identity import privacy
 from howlwriter.voice.identity.classify import AUTHORSHIP_STATES
 from howlwriter.voice.identity.exclusions import WILLIAM_REQUIRED_EXCLUSIONS, ExclusionPolicy
@@ -262,6 +264,15 @@ class IdentityStore:
         privacy.ensure_private_dir(self.root)
         return privacy.ensure_private_dir(self.directory)
 
+    def locked(self):
+        """Hold the store's lock for one short read-modify-write cycle.
+
+        Reentrant per thread; also excludes other processes. Never hold it
+        across a scan or a model call.
+        """
+        self.ensure()
+        return file_lock(self.directory)
+
     @classmethod
     def list_identities(cls, root: Path | None = None) -> list[str]:
         base = Path(root) if root is not None else privacy.identities_root()
@@ -280,16 +291,16 @@ class IdentityStore:
         return IdentityConfig.from_dict(data)
 
     def save_config(self, config: IdentityConfig) -> None:
-        self.ensure()
         header = (
             f"# Private configuration for identity '{config.identity}'.\n"
             "# Lives outside any repository. Exclusions are enforced before a\n"
             "# directory is entered, case-insensitively, at every depth.\n"
         )
-        privacy.write_private_text(
-            self.directory / CONFIG_FILE,
-            header + yaml.safe_dump(config.to_dict(), sort_keys=False, allow_unicode=True),
-        )
+        with self.locked():
+            privacy.write_private_text(
+                self.directory / CONFIG_FILE,
+                header + yaml.safe_dump(config.to_dict(), sort_keys=False, allow_unicode=True),
+            )
 
     # --- inventory ----------------------------------------------------
 
@@ -309,9 +320,9 @@ class IdentityStore:
         return data
 
     def save_inventory(self, inventory: dict[str, Any]) -> None:
-        self.ensure()
         inventory["version"] = INVENTORY_VERSION
-        privacy.write_private_json(self.directory / INVENTORY_FILE, inventory)
+        with self.locked():
+            privacy.write_private_json(self.directory / INVENTORY_FILE, inventory)
 
     # --- decisions ----------------------------------------------------
 
@@ -325,11 +336,11 @@ class IdentityStore:
         }
 
     def save_decisions(self, decisions: dict[str, Decision]) -> None:
-        self.ensure()
-        privacy.write_private_json(
-            self.directory / DECISIONS_FILE,
-            {"decisions": {k: v.to_dict() for k, v in sorted(decisions.items())}},
-        )
+        with self.locked():
+            privacy.write_private_json(
+                self.directory / DECISIONS_FILE,
+                {"decisions": {k: v.to_dict() for k, v in sorted(decisions.items())}},
+            )
 
     def record_decision(self, decision: Decision) -> Decision:
         """Set one attestation and append it to the history log."""
@@ -348,32 +359,39 @@ class IdentityStore:
                     f"unknown extraction {decision.extraction!r}; expected one of "
                     + ", ".join(sorted(EXTRACTIONS))
                 )
-        decisions = self.load_decisions()
-        previous = decisions.get(decision.doc_id)
-        decision.decided_at = decision.decided_at or utc_now()
-        decisions[decision.doc_id] = decision
-        self.save_decisions(decisions)
-        self._append(
-            DECISION_LOG_FILE,
-            {
-                "at": decision.decided_at,
-                "doc_id": decision.doc_id,
-                "from": previous.authorship if previous else None,
-                "to": decision.authorship,
-                "source": decision.source,
-                "status": decision.status,
-            },
-        )
+        with self.locked():
+            decisions = self.load_decisions()
+            previous = decisions.get(decision.doc_id)
+            decision.decided_at = decision.decided_at or utc_now()
+            decisions[decision.doc_id] = decision
+            self.save_decisions(decisions)
+            self._append(
+                DECISION_LOG_FILE,
+                {
+                    "at": decision.decided_at,
+                    "doc_id": decision.doc_id,
+                    "from": previous.authorship if previous else None,
+                    "to": decision.authorship,
+                    "source": decision.source,
+                    "status": decision.status,
+                },
+            )
         return decision
 
     # --- other artifacts ----------------------------------------------
 
     def _append(self, filename: str, record: dict) -> None:
-        self.ensure()
+        """Append one line; a true O_APPEND write under the store lock."""
         path = self.directory / filename
-        line = json.dumps(record, sort_keys=True, default=str) + "\n"
-        existing = path.read_text(encoding="utf-8") if path.is_file() else ""
-        privacy.write_private_text(path, existing + line)
+        line = (json.dumps(record, sort_keys=True, default=str) + "\n").encode("utf-8")
+        with self.locked():
+            privacy.ensure_private_dir(path.parent)
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, privacy.FILE_MODE)
+            try:
+                os.write(fd, line)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
 
     def append_profile_change(self, record: dict) -> None:
         self._append(PROFILE_CHANGES_FILE, record)

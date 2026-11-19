@@ -429,11 +429,12 @@ def scan_project(
             workspace, meta, extractors, force=force, only=only, progress=progress, should_stop=should_stop
         )
     except KeyboardInterrupt:
-        state = workspace.load_meta()
-        state["scan_state"] = {
-            **state.get("scan_state", {}), "status": "interrupted", "interrupted_at": utc_now()
-        }
-        workspace.save_meta(state)
+        with workspace.locked():
+            state = workspace.load_meta()
+            state["scan_state"] = {
+                **state.get("scan_state", {}), "status": "interrupted", "interrupted_at": utc_now()
+            }
+            workspace.save_meta(state)
         raise
     finally:
         if owned:
@@ -449,8 +450,10 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
     report = ScanReport(project_id=workspace.project_id)
     sources = workspace.load_sources()
     evidence = workspace.load_evidence()
-    meta["scan_state"] = {"status": "running", "started_at": utc_now()}
-    workspace.save_meta(meta)
+    with workspace.locked():
+        meta = workspace.load_meta() or meta
+        meta["scan_state"] = {"status": "running", "started_at": utc_now()}
+        workspace.save_meta(meta)
 
     files = walk(root, policy, report.skipped)
     report.files = len(files)
@@ -547,7 +550,8 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
                     record.metadata = {"duplicate_of": original}
                     sources[source_id] = record
                     report.duplicates += 1
-                    workspace.save_sources(sources)
+                    with workspace.locked():
+                        workspace.save_sources(sources)
                     continue
                 by_hash.setdefault(record.sha256, source_id)
                 result = extractors.run(workspace, path, relative, suffix, record.sha256)
@@ -583,8 +587,9 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
             count += 1
         record.evidence_count = count
         sources[source_id] = record
-        workspace.save_sources(sources)  # checkpoint after every file
-        workspace.save_evidence(evidence)
+        with workspace.locked():  # checkpoint after every file
+            workspace.save_sources(sources)
+            workspace.save_evidence(evidence)
 
     if not report.interrupted and not only:
         for source_id, record in sources.items():
@@ -595,13 +600,15 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
                 report.removed += 1
                 for stale in [eid for eid, item in evidence.items() if item.source_id == source_id]:
                     del evidence[stale]
-        workspace.save_sources(sources)
-        workspace.save_evidence(evidence)
+        with workspace.locked():
+            workspace.save_sources(sources)
+            workspace.save_evidence(evidence)
     # Category corrections apply to evidence already in the library.
     for item in evidence.values():
         if item.source_id in sources:
             _apply_category(item, sources[item.source_id].category)
-    workspace.save_evidence(evidence)
+    with workspace.locked():
+        workspace.save_evidence(evidence)
 
     from howlwriter.projects.requirements import refresh_requirements
 
@@ -614,13 +621,14 @@ def _scan(workspace, meta, extractors, *, force, only, progress, should_stop) ->
     if extractors._worker is not None:
         report.workload = dict(extractors._worker.stats, policy=extractors.policy.to_dict())
     report.seconds = round(time.monotonic() - started, 2)
-    meta = workspace.load_meta()
-    meta["scan_state"] = {
-        "status": "interrupted" if report.interrupted else "complete",
-        "finished_at": utc_now(),
-        "report": report.to_dict(),
-    }
-    workspace.save_meta(meta)
+    with workspace.locked():
+        meta = workspace.load_meta()
+        meta["scan_state"] = {
+            "status": "interrupted" if report.interrupted else "complete",
+            "finished_at": utc_now(),
+            "report": report.to_dict(),
+        }
+        workspace.save_meta(meta)
     return report
 
 
@@ -647,19 +655,20 @@ def set_category(
         raise ValueError(f"unknown category source {by!r}")
     if category not in m.CATEGORIES:
         raise ValueError(f"unknown category {category!r}; choose from {', '.join(m.CATEGORIES)}")
-    sources = workspace.load_sources()
-    record = sources.get(source) or next((r for r in sources.values() if r.path == source), None)
-    if record is None:
-        raise ValueError(f"no source {source!r} in this project")
-    record.category, record.category_source, record.category_reason = category, by, m.CATEGORY_REASONS[by]
-    sources[record.source_id] = record
-    workspace.save_sources(sources)
-    evidence = workspace.load_evidence()
-    for item in evidence.values():
-        if item.source_id == record.source_id:
-            _apply_category(item, category)
-    workspace.save_evidence(evidence)
-    from howlwriter.projects.requirements import refresh_requirements
+    with workspace.locked():
+        sources = workspace.load_sources()
+        record = sources.get(source) or next((r for r in sources.values() if r.path == source), None)
+        if record is None:
+            raise ValueError(f"no source {source!r} in this project")
+        record.category, record.category_source, record.category_reason = category, by, m.CATEGORY_REASONS[by]
+        sources[record.source_id] = record
+        workspace.save_sources(sources)
+        evidence = workspace.load_evidence()
+        for item in evidence.values():
+            if item.source_id == record.source_id:
+                _apply_category(item, category)
+        workspace.save_evidence(evidence)
+        from howlwriter.projects.requirements import refresh_requirements
 
-    refresh_requirements(workspace, sources=sources, evidence=evidence)
+        refresh_requirements(workspace, sources=sources, evidence=evidence)
     return record

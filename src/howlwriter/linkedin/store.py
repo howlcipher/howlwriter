@@ -24,9 +24,10 @@ import json
 import os
 from dataclasses import dataclass, field, replace
 from datetime import date
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Iterator
 
+from howlwriter.domain.locking import fcntl, file_lock
 from howlwriter.linkedin.config import CONFIG_FILENAME, PublisherConfig, load_config, render_default_config
 from howlwriter.linkedin.models import (
     ARTIFACT_PATH_PATTERN,
@@ -44,6 +45,20 @@ CONTROL_SCHEMA = "howlwriter.linkedin_control/v1"
 LEDGER_SCHEMA = "howlwriter.linkedin_ledger_day/v1"
 LOCK_FILENAME = ".publisher.lock"
 GITIGNORE_LINES = (LOCK_FILENAME, "*.tmp", "verification/howlproof/ledger.lock")
+
+
+def _fsync_directory(directory: Path) -> None:
+    """Best effort: make a rename or create durable, not only the file's bytes."""
+    try:
+        descriptor = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        pass
+    finally:
+        os.close(descriptor)
 
 
 class StoreError(RuntimeError):
@@ -208,8 +223,6 @@ class QueueStore:
 
     def __init__(self, root: Path | str) -> None:
         self.root = Path(root)
-        self._lock_depth = 0
-        self._lock_handle: Any = None
 
     # Paths
 
@@ -273,33 +286,13 @@ class QueueStore:
 
     @contextlib.contextmanager
     def lock(self) -> Iterator[None]:
-        """Exclusive advisory lock over the repository. Reentrant within one store object."""
-        if self._lock_depth:
-            self._lock_depth += 1
-            try:
-                yield
-            finally:
-                self._lock_depth -= 1
-            return
-        try:
-            import fcntl
-        except ImportError as error:  # not POSIX
-            raise StoreError("the publisher store needs POSIX file locking (Linux or macOS)") from error
+        """Exclusive advisory lock over the repository. Reentrant per thread."""
+        if fcntl is None:  # not POSIX
+            raise StoreError("the publisher store needs POSIX file locking (Linux or macOS)")
         if not self.root.is_dir():
             raise StoreError(f"publishing repository not found: {self.root}")
-        handle = open(self.root / LOCK_FILENAME, "a+")
-        try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            self._lock_depth = 1
-            self._lock_handle = handle
+        with file_lock(self.root, LOCK_FILENAME):
             yield
-        finally:
-            self._lock_depth = 0
-            self._lock_handle = None
-            try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-            finally:
-                handle.close()
 
     def _replace(self, path: Path, payload: bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -310,6 +303,7 @@ class QueueStore:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, path)
+            _fsync_directory(path.parent)
         finally:
             with contextlib.suppress(FileNotFoundError):
                 temporary.unlink()
@@ -327,6 +321,7 @@ class QueueStore:
             with contextlib.suppress(FileNotFoundError):
                 path.unlink()
             raise
+        _fsync_directory(path.parent)
 
     # Configuration and control
 
@@ -436,9 +431,9 @@ class QueueStore:
 
         When the name is taken (two reports in the same second) a numeric suffix is added.
         """
-        stem, dot, suffix = relative_path.rpartition(".")
+        base = PurePosixPath(relative_path)
         for attempt in range(1, 100):
-            name = relative_path if attempt == 1 else f"{stem}-{attempt}{dot}{suffix}"
+            name = relative_path if attempt == 1 else str(base.with_stem(f"{base.stem}-{attempt}"))
             try:
                 self._create_exclusive(self.artifact_file(name), payload)
             except FileExistsError:

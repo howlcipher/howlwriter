@@ -153,12 +153,12 @@ def _job(kind: str, project_id: str, work) -> dict:
 
 
 @router.get("")
-async def list_projects() -> list[dict]:
+def list_projects() -> list[dict]:
     return [service.summary(ProjectWorkspace(pid)) for pid in ProjectWorkspace.list_projects()]
 
 
 @router.post("")
-async def open_project(request: OpenRequest) -> dict:
+def open_project(request: OpenRequest) -> dict:
     folder = _check_folder(request.folder)
     try:
         workspace = ProjectWorkspace.create(folder, name=request.name)
@@ -168,12 +168,12 @@ async def open_project(request: OpenRequest) -> dict:
 
 
 @router.get("/{project_id}")
-async def get_project(project_id: str) -> dict:
+def get_project(project_id: str) -> dict:
     return service.summary(_ws(project_id))
 
 
 @router.post("/{project_id}/scan")
-async def post_scan(project_id: str, request: ScanRequest) -> dict:
+def post_scan(project_id: str, request: ScanRequest) -> dict:
     workspace = _ws(project_id)
 
     def work() -> dict:
@@ -199,7 +199,7 @@ async def post_scan(project_id: str, request: ScanRequest) -> dict:
 
 
 @router.get("/{project_id}/sources")
-async def get_sources(project_id: str, category: Optional[str] = None) -> list[dict]:
+def get_sources(project_id: str, category: Optional[str] = None) -> list[dict]:
     rows = [
         s.to_dict()
         for s in _ws(project_id).load_sources().values()
@@ -209,7 +209,7 @@ async def get_sources(project_id: str, category: Optional[str] = None) -> list[d
 
 
 @router.post("/{project_id}/sources/{source_id}/category")
-async def post_category(
+def post_category(
     project_id: str, source_id: str, request: CategoryRequest, http_request: Request
 ) -> dict:
     from howlwriter.projects.scan import set_category
@@ -222,7 +222,7 @@ async def post_category(
 
 
 @router.get("/{project_id}/evidence")
-async def get_evidence(
+def get_evidence(
     project_id: str,
     source: Optional[str] = None,
     kind: Optional[str] = None,
@@ -245,7 +245,7 @@ async def get_evidence(
 
 
 @router.get("/{project_id}/search")
-async def get_search(
+def get_search(
     project_id: str,
     q: str = Query(..., max_length=500),
     purpose: str = "facts",
@@ -258,21 +258,21 @@ async def get_search(
 
 
 @router.get("/{project_id}/requirements")
-async def get_requirements(project_id: str) -> dict:
+def get_requirements(project_id: str) -> dict:
     from howlwriter.projects.validate import coverage_check
 
     return coverage_check(_ws(project_id))
 
 
 @router.post("/{project_id}/requirements")
-async def post_requirement(project_id: str, request: RequirementRequest) -> dict:
+def post_requirement(project_id: str, request: RequirementRequest) -> dict:
     from howlwriter.projects.requirements import add_requirement
 
     return add_requirement(_ws(project_id), request.text, request.kind).to_dict()
 
 
 @router.post("/{project_id}/requirements/{requirement_id}/status")
-async def post_requirement_status(project_id: str, requirement_id: str, request: StatusRequest) -> dict:
+def post_requirement_status(project_id: str, requirement_id: str, request: StatusRequest) -> dict:
     from howlwriter.projects.requirements import set_status
 
     try:
@@ -283,14 +283,14 @@ async def post_requirement_status(project_id: str, requirement_id: str, request:
 
 
 @router.post("/{project_id}/brief")
-async def post_brief(project_id: str, request: BriefRequest) -> dict:
+def post_brief(project_id: str, request: BriefRequest) -> dict:
     from howlwriter.projects.writing import build_brief
 
     return build_brief(_ws(project_id), sections=request.sections, topic=request.topic)
 
 
 @router.post("/{project_id}/draft/skeleton")
-async def post_skeleton(project_id: str, request: BriefRequest) -> dict:
+def post_skeleton(project_id: str, request: BriefRequest) -> dict:
     from howlwriter.projects.workspace import utc_now
     from howlwriter.projects.writing import build_brief, save_draft, skeleton
 
@@ -302,7 +302,7 @@ async def post_skeleton(project_id: str, request: BriefRequest) -> dict:
 
 
 @router.post("/{project_id}/draft")
-async def post_draft(project_id: str, request: DraftRequest, http: Request) -> dict:
+def post_draft(project_id: str, request: DraftRequest, http: Request) -> dict:
     workspace = _ws(project_id)
     if request.allow_remote:
         owner.source(http, _SENDS)
@@ -349,14 +349,14 @@ async def post_draft(project_id: str, request: DraftRequest, http: Request) -> d
 
 
 @router.post("/{project_id}/validate")
-async def post_validate(project_id: str, request: ValidateRequest) -> dict:
+def post_validate(project_id: str, request: ValidateRequest) -> dict:
     from howlwriter.projects.validate import check_draft
 
     return check_draft(_ws(project_id), request.text)
 
 
 @router.post("/{project_id}/authorize-remote")
-async def post_authorize(project_id: str, http: Request, allow: bool = True) -> dict:
+def post_authorize(project_id: str, http: Request, allow: bool = True) -> dict:
     if allow:  # revoking only ever keeps material local
         owner.source(http, _SENDS)
     return service.authorize_remote(_ws(project_id), allow)
@@ -386,7 +386,7 @@ def _browser_call(project_id: str, name: str, *args, **kwargs):
 
 
 @router.get("/{project_id}/browser")
-async def get_browser(project_id: str) -> dict:
+def get_browser(project_id: str) -> dict:
     workspace = _ws(project_id)
     with _BROWSER_LOCK:
         controller = _BROWSERS.get(workspace.project_id)
@@ -396,7 +396,7 @@ async def get_browser(project_id: str) -> dict:
 
 
 @router.post("/{project_id}/browser/start")
-async def post_browser_start(project_id: str, request: BrowserStartRequest) -> dict:
+def post_browser_start(project_id: str, request: BrowserStartRequest) -> dict:
     from howlwriter.projects.browser import (
         BrowserController,
         BrowserPolicy,
@@ -431,7 +431,7 @@ async def post_browser_start(project_id: str, request: BrowserStartRequest) -> d
 
 
 @router.post("/{project_id}/browser/stop")
-async def post_browser_stop(project_id: str) -> dict:
+def post_browser_stop(project_id: str) -> dict:
     workspace = _ws(project_id)
     with _BROWSER_LOCK:
         controller = _BROWSERS.pop(workspace.project_id, None)
@@ -441,31 +441,31 @@ async def post_browser_stop(project_id: str) -> dict:
 
 
 @router.post("/{project_id}/browser/navigate")
-async def post_browser_navigate(project_id: str, request: NavigateRequest) -> dict:
+def post_browser_navigate(project_id: str, request: NavigateRequest) -> dict:
     return _browser_call(_ws(project_id).project_id, "navigate", request.url).to_dict()
 
 
 @router.post("/{project_id}/browser/screenshot")
-async def post_browser_screenshot(project_id: str, request: ScreenshotRequest) -> dict:
+def post_browser_screenshot(project_id: str, request: ScreenshotRequest) -> dict:
     return _browser_call(_ws(project_id).project_id, "screenshot", request.label).to_dict()
 
 
 @router.post("/{project_id}/browser/request")
-async def post_browser_request(project_id: str, request: ActionRequest) -> dict:
+def post_browser_request(project_id: str, request: ActionRequest) -> dict:
     workspace = _ws(project_id)
     action_id = _browser_call(workspace.project_id, "request", request.kind, request.selector, request.value)
     return {"action_id": action_id, "status": _browser_call(workspace.project_id, "status")}
 
 
 @router.post("/{project_id}/browser/actions/{action_id}/{decision}")
-async def post_browser_decision(project_id: str, action_id: str, decision: str) -> dict:
+def post_browser_decision(project_id: str, action_id: str, decision: str) -> dict:
     if decision not in ("approve", "deny"):
         raise HTTPException(status_code=404, detail="decision must be approve or deny")
     return _browser_call(_ws(project_id).project_id, decision, action_id).to_dict()
 
 
 @router.post("/{project_id}/browser/{verb}")
-async def post_browser_verb(project_id: str, verb: str) -> dict:
+def post_browser_verb(project_id: str, verb: str) -> dict:
     names = {"pause": "pause", "resume": "resume", "read-only": "set_read_only", "read": "read"}
     if verb not in names:
         raise HTTPException(status_code=404, detail=f"unknown browser command {verb}")

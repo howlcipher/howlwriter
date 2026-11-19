@@ -92,7 +92,7 @@ def _store(identity: str) -> IdentityStore:
 
 
 @router.get("/identities")
-async def list_identities() -> dict:
+def list_identities() -> dict:
     return {
         "identities": IdentityStore.list_identities(),
         "preferred_identity": load_preferences().get("preferred_identity"),
@@ -100,13 +100,13 @@ async def list_identities() -> dict:
 
 
 @router.get("/{identity}/status")
-async def get_status(identity: str) -> dict:
+def get_status(identity: str) -> dict:
     store = _store(identity)
     return identity_status(store.identity)
 
 
 @router.get("/{identity}/review")
-async def get_review(identity: str, show_paths: bool = Query(False)) -> dict:
+def get_review(identity: str, show_paths: bool = Query(False)) -> dict:
     store = _store(identity)
     items = []
     for item in review.queue(store):
@@ -120,7 +120,7 @@ async def get_review(identity: str, show_paths: bool = Query(False)) -> dict:
 
 
 @router.post("/{identity}/review/{doc_id}")
-async def post_attestation(
+def post_attestation(
     identity: str, doc_id: str, request: AttestRequest, source: str = Depends(owner.voice_source)
 ) -> dict:
     store = _store(identity)
@@ -147,7 +147,7 @@ async def post_attestation(
 
 
 @router.get("/{identity}/review-groups")
-async def get_review_groups(identity: str) -> dict:
+def get_review_groups(identity: str) -> dict:
     store = _store(identity)
     return {
         "groups": [g.to_dict() for g in review.groups(store)],
@@ -156,7 +156,7 @@ async def get_review_groups(identity: str) -> dict:
 
 
 @router.post("/{identity}/review-groups/{group_id}")
-async def post_group_decision(
+def post_group_decision(
     identity: str, group_id: str, request: GroupDecisionRequest, source: str = Depends(owner.voice_source)
 ) -> dict:
     store = _store(identity)
@@ -179,7 +179,7 @@ async def post_group_decision(
 
 
 @router.get("/{identity}/review/{doc_id}/preview")
-async def get_preview(identity: str, doc_id: str, confirm: bool = Query(False)) -> dict:
+def get_preview(identity: str, doc_id: str, confirm: bool = Query(False)) -> dict:
     if not confirm:
         raise HTTPException(
             status_code=400,
@@ -212,7 +212,7 @@ def _start(kind: str, identity: str, work) -> dict:
 
 
 @router.post("/{identity}/scan")
-async def post_scan(identity: str) -> dict:
+def post_scan(identity: str) -> dict:
     """Rescan the identity's configured sources. No new paths are accepted."""
     store = _store(identity)
 
@@ -226,7 +226,7 @@ async def post_scan(identity: str) -> dict:
 
 
 @router.post("/{identity}/build")
-async def post_build(identity: str) -> dict:
+def post_build(identity: str) -> dict:
     """Rebuild the identity's profiles, deterministic only."""
     store = _store(identity)
     return _start(
@@ -237,7 +237,7 @@ async def post_build(identity: str) -> dict:
 
 
 @router.post("/evaluate")
-async def post_evaluate(request: EvaluateRequest) -> dict:
+def post_evaluate(request: EvaluateRequest) -> dict:
     try:
         return evaluate_text(
             request.text,
@@ -251,7 +251,7 @@ async def post_evaluate(request: EvaluateRequest) -> dict:
 
 
 @router.post("/compare")
-async def post_compare(request: CompareRequest) -> dict:
+def post_compare(request: CompareRequest) -> dict:
     try:
         return compare_texts(
             request.original,
@@ -311,7 +311,7 @@ def _sample_view(sample, counting: set[str], *, with_text: bool) -> dict:
 
 
 @router.get("/{identity}/workshop")
-async def get_workshop(identity: str, show_text: bool = Query(False)) -> dict:
+def get_workshop(identity: str, show_text: bool = Query(False)) -> dict:
     """Coverage and samples. Answer text only with ?show_text=true."""
     from howlwriter.voice.identity.workshop import counting_ids
 
@@ -329,7 +329,7 @@ async def get_workshop(identity: str, show_text: bool = Query(False)) -> dict:
 
 
 @router.post("/{identity}/workshop/prompt")
-async def post_workshop_prompt(identity: str, request: WorkshopPromptRequest) -> dict:
+def post_workshop_prompt(identity: str, request: WorkshopPromptRequest) -> dict:
     try:
         return (
             _workshop(identity)
@@ -346,7 +346,7 @@ async def post_workshop_prompt(identity: str, request: WorkshopPromptRequest) ->
 
 
 @router.post("/{identity}/workshop/samples")
-async def post_workshop_sample(identity: str, request: WorkshopAnswerRequest, http: Request) -> dict:
+def post_workshop_sample(identity: str, request: WorkshopAnswerRequest, http: Request) -> dict:
     from howlwriter.voice.identity.workshop import counting_ids
 
     if request.self_written or request.approve:
@@ -367,7 +367,7 @@ async def post_workshop_sample(identity: str, request: WorkshopAnswerRequest, ht
 
 
 @router.post("/{identity}/workshop/samples/{sample_id}/actions/{action}")
-async def post_workshop_action(identity: str, sample_id: str, action: str, http: Request) -> dict:
+def post_workshop_action(identity: str, sample_id: str, action: str, http: Request) -> dict:
     if action not in ("approve", "exclude", "remove"):
         raise HTTPException(status_code=404, detail=f"unknown action {action!r}")
     if action != "exclude":  # excluding only ever removes evidence
@@ -383,7 +383,7 @@ async def post_workshop_action(identity: str, sample_id: str, action: str, http:
 @router.post(
     "/{identity}/workshop/samples/{sample_id}/context", dependencies=[Depends(owner.voice_source)]
 )
-async def post_workshop_reclassify(
+def post_workshop_reclassify(
     identity: str, sample_id: str, request: WorkshopReclassifyRequest
 ) -> dict:
     try:
@@ -394,7 +394,7 @@ async def post_workshop_reclassify(
 
 
 @router.post("/{identity}/workshop/samples/{sample_id}/revision")
-async def post_workshop_revision(
+def post_workshop_revision(
     identity: str, sample_id: str, request: WorkshopRevisionRequest
 ) -> dict:
     try:

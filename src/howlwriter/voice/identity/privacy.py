@@ -117,7 +117,7 @@ def ensure_private_dir(path: Path) -> Path:
 def write_private_text(path: Path, content: str) -> None:
     """Atomically write a private file and restrict it to the owner."""
     ensure_private_dir(path.parent)
-    atomic_write_text(path, content)
+    atomic_write_text(path, content, private=True)
     try:
         os.chmod(path, FILE_MODE)
     except OSError:

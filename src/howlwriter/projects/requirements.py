@@ -253,21 +253,21 @@ def refresh_requirements(
 ) -> dict[str, m.Requirement]:
     """Re-extract, keep user additions and user statuses, and re-assess."""
     evidence = evidence if evidence is not None else workspace.load_evidence()
-    previous = workspace.load_requirements()
-    current = extract(workspace, sources=sources, evidence=evidence)
-    for rid, old in previous.items():
-        if old.source_id == "user":
-            current[rid] = old
-        elif rid in current:
-            current[rid].user_status, current[rid].user_note = old.user_status, old.user_note
-    for requirement in current.values():
-        assess(requirement, evidence)
-    workspace.save_requirements(current)
+    with workspace.locked():
+        previous = workspace.load_requirements()
+        current = extract(workspace, sources=sources, evidence=evidence)
+        for rid, old in previous.items():
+            if old.source_id == "user":
+                current[rid] = old
+            elif rid in current:
+                current[rid].user_status, current[rid].user_note = old.user_status, old.user_note
+        for requirement in current.values():
+            assess(requirement, evidence)
+        workspace.save_requirements(current)
     return current
 
 
 def add_requirement(workspace: ProjectWorkspace, text: str, kind: str | None = None) -> m.Requirement:
-    requirements = workspace.load_requirements()
     requirement = m.Requirement(
         requirement_id=_rid("user", text),
         text=text.strip(),
@@ -275,9 +275,11 @@ def add_requirement(workspace: ProjectWorkspace, text: str, kind: str | None = N
         source_id="user",
         location="added by the user",
     )
-    requirements[requirement.requirement_id] = requirement
-    workspace.save_requirements(requirements)
-    return refresh_requirements(workspace)[requirement.requirement_id]
+    with workspace.locked():
+        requirements = workspace.load_requirements()
+        requirements[requirement.requirement_id] = requirement
+        workspace.save_requirements(requirements)
+        return refresh_requirements(workspace)[requirement.requirement_id]
 
 
 def set_status(
@@ -286,10 +288,11 @@ def set_status(
     allowed = (m.SATISFIED, m.PARTIAL, m.PENDING, m.BLOCKED, m.NOT_APPLICABLE, "")
     if status not in allowed:
         raise ValueError(f"status must be one of {', '.join(s for s in allowed if s)} (or empty to clear)")
-    requirements = workspace.load_requirements()
-    if requirement_id not in requirements:
-        raise ValueError(f"no requirement {requirement_id!r}")
-    requirements[requirement_id].user_status = status
-    requirements[requirement_id].user_note = note
-    workspace.save_requirements(requirements)
-    return refresh_requirements(workspace)[requirement_id]
+    with workspace.locked():
+        requirements = workspace.load_requirements()
+        if requirement_id not in requirements:
+            raise ValueError(f"no requirement {requirement_id!r}")
+        requirements[requirement_id].user_status = status
+        requirements[requirement_id].user_note = note
+        workspace.save_requirements(requirements)
+        return refresh_requirements(workspace)[requirement_id]

@@ -28,7 +28,7 @@ async def get_job_events(job_id: str, request: Request):
         raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
 
     queue: asyncio.Queue = asyncio.Queue()
-    job.add_listener(queue)
+    job.add_listener(queue, asyncio.get_running_loop())
 
     async def _event_generator():
         try:
@@ -36,7 +36,7 @@ async def get_job_events(job_id: str, request: Request):
             initial_dto = job.to_dto()
             yield f"event: snapshot\ndata: {initial_dto.model_dump_json()}\n\n"
 
-            if job.status in ("COMPLETED", "FAILED"):
+            if initial_dto.status in ("COMPLETED", "FAILED"):
                 return
 
             while True:

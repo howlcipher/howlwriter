@@ -339,25 +339,26 @@ class BrowserSession:
             citation=f"{observation.get('title') or origin}, {url}, retrieved {locator['at'][:10]}",
             kind=kind,
         )
-        evidence = self.workspace.load_evidence()
-        evidence[item.evidence_id] = item
-        self.workspace.save_evidence(evidence)
-        sources = self.workspace.load_sources()
-        if source_id not in sources:
-            sources[source_id] = m.SourceRecord(
-                source_id=source_id,
-                path=origin,
-                suffix="",
-                size=0,
-                mtime=0.0,
-                category=item.category,
-                category_source="browser",
-                category_reason=f"browser {self.policy.mode} session",
-                adapter="playwright",
-                status="extracted",
-            )
-        sources[source_id].evidence_count += 1
-        self.workspace.save_sources(sources)
+        with self.workspace.locked():
+            evidence = self.workspace.load_evidence()
+            evidence[item.evidence_id] = item
+            self.workspace.save_evidence(evidence)
+            sources = self.workspace.load_sources()
+            if source_id not in sources:
+                sources[source_id] = m.SourceRecord(
+                    source_id=source_id,
+                    path=origin,
+                    suffix="",
+                    size=0,
+                    mtime=0.0,
+                    category=item.category,
+                    category_source="browser",
+                    category_reason=f"browser {self.policy.mode} session",
+                    adapter="playwright",
+                    status="extracted",
+                )
+            sources[source_id].evidence_count += 1
+            self.workspace.save_sources(sources)
         return item
 
     # --- read-only actions ------------------------------------------------------

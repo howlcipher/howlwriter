@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+import functools
 import hashlib
 import json
 from pathlib import Path
@@ -351,6 +352,17 @@ def counting_ids(samples) -> set[str]:
     return {s.sample_id for s in accepted}
 
 
+def _load_modify_save(method):
+    """Run a load-modify-save method under the identity store lock (reentrant)."""
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self.locked():
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class Workshop:
     """One identity's Voice Workshop ledger."""
 
@@ -381,6 +393,10 @@ class Workshop:
         privacy.ensure_private_dir(self.directory)
         privacy.write_private_json(self._path(), data)
 
+    def locked(self):
+        """The identity store's lock, for one short load-modify-save cycle."""
+        return self.store.locked()
+
     def samples(self) -> dict[str, Sample]:
         return {k: Sample.from_dict(v) for k, v in self.load()["samples"].items()}
 
@@ -389,6 +405,7 @@ class Workshop:
 
     # --- prompts -------------------------------------------------------
 
+    @_load_modify_save
     def next_prompt(
         self,
         *,
@@ -475,6 +492,7 @@ class Workshop:
 
     # --- samples -------------------------------------------------------
 
+    @_load_modify_save
     def add(
         self,
         *,
@@ -525,6 +543,7 @@ class Workshop:
             sample = self.approve(sample.sample_id)
         return sample
 
+    @_load_modify_save
     def _update(self, sample_id: str, change) -> Sample:
         data = self.load()
         raw = data["samples"].get(sample_id)
