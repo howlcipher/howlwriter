@@ -53,15 +53,26 @@ def test_traversal_through_raw_asgi_scope_is_not_served(tmp_path):
             "client": ("127.0.0.1", 5555), "root_path": "",
         }
         out = {}
+        finished = asyncio.Event()
+        requested = False
 
         async def receive():
-            return {"type": "http.request", "body": b"", "more_body": False}
+            # Like a real client: the request once, then stay connected until the
+            # response ends (newer Starlette listens for a disconnect while streaming).
+            nonlocal requested
+            if not requested:
+                requested = True
+                return {"type": "http.request", "body": b"", "more_body": False}
+            await finished.wait()
+            return {"type": "http.disconnect"}
 
         async def send(message):
             if message["type"] == "http.response.start":
                 out["status"] = message["status"]
             if message["type"] == "http.response.body":
                 out["body"] = out.get("body", b"") + message.get("body", b"")
+                if not message.get("more_body", False):
+                    finished.set()
 
         await app(scope, receive, send)
         return out
