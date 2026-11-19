@@ -67,8 +67,7 @@ def test_optional_howlplane_discovery_via_env(tmp_path: Path, monkeypatch: pytes
     """HOWLPLANE_ROOT environment variable enables dynamic discovery."""
     fake_root = tmp_path / "mock_howlplane"
     fake_root.mkdir()
-    fake_src = fake_root / "src"
-    fake_src.mkdir()
+    (fake_root / "howlplane" / "control_plane").mkdir(parents=True)
 
     monkeypatch.setenv("HOWLPLANE_ROOT", str(fake_root))
 

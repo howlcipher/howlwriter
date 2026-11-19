@@ -1,4 +1,4 @@
-from src.control_plane.role_binding import extract_structured_output
+from howlplane.control_plane.role_binding import extract_structured_output
 
 
 def test_extracts_from_fenced_yaml_with_commentary_before_and_after():

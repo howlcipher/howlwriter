@@ -286,23 +286,17 @@ class TestHonestRequirements:
         assert "NO_SOURCES" not in _codes(report)
 
     def test_paths_outside_the_package_folder_are_refused(self, tmp_path):
-        import pytest
-
         spec = _package(tmp_path)
         spec["deliverables"][0]["path"] = "../../etc/hostname"
         with pytest.raises(ValueError, match="outside the package folder"):
             check_package(spec, providers=[])
 
     def test_a_malformed_deliverable_is_a_clean_error(self, tmp_path):
-        import pytest
-
         _write(tmp_path, "package.yaml", "deliverables:\n  - just a string\n")
         with pytest.raises(ValueError, match="deliverable 1"):
             load_package_spec(tmp_path / "package.yaml")
 
     def test_an_oversized_file_is_refused(self, tmp_path, monkeypatch):
-        import pytest
-
         from howlwriter.assignment import package
 
         spec = _package(tmp_path)

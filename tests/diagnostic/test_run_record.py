@@ -11,7 +11,7 @@ from howlwriter.diagnostic.run_record import (
     generate_run_id,
 )
 from howlwriter.pipeline.howl import run_howl_pipeline
-from src.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.agent_execution import FakeAgentBackend
 
 
 def test_generate_run_id_format():
@@ -86,7 +86,7 @@ def test_failed_execution_saves_failure_record(tmp_path, monkeypatch):
 
     draft = tmp_path / "draft.md"
     draft.write_text("# Failing Draft\n\nSome text.")
-    from src.control_plane.agent_execution import AgentExecutionResult
+    from howlplane.control_plane.agent_execution import AgentExecutionResult
 
     class FailingBackend(FakeAgentBackend):
         def execute(self, task, cwd, role="implementation", **kwargs):

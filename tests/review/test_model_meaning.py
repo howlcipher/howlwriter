@@ -19,8 +19,8 @@ from howlwriter.domain.generation_provenance import (
     GenerationProvenance,
     ReviewerFallbackRecord,
 )
-from src.control_plane.agent_execution import FakeAgentBackend
-from src.control_plane.role_binding import (
+from howlplane.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.role_binding import (
     RoleBinding,
     RoleBindingRegistry,
     RoleDispatcher,

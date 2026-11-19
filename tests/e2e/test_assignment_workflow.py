@@ -12,7 +12,6 @@ from datetime import date
 import json
 from pathlib import Path
 
-import pytest
 import yaml
 
 from howlwriter.academic.pipeline import run_academic_pipeline
@@ -24,7 +23,7 @@ from howlwriter.domain.source import Source, SourceType
 from howlwriter.publishing.base import PublicationArtifact, PublishContext, PublishDestination
 from howlwriter.publishing.google.publisher import GoogleDocsPublisher
 from howlwriter.review.change_report import build_change_report
-from src.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.agent_execution import FakeAgentBackend
 from tests.fakes.google_docs import FakeGoogleDocsAdapter
 
 RECORDS = Path(__file__).parents[1] / "fixtures" / "citations" / "canonical_records.json"

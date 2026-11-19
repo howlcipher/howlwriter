@@ -445,7 +445,7 @@ python -m playwright install chromium
 
 # Static correctness lint and compilation check
 python -m compileall src/ tests/
-flake8 src/ --select=F821,F401
+flake8 src/ tests/ --select=F821,F401,F811,F841,F632,F541
 
 # Run tests
 pytest -q

@@ -579,8 +579,8 @@ def test_abstract_trait_labels_are_cached_across_rebuilds(store_root, corpus_dir
         set_howlplane_bridge,
     )
     from howlwriter.voice.corpus.traits import TRAIT_SCHEMA
-    from src.control_plane.agent_execution import FakeAgentBackend
-    from src.control_plane.role_binding import (
+    from howlplane.control_plane.agent_execution import FakeAgentBackend
+    from howlplane.control_plane.role_binding import (
         RoleBinding,
         RoleBindingRegistry,
         RoleDispatcher,
@@ -624,8 +624,8 @@ def test_a_changed_document_is_re_analyzed_not_served_from_cache(
         set_howlplane_bridge,
     )
     from howlwriter.voice.corpus.traits import TRAIT_SCHEMA
-    from src.control_plane.agent_execution import FakeAgentBackend
-    from src.control_plane.role_binding import (
+    from howlplane.control_plane.agent_execution import FakeAgentBackend
+    from howlplane.control_plane.role_binding import (
         RoleBinding,
         RoleBindingRegistry,
         RoleDispatcher,

@@ -15,7 +15,6 @@ from howlwriter.evaluation.models import EvaluatorHealth
 
 def test_factuality_entailment_calibration_controls():
     checker = EvaluatorHealthChecker()
-    case = get_factuality_calibration_case()
     result = checker.check_metric_health("factuality")
 
     assert result.health == EvaluatorHealth.CALIBRATED

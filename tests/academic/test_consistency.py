@@ -16,8 +16,8 @@ from howlwriter.integration.model_role import (
     ModelRoleNotConfiguredError,
     WritingRole,
 )
-from src.control_plane.agent_execution import FakeAgentBackend
-from src.control_plane.role_binding import RoleBindingRegistry, RoleDispatcher
+from howlplane.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.role_binding import RoleBindingRegistry, RoleDispatcher
 
 
 def test_has_staged_content_detects_numbered_stages():

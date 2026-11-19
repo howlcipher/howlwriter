@@ -25,7 +25,7 @@ Read [docs/agents.md](docs/agents.md) first. In short:
 
 ## Working on this repository
 
-- Lint gate (CI): `flake8 src/ --select=F821,F401`; `setup.cfg` sets the
+- Lint gate (CI): `flake8 src/ tests/ --select=F821,F401,F811,F841,F632,F541`; `setup.cfg` sets the
   line length to 110. Code must also compile on Python 3.11.
 - Tests: `pytest tests/` (see `.ai-project.toml`). Run the affected tests
   while working and the full suite before a pull request; report results

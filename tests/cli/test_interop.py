@@ -84,7 +84,8 @@ def test_howlplane_home_never_shadows_an_installed_howlplane(tmp_path, monkeypat
     monkeypatch.setattr(howlplane_bridge.importlib.util, "find_spec", lambda name: None)
     howlplane_bridge._ensure_howlplane_on_path()
     # A fallback is appended, so it cannot shadow anything already importable.
-    assert sys.path[-2:] == [str((checkout / "src").resolve()), str(checkout.resolve())]
+    assert sys.path[-1] == str((checkout / "src").resolve())
+    assert str(checkout.resolve()) not in sys.path
 
 
 def test_howlplane_root_still_takes_precedence(tmp_path, monkeypatch):
@@ -92,7 +93,8 @@ def test_howlplane_root_still_takes_precedence(tmp_path, monkeypatch):
     monkeypatch.setenv("HOWLPLANE_ROOT", str(checkout))
     monkeypatch.setattr(sys, "path", list(sys.path))
     howlplane_bridge._ensure_howlplane_on_path()
-    assert sys.path[:2] == [str((checkout / "src").resolve()), str(checkout.resolve())]
+    assert sys.path[0] == str((checkout / "src").resolve())
+    assert str(checkout.resolve()) not in sys.path
 
 
 def test_chosen_model_without_howlplane_is_reported_as_unavailable(monkeypatch):
@@ -139,3 +141,18 @@ def test_linkedin_subcommands_declare_the_result_envelope(capsys):
     assert linkedin
     for path, entry in linkedin.items():
         assert entry["json"] and entry["emits"] == ["howl.result/v1"], path
+
+
+def test_checkout_without_a_howlplane_package_adds_nothing(tmp_path, monkeypatch):
+    (tmp_path / "src" / "control_plane").mkdir(parents=True)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    before = list(sys.path)
+    howlplane_bridge._add_checkout(str(tmp_path), first=True)
+    assert sys.path == before
+
+
+def test_flat_checkout_adds_only_its_root(tmp_path, monkeypatch):
+    (tmp_path / "howlplane" / "control_plane").mkdir(parents=True)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    howlplane_bridge._add_checkout(str(tmp_path), first=True)
+    assert sys.path[0] == str(tmp_path.resolve())

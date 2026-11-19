@@ -8,7 +8,7 @@ from howlwriter.academic.pipeline import run_academic_pipeline
 from howlwriter.academic.spec import AssignmentSpec
 from howlwriter.config.defaults import default_config
 from howlwriter.domain.source import Source, SourceType
-from src.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.agent_execution import FakeAgentBackend
 
 _SOURCE = Source(
     id="S001",

@@ -17,8 +17,8 @@ try:
     from howlplane.control_plane.agent_execution import FakeAgentBackend
     from howlplane.control_plane.role_binding import RoleBinding, RoleBindingRegistry, RoleDispatcher
 except ImportError:
-    from src.control_plane.agent_execution import FakeAgentBackend
-    from src.control_plane.role_binding import RoleBinding, RoleBindingRegistry, RoleDispatcher
+    from howlplane.control_plane.agent_execution import FakeAgentBackend
+    from howlplane.control_plane.role_binding import RoleBinding, RoleBindingRegistry, RoleDispatcher
 
 
 ALL_READY = [(option, True, "") for option in pc.OPTIONS]

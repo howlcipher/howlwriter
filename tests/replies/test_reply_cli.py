@@ -10,7 +10,7 @@ from howlwriter.academic.spec import AssignmentSpec
 from howlwriter.cli.main import main
 from howlwriter.config.defaults import default_config
 from howlwriter.domain.source import Source, SourceType
-from src.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.agent_execution import FakeAgentBackend
 from tests.replies.test_grounding import GOOD, POST
 
 _SOURCE = Source(

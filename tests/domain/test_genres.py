@@ -93,7 +93,7 @@ class TestConformance:
 class TestWriterPrompt:
     @staticmethod
     def _prompt(genre):
-        from src.control_plane.agent_execution import FakeAgentBackend
+        from howlplane.control_plane.agent_execution import FakeAgentBackend
 
         from howlwriter.academic.writer import ModelAcademicWriter
 

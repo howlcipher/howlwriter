@@ -8,8 +8,8 @@ from howlwriter.integration.howlplane_bridge import (
     set_howlplane_bridge,
 )
 from howlwriter.pipeline.howl import run_howl_pipeline
-from src.control_plane.agent_execution import FakeAgentBackend
-from src.control_plane.role_binding import (
+from howlplane.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.role_binding import (
     RoleBinding,
     RoleBindingRegistry,
     RoleDispatcher,

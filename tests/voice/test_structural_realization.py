@@ -506,7 +506,7 @@ def test_near_complete_draft_reparagraphing_is_rejected_end_to_end(
     from howlwriter.config.defaults import default_config
     from howlwriter.domain.document import Document
     from howlwriter.pipeline.howl import run_howl_pipeline
-    from src.control_plane.agent_execution import FakeAgentBackend
+    from howlplane.control_plane.agent_execution import FakeAgentBackend
 
     paragraphs = [
         (

@@ -6,8 +6,8 @@ from howlwriter.config.defaults import default_config
 from howlwriter.domain.document import Document
 from howlwriter.humanize.rewriter import ModelHumanizerRewriter
 from howlwriter.review.meaning import RealModelMeaningReviewer
-from src.control_plane.agent_execution import FakeAgentBackend
-from src.control_plane.role_binding import (
+from howlplane.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.role_binding import (
     IndependenceStatus,
     RoleBinding,
     RoleBindingRegistry,

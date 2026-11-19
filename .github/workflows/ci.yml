@@ -47,8 +47,8 @@ jobs:
       - name: Compile verification
         run: python -m compileall src/ tests/
 
-      - name: Static correctness checks (F821, F401)
-        run: flake8 src/ --select=F821,F401
+      - name: Static correctness checks (F821, F401, F811, F841, F632, F541)
+        run: flake8 src/ tests/ --select=F821,F401,F811,F841,F632,F541
 
       - name: Run core test suite
         run: pytest -q -m "not contract" --ignore=tests/docs

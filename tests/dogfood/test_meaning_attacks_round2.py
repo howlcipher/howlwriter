@@ -7,7 +7,7 @@ from howlwriter.review.meaning import (
     MeaningPreservationReviewer,
     RealModelMeaningReviewer,
 )
-from src.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.agent_execution import FakeAgentBackend
 
 
 @pytest.mark.parametrize(

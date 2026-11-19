@@ -7,7 +7,7 @@ from howlwriter.humanize.rewriter import ModelHumanizerRewriter
 from howlwriter.linting.engine import LintEngine
 from howlwriter.linting.rules import AI_STYLE_BANNED_WORD
 from howlwriter.pipeline.howl import run_howl_pipeline
-from src.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.agent_execution import FakeAgentBackend
 
 CORPUS_DIR = Path(__file__).parent.parent / "fixtures" / "dogfood_corpus"
 

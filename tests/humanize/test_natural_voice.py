@@ -27,8 +27,8 @@ from howlwriter.linting.rules import (
     AI_STYLE_CORPORATE_FILLER,
     AI_STYLE_GENERIC_INTENSIFIER,
 )
-from src.control_plane.agent_execution import FakeAgentBackend
-from src.control_plane.role_binding import (
+from howlplane.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.role_binding import (
     RoleBinding,
     RoleBindingRegistry,
     RoleDispatcher,

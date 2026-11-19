@@ -27,7 +27,7 @@ exclude = ["**/__pycache__/**", "*.howled.md"]
 
 [commands]
 test = ["pytest", "tests/"]
-lint = ["flake8", "src/"]
+lint = ["flake8", "src/", "tests/", "--select=F821,F401,F811,F841,F632,F541"]
 
 [security]
 # The MVP CLI only ever reads/writes local files and runs its own test/lint

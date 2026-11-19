@@ -2,26 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import date
-from pathlib import Path
-import pytest
 
 from howlwriter.academic.ai_disclosure import build_ai_use_statement
 from howlwriter.academic.attack import (
     AttackKnowledgeBase,
-    AttackSemanticValidation,
-    AttackTechniqueRecord,
     validate_attack_mapping,
-)
-from howlwriter.academic.consistency import (
-    ConsistencyFinding,
-    ConsistencyReviewResult,
-    RealModelConsistencyReviewer,
 )
 from howlwriter.academic.detection_coverage import (
     DetectionObservabilityStatus,
-    TechniqueDetectionCoverage,
-    TechniqueDetectionSummary,
     evaluate_technique_detection_coverage,
 )
 from howlwriter.academic.telemetry import (
@@ -30,7 +18,6 @@ from howlwriter.academic.telemetry import (
     validate_telemetry_evidence,
 )
 from howlwriter.academic.verifier import AcademicVerifier
-from howlwriter.domain.claim import Claim, ClaimType, VerificationStatus
 from howlwriter.domain.document import Document
 from howlwriter.domain.generation_provenance import (
     ContributionSummary,
@@ -54,19 +41,11 @@ from howlwriter.domain.source import (
     DEPTH_UNAVAILABLE,
     FreshnessStatus,
     Source,
-    SourceFreshness,
     source_from_dict,
 )
 from howlwriter.facts.extraction import HeuristicClaimExtractor
 from howlwriter.provenance.assemble import (
     build_contribution,
-    finalize,
-    write_artifacts,
-)
-from howlwriter.review.meaning import (
-    MeaningDiff,
-    RealModelMeaningReviewer,
-    SemanticMeaningResult,
 )
 from howlwriter.voice.diagnostics import (
     compute_voice_diagnostics,

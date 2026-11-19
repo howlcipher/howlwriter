@@ -14,7 +14,7 @@ from howlwriter.humanize.rewriter import (
 )
 from howlwriter.review.meaning import RealModelMeaningReviewer
 from howlwriter.voice.application import render_profile
-from src.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.agent_execution import FakeAgentBackend
 
 
 def test_anti_thesaurus_rule_rendered_in_voice_application():
