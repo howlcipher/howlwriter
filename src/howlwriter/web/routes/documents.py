@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from howlwriter.academic.length import count_body_words
 from howlwriter.domain.document import Document
 from howlwriter.domain.io import atomic_write_text
+from howlwriter.web.paths import TEXT_SUFFIXES, check_user_path
 from howlwriter.web.models import (
     DocumentResponse,
     DocumentStatsResponse,
@@ -20,11 +21,10 @@ router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 @router.post("/open", response_model=DocumentResponse)
 def open_document(req: OpenDocumentRequest) -> DocumentResponse:
-    path = Path(req.path).expanduser().resolve()
-    if not path.exists():
+    try:
+        path = check_user_path(req.path, suffixes=TEXT_SUFFIXES, for_write=False)
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"File not found: {req.path}")
-    if not path.is_file():
-        raise HTTPException(status_code=400, detail=f"Path is not a regular file: {req.path}")
 
     try:
         content = path.read_text(encoding="utf-8")
@@ -49,7 +49,7 @@ def open_document(req: OpenDocumentRequest) -> DocumentResponse:
 
 @router.post("/save", response_model=DocumentResponse)
 def save_document(req: SaveDocumentRequest) -> DocumentResponse:
-    path = Path(req.path).expanduser().resolve()
+    path = check_user_path(req.path, suffixes=TEXT_SUFFIXES, for_write=True)
     try:
         atomic_write_text(path, req.content)
     except Exception as exc:

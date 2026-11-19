@@ -37,7 +37,7 @@ def voices(tmp_path, monkeypatch):
 
 @pytest.fixture
 def client():
-    return TestClient(create_app())
+    return TestClient(create_app(), base_url="http://127.0.0.1:8765")
 
 
 def test_listing_voices(client, voices):

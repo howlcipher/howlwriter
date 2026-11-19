@@ -23,7 +23,7 @@ from howlwriter.web.app import create_app
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("HOWLWRITER_RUNS_DIR", str(tmp_path))
-    return TestClient(create_app())
+    return TestClient(create_app(), base_url="http://127.0.0.1:8765")
 
 
 def _record(run_id: str = "hw-test-1") -> GenerationProvenance:

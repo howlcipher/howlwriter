@@ -3,7 +3,7 @@
 from fastapi.testclient import TestClient
 from howlwriter.web.app import create_app
 
-client = TestClient(create_app())
+client = TestClient(create_app(), base_url="http://127.0.0.1:8765")
 
 
 def test_lint_endpoint():

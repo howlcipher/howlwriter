@@ -75,7 +75,7 @@ plane = [
     "howlplane @ git+https://github.com/howlcipher/howlplane.git@4ba3e71a777747445173b381ca6db0a3d5366fe2",
 ]
 web = [
-    "fastapi>=0.110,<1.0",
+    "fastapi>=0.132,<1.0",
     "uvicorn[standard]>=0.27,<1.0",
     "pydantic>=2.0,<3.0",
     "httpx>=0.27,<1.0",

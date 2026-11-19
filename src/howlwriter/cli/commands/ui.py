@@ -9,6 +9,9 @@ import time
 import webbrowser
 
 
+_LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
 def add_subparser(
     subparsers: argparse._SubParsersAction,
 ) -> argparse.ArgumentParser:
@@ -19,7 +22,13 @@ def add_subparser(
     parser.add_argument(
         "--host",
         default="127.0.0.1",
-        help="Local network interface to bind to (default: 127.0.0.1).",
+        help="Interface to bind to (default: 127.0.0.1). Non-loopback hosts need --allow-network-access.",
+    )
+    parser.add_argument(
+        "--allow-network-access",
+        action="store_true",
+        help="Allow binding a non-loopback host. The API has no login: anyone who can reach it can "
+        "read and write the owner's text files and use their model access.",
     )
     parser.add_argument(
         "--port",
@@ -72,7 +81,24 @@ def run(args: argparse.Namespace) -> int:
 
     host = args.host
     port = args.port
-    url = f"http://{host}:{port}"
+    network = host not in _LOOPBACK_HOSTS
+    if network and not args.allow_network_access:
+        print(
+            f"error: refusing to bind {host!r}: the web UI has no login, so anything that can reach it "
+            "could read and write your files. Use 127.0.0.1, or pass --allow-network-access if you "
+            "understand that.",
+            file=sys.stderr,
+        )
+        return 1
+    if network:
+        print(
+            f"WARNING: --allow-network-access: the web API is unauthenticated, and Host header checks are "
+            f"relaxed in this mode. Every machine that can reach {host} can read and write your text "
+            "files and use your model access.",
+            file=sys.stderr,
+        )
+    shown = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    url = f"http://{shown}:{port}"
 
     print("Starting HowlWriter local web application...")
     print(f"URL: {url}")
@@ -89,7 +115,11 @@ def run(args: argparse.Namespace) -> int:
         t = threading.Thread(target=_open, daemon=True)
         t.start()
 
-    fastapi_app = create_app()
+    # Off loopback the Host header is whatever address the visitor typed, so the host check cannot
+    # name it; the owner has accepted that with --allow-network-access.
+    fastapi_app = create_app(
+        port=port, host=host, allowed_hosts=("*",) if network else ("127.0.0.1", "localhost")
+    )
     uvicorn.run(
         fastapi_app,
         host=host,

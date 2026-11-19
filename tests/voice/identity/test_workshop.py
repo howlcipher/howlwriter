@@ -264,7 +264,7 @@ def test_workshop_web_api(env):
     from howlwriter.web.app import create_app
 
     # The app's own page: the browser marks its requests same-origin.
-    client = TestClient(create_app(), headers={"Sec-Fetch-Site": "same-origin"})
+    client = TestClient(create_app(), base_url="http://127.0.0.1:8765", headers={"Sec-Fetch-Site": "same-origin"})
     prompt = client.post(
         "/api/voice-intel/web/workshop/prompt", json={"context": "academic"}
     ).json()

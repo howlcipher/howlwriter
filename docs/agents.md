@@ -136,6 +136,11 @@ HowlPlane and `howl doctor` use it to check the commands they run.
 `model_choice_required` until the request carries `X-HowlWriter-Provider`
 (`none` continues without a model where a rule-based path exists). The
 owner-only actions above need the page or `X-HowlWriter-Owner-Confirmed: 1`.
+The API only answers requests addressed to `127.0.0.1` or `localhost`, and it
+refuses cross-origin writes (a request with a foreign `Origin` header gets 403
+`origin_not_allowed`). The document endpoints open and save only `.md`,
+`.markdown` and `.txt` files, and refuse dotfiles, dot-directories,
+symlinks and anything under `~/.howlwriter` (403 `path_not_allowed`).
 
 ## What these checks are, and are not
 

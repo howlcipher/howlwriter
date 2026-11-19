@@ -410,7 +410,9 @@ This starts a FastAPI backend and serves the React frontend at
   and side-by-side Naturalness / Voice Match evaluation with drift and
   before/after comparison
 
-The web UI is localhost-only by default and does not phone home.
+The web UI is localhost-only by default and does not phone home. It has no login,
+so `--host` refuses anything but loopback unless you also pass
+`--allow-network-access`.
 
 ## Source relevance and evidence depth
 
