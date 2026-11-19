@@ -29,7 +29,7 @@ the directory into a private Git repository yourself when you are ready.
 | Add with a link and image | add `--url https://...`, `--image media/chart.png --alt "Description"` |
 | List posts | `howlwriter linkedin list` (optional `--state DRAFT`) |
 | Inspect one post | `howlwriter linkedin show <id>` |
-| Run the checks | `howlwriter linkedin validate <id>` (exit 1 on blocking findings) |
+| Run the checks | `howlwriter linkedin validate <id>` (exit 3 on blocking findings) |
 | Send to review | `howlwriter linkedin submit <id>` |
 | Edit | `howlwriter linkedin edit <id> --text-file new.txt` (discards verification and approval) |
 | Preview the queue | `howlwriter linkedin queue` |
@@ -41,7 +41,18 @@ the directory into a private Git repository yourself when you are ready.
 | Take one post out of the queue | `howlwriter linkedin cancel <id>` |
 | Archive | `howlwriter linkedin archive <id>` (never deletes from LinkedIn) |
 
-Add `--json` to any command for machine output and `--actor NAME` to label the audit entry.
+Add `--actor NAME` to label the audit entry.
+
+Add `--json` for machine output. Every command then prints one `howl.result/v1` envelope:
+`{"schema", "component": "howlwriter", "command": ["linkedin", "<subcommand>"], "status", "data", "error"}`.
+`data` holds the command's result object. `status` is `ok`, or `blocked` when the command
+finished but the outcome is not ready, or, on an error, `denied` (a policy refusal) or `failed`;
+then `data` is null and `error` is `{"code", "message"}`.
+
+Exit codes: 0 success; 1 error (bad argument, refused, revision conflict, store problem; the
+message is on stderr); 3 finished but not ready: `list` found invalid files, `validate` found
+blocking findings, `verify` found the post not eligible, `review` found it not approvable, or
+`reschedule-all` found conflicts (nothing was changed).
 
 ### Verify a post
 
@@ -53,7 +64,7 @@ howlwriter linkedin verify <id>                  # offline: no link is contacted
 howlwriter linkedin verify <id> --allow-network  # also fetch each listed link through howlproof acquire
 ```
 
-Exit 0 means the post is eligible for human approval and the report is attached. Exit 1
+Exit 0 means the post is eligible for human approval and the report is attached. Exit 3
 means it is blocked; the `BLOCKER` lines say why. Either way a report is written to
 `verification/<id>/` and HowlProof's sealed evidence to `verification/howlproof/`. Commit
 both. A report is never an approval.

@@ -23,7 +23,7 @@ from howlwriter.linkedin.config import ConfigError, parse_config, CONFIG_SCHEMA
 from howlwriter.linkedin.models import ArtifactRef, LifecycleState
 from howlwriter.linkedin.service import OperationRefused, QueueService
 from howlwriter.linkedin.verification import CONTRACT_FILENAME, DEFAULT_CONTRACT, VerificationService
-from tests.linkedin.helpers import FakeTransport, go_live, make_coordinator
+from tests.linkedin.helpers import FakeTransport, check_envelope, go_live, make_coordinator
 from tests.linkedin.proof_fakes import FakeHowlProof
 
 S = LifecycleState
@@ -772,7 +772,7 @@ def test_review_and_approve_commands(store, fake, monkeypatch, capsys):
     queue.submit_for_review(post.id, actor="tester")
 
     shown = cli(store.root, capsys, "review", post.id).out
-    review = json.loads(cli(store.root, capsys, "review", post.id, "--json").out)
+    review = check_envelope(json.loads(cli(store.root, capsys, "review", post.id, "--json").out), "review", "ok")
     assert review["content_fingerprint"] in shown and review["limitations_digest"] in shown
     assert TEXT in shown and "This command approved nothing." in shown
     assert all(item in shown for item in review["limitations"])
@@ -801,12 +801,12 @@ def test_review_and_approve_commands(store, fake, monkeypatch, capsys):
     assert "approved" in cli(store.root, capsys, "approve", post.id, *confirm).out
     approved = store.load_post(post.id)
     assert approved.state is S.APPROVED and approved.history[-1].actor == "github:owner#1001"
-    assert cli(store.root, capsys, "review", post.id, expect=1).out.count("BLOCKER") == 1
+    assert cli(store.root, capsys, "review", post.id, expect=3).out.count("BLOCKER") == 1
 
 
 def test_review_command_exits_nonzero_for_a_post_that_cannot_be_approved(store, service, capsys):
     post = service.add_draft(title="Draft", text="A plain draft.", actor="tester")
-    out = cli(store.root, capsys, "review", post.id, expect=1).out
+    out = cli(store.root, capsys, "review", post.id, expect=3).out
     assert "BLOCKER" in out and "cannot be approved yet" in out
 
 

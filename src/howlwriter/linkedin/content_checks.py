@@ -114,8 +114,8 @@ def check_format(post: Post, config: PublisherConfig, store: QueueStore) -> Chec
 # Unicode
 
 _MOJIBAKE = re.compile(r"Ã[\x80-\xbf©¨ª«¢¤¶¼±³]|â€[™œ\x9d“”˜¦]|â€”|â€“|Â[ \xa0©®°]|ï¿½")
-_BIDI_CONTROLS = frozenset("‪‫‬‭‮⁦⁧⁨⁩")
-_INVISIBLE = frozenset("​⁠﻿­")
+_BIDI_CONTROLS = frozenset("\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
+_INVISIBLE = frozenset("\u200b\u2060\ufeff\u00ad")
 
 
 def check_unicode(post: Post) -> CheckRecord:

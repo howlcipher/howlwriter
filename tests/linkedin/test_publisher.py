@@ -405,6 +405,46 @@ def test_a_ledger_left_at_intent_after_the_post_closed_is_repaired(due, store, c
     assert ledger_states(store) == [LedgerEntryState.RELEASED]
 
 
+def test_an_intent_left_on_an_earlier_day_is_resolved_on_the_next_day(due, store, clock, monkeypatch):
+    """LI-3: a crash on day D left INTENT behind; the run on day D+1 must release it, not skip it."""
+    original = store.save_post
+
+    def dying_save(post, expected_revision):
+        if post.state is S.PUBLISHING:
+            raise Crash()
+        return original(post, expected_revision)
+
+    monkeypatch.setattr(store, "save_post", dying_save)
+    with pytest.raises(Crash):
+        make_coordinator(store, clock, FakeTransport()).run()
+    monkeypatch.setattr(store, "save_post", original)
+    assert ledger_states(store, DAY) == [LedgerEntryState.INTENT]
+
+    clock.set("2026-11-17T13:30:00Z")
+    transport = FakeTransport()
+    report = make_coordinator(store, clock, transport, attempt_id_factory=lambda: "attempt-next").run()
+    assert any(item.startswith("ledger:") for item in report.recovered)
+    assert ledger_states(store, DAY) == [LedgerEntryState.RELEASED]
+
+
+def test_an_earlier_day_intent_whose_post_closed_copies_the_post_outcome(due, store, clock, monkeypatch):
+    def checkpoint(label):
+        raise RuntimeError("push rejected")
+
+    def crash(*args, **kwargs):
+        raise OSError("disk full")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "update_ledger_entry", crash)
+        with pytest.raises(OSError):
+            make_coordinator(store, clock, FakeTransport(), checkpoint=checkpoint).run()
+    assert ledger_states(store, DAY) == [LedgerEntryState.INTENT]
+    clock.set("2026-11-18T13:30:00Z")
+    report = make_coordinator(store, clock, FakeTransport()).run()
+    assert any(item.startswith("ledger:") for item in report.recovered)
+    assert ledger_states(store, DAY) == [LedgerEntryState.RELEASED]
+
+
 def test_checkpoint_error_text_is_never_stored_or_reported(due, store, clock):
     def checkpoint(label):
         raise RuntimeError("push to https://x-access-token:SECRET-PUSH-TOKEN@github.com failed")

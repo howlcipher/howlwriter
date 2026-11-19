@@ -16,7 +16,7 @@ that is sent, and with no AI model, paid service, or local machine needed at pub
 | Area | What exists |
 | --- | --- |
 | Language and packaging | Python `>=3.11`, setuptools, `src/` layout. Core dependencies: PyYAML and `howl-provider-core`. Optional extras for web, docx, pdf, gdocs. |
-| CLI | `howlwriter.cli.main`: argparse, one module per command in `cli/commands/`, each exposing `add_subparser` and a handler. Usage errors exit 1. Exit 2 is reserved for "no model chosen". `--json` is the convention for machine output. |
+| CLI | `howlwriter.cli.main`: argparse, one module per command in `cli/commands/`, each exposing `add_subparser` and a handler. Usage errors exit 1. Exit 2 is reserved for "no model chosen". Exit 3 means finished but not ready. `linkedin ... --json` prints a `howl.result/v1` envelope (`status` `ok`, `blocked`, `denied` or `failed`). |
 | Publishing | `howlwriter.publishing`: `ArtifactPublisher` protocol, `PublicationArtifact`, `PublishResult` (statuses `SUCCESS`, `UNCONFIRMED`, `CONFLICT`, `FAILED`), `RevisionConflictError`, and a registry with two destinations: `google_docs` and `plain_text`/`local`. `publish --to` has an `--allow-unverified` flag and no human approval record. |
 | LinkedIn today | No LinkedIn transport. `linting/platforms.py` has `check_linkedin_conformance` (3,000 character limit, unrendered Markdown, hashtag count, control characters, hook length). `WritingMode.LINKEDIN` exists for drafting. `tests/publishing/test_linkedin_campaign_export.py` asserts that `linkedin` is an unsupported registry destination. |
 | Facts and provenance | `facts/` (claim extraction, deterministic repository evidence), `provenance/` (manifest assembly), `publishing/verification.py` (read back comparison for published documents). |

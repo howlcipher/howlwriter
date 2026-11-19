@@ -24,7 +24,7 @@ from howlwriter.linkedin.verification import (
     ReportVerifier,
     VerificationService,
 )
-from tests.linkedin.helpers import FakeClock, make_service
+from tests.linkedin.helpers import FakeClock, check_envelope, make_service
 
 EXECUTABLE = find_executable()
 pytestmark = pytest.mark.skipif(EXECUTABLE is None, reason="the howlproof program is not installed")
@@ -268,7 +268,7 @@ def test_verify_command_end_to_end_with_the_real_program(store, service, capsys)
     code = main(
         ["linkedin", "--repo", str(store.root), "verify", post.id, "--howlproof", EXECUTABLE, "--json"],
     )
-    payload = json.loads(capsys.readouterr().out)
+    payload = check_envelope(json.loads(capsys.readouterr().out), "verify", "ok")
     assert code == 0 and payload["eligible"] and payload["report"]["verdict"] == "CONDITIONALLY_PROVEN"
     assert payload["report"]["links"]["network_allowed"] is False
 

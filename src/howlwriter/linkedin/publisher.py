@@ -22,6 +22,7 @@ from __future__ import annotations
 import enum
 import secrets
 from dataclasses import dataclass, replace
+from datetime import date
 from typing import Callable, Protocol, Sequence
 
 from howlwriter.linkedin.models import (
@@ -38,6 +39,7 @@ from howlwriter.linkedin.scheduler import Action, Evaluation, evaluate, local_da
 from howlwriter.linkedin.service import Clock, SystemClock
 from howlwriter.linkedin.store import (
     DayAlreadyClaimedError,
+    LedgerCorruptError,
     LedgerEntry,
     LedgerEntryState,
     QueueStore,
@@ -329,25 +331,39 @@ class PublishCoordinator:
         # An INTENT entry left behind. If the post never recorded the attempt, nothing was
         # sent: release the day. If the post already closed the attempt (the run stopped
         # between saving the post and updating the ledger), copy the post's outcome.
-        today = local_date(self.clock.now(), config.tzinfo)
-        ledger = self.store.load_ledger_day(today)
+        # Every ledger day is examined, not only today: a crash on day D must be repaired on D+1.
         closed_states = {
             AttemptOutcome.SUCCESS: LedgerEntryState.PUBLISHED,
             AttemptOutcome.FAILED: LedgerEntryState.RELEASED,
             AttemptOutcome.AMBIGUOUS: LedgerEntryState.UNCERTAIN,
         }
-        for entry in ledger.entries if ledger else ():
-            if entry.state is not LedgerEntryState.INTENT:
-                continue
-            owner = self.store.load_snapshot().by_id(entry.post_id)
-            attempts = owner.attempts if owner else ()
-            attempt = next((a for a in attempts if a.attempt_id == entry.attempt_id), None)
-            if attempt is None:
-                state = LedgerEntryState.RELEASED
-            elif owner.state is not S.PUBLISHING and attempt.outcome in closed_states:
-                state = closed_states[attempt.outcome]
-            else:
-                continue
-            self.store.update_ledger_entry(today, entry.attempt_id, state, format_utc(self.clock.now()))
-            recovered.append(f"ledger:{entry.attempt_id}")
+        for day in self._ledger_days():
+            ledger = self.store.load_ledger_day(day)
+            for entry in ledger.entries if ledger else ():
+                if entry.state is not LedgerEntryState.INTENT:
+                    continue
+                owner = self.store.load_snapshot().by_id(entry.post_id)
+                attempts = owner.attempts if owner else ()
+                attempt = next((a for a in attempts if a.attempt_id == entry.attempt_id), None)
+                if attempt is None:
+                    state = LedgerEntryState.RELEASED
+                elif owner.state is not S.PUBLISHING and attempt.outcome in closed_states:
+                    state = closed_states[attempt.outcome]
+                else:
+                    continue
+                self.store.update_ledger_entry(day, entry.attempt_id, state, format_utc(self.clock.now()))
+                recovered.append(f"ledger:{entry.attempt_id}")
         return tuple(recovered)
+
+    def _ledger_days(self) -> list[date]:
+        """Every day that has a ledger file, oldest first."""
+        ledger_root = self.store.root / "ledger"
+        if not ledger_root.is_dir():
+            return []
+        days: list[date] = []
+        for path in sorted(ledger_root.glob("*/*.json")):
+            try:
+                days.append(date.fromisoformat(path.stem))
+            except ValueError:
+                raise LedgerCorruptError(f"unexpected file in the ledger: {path.name}")
+        return days
