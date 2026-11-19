@@ -68,3 +68,4 @@ output/*
 # External agents / tooling
 .agents/
 .devin/
+.directory
