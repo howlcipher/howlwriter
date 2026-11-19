@@ -179,7 +179,7 @@ def client(built):
 
     from howlwriter.web.app import create_app
 
-    return TestClient(create_app())
+    return TestClient(create_app(), base_url="http://127.0.0.1:8765")
 
 
 def test_web_status_review_and_privacy_boundaries(client):

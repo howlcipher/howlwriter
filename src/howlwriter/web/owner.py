@@ -6,6 +6,10 @@ same-origin``. Any other client (an AI agent, a script, curl) must send
 decision; otherwise the request is refused with 403
 ``owner_confirmation_required`` and nothing changes. This guards against an
 agent deciding on the owner's behalf, not against a hostile local process.
+
+``Sec-Fetch-Site: same-origin`` can be trusted only because ``create_app``
+validates the Host header (loopback names only) and refuses cross-origin
+writes; without those checks a rebound hostname would look same-origin.
 """
 
 from __future__ import annotations

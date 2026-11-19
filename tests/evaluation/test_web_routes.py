@@ -8,7 +8,7 @@ from howlwriter.web.app import create_app
 
 def test_web_evaluation_cases_endpoint():
     app = create_app()
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1:8765")
 
     res = client.get("/api/evaluation/cases")
     assert res.status_code == 200
@@ -20,7 +20,7 @@ def test_web_evaluation_cases_endpoint():
 
 def test_web_evaluation_runs_endpoint():
     app = create_app()
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1:8765")
 
     res = client.get("/api/evaluation/runs")
     assert res.status_code == 200

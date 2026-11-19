@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from howlwriter.diagnostic.run_record import compute_sha256, generate_run_id
@@ -13,6 +12,7 @@ from howlwriter.publishing import (
     get_publisher,
 )
 from howlwriter.publishing.google.auth import get_auth_status
+from howlwriter.web.paths import PUBLISH_SUFFIXES, check_user_path
 from howlwriter.web.models import GoogleAuthStatusResponse, PublishRequest, PublishResponse
 
 router = APIRouter(prefix="/api/publish", tags=["publishing"])
@@ -33,8 +33,9 @@ def get_google_status() -> GoogleAuthStatusResponse:
 
 @router.post("", response_model=PublishResponse)
 def publish_document(req: PublishRequest) -> PublishResponse:
-    path = Path(req.file_path)
-    if not path.is_file():
+    try:
+        path = check_user_path(req.file_path, suffixes=PUBLISH_SUFFIXES, for_write=False)
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"File not found: {req.file_path}")
 
     # Determine media type and read content
@@ -43,7 +44,7 @@ def publish_document(req: PublishRequest) -> PublishResponse:
         text_content = path.read_text(encoding="utf-8")
         media_type = "text/markdown" if suffix != ".txt" else "text/plain"
         binary_bytes = None
-    elif suffix in (".docx", ".pdf"):
+    else:  # .docx or .pdf: the path policy admits no other suffix
         binary_bytes = path.read_bytes()
         text_content = None
         media_type = (
@@ -51,10 +52,6 @@ def publish_document(req: PublishRequest) -> PublishResponse:
             if suffix == ".docx"
             else "application/pdf"
         )
-    else:
-        text_content = path.read_text(encoding="utf-8", errors="replace")
-        media_type = "text/plain"
-        binary_bytes = None
 
     sha = compute_sha256(text_content if text_content is not None else (binary_bytes or b""))
     title = req.title or path.stem.replace("_", " ").title()

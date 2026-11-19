@@ -43,14 +43,14 @@ def ran(monkeypatch):
 
 
 def test_choices_list_the_four_models():
-    body = TestClient(create_app()).get("/api/providers/choices").json()
+    body = TestClient(create_app(), base_url="http://127.0.0.1:8765").get("/api/providers/choices").json()
     assert [c["provider"] for c in body["choices"]] == ["claude_code", "agy", "codex", "local_ollama"]
     remote = next(c for c in body["choices"] if c["provider"] == "codex")
     assert "will be sent to Codex" in remote["disclosure"]
 
 
 def test_a_model_step_without_a_choice_asks_and_sends_nothing(ran):
-    response = TestClient(create_app()).post("/api/humanize", json={"text": TEXT})
+    response = TestClient(create_app(), base_url="http://127.0.0.1:8765").post("/api/humanize", json={"text": TEXT})
     assert response.status_code == 409
     assert response.json()["code"] == "model_choice_required"
     assert response.json()["role"] == "humanizer"
@@ -58,14 +58,14 @@ def test_a_model_step_without_a_choice_asks_and_sends_nothing(ran):
 
 
 def test_continue_without_a_model_runs_the_rule_based_path(ran):
-    response = TestClient(create_app()).post(
+    response = TestClient(create_app(), base_url="http://127.0.0.1:8765").post(
         "/api/humanize", json={"text": TEXT}, headers={pc.HEADER_PROVIDER: "none"}
     )
     assert response.status_code == 200 and ran == []
 
 
 def test_the_chosen_model_runs_for_that_request_only(ran):
-    client = TestClient(create_app())
+    client = TestClient(create_app(), base_url="http://127.0.0.1:8765")
     response = client.post("/api/humanize", json={"text": TEXT}, headers={pc.HEADER_PROVIDER: "codex"})
     assert response.status_code == 200
     assert ran and set(ran) == {"codex"}
@@ -73,7 +73,7 @@ def test_the_chosen_model_runs_for_that_request_only(ran):
 
 
 def test_rule_based_requests_never_ask(ran):
-    response = TestClient(create_app()).post("/api/humanize", json={"text": TEXT, "deterministic_only": True})
+    response = TestClient(create_app(), base_url="http://127.0.0.1:8765").post("/api/humanize", json={"text": TEXT, "deterministic_only": True})
     assert response.status_code == 200 and ran == []
 
 
@@ -110,7 +110,7 @@ def test_a_chosen_model_without_howlplane_answers_503_not_409(monkeypatch):
     monkeypatch.setattr(bridge_module, "_try_import_howlplane", lambda: None)
     set_howlplane_bridge(HowlPlaneWritingBridge())
     try:
-        response = TestClient(create_app()).post(
+        response = TestClient(create_app(), base_url="http://127.0.0.1:8765").post(
             "/api/humanize", json={"text": TEXT}, headers={"X-HowlWriter-Provider": "claude"}
         )
     finally:
