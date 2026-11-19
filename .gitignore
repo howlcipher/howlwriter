@@ -70,3 +70,5 @@ output/*
 .agents/
 .devin/
 .directory
+# HowlPlane's per-task run state (routing, reviews, absolute local paths).
+/.task_runs/
