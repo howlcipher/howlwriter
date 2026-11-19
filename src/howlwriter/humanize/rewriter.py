@@ -249,6 +249,8 @@ def _style_examples(config, bridge, role, text: str, custom_backend: Any | None)
         return ""
     if custom_backend is not None:
         provider = getattr(custom_backend, "agent_id", "")
+        # A custom backend is private only if it says so.
+        custom_local = bool(getattr(custom_backend, "local", False))
     else:
         provider = ""
         if hasattr(bridge, "chosen_provider"):
@@ -256,7 +258,7 @@ def _style_examples(config, bridge, role, text: str, custom_backend: Any | None)
         if not provider and getattr(bridge, "registry", None) is not None:
             binding = bridge.registry.get_binding("writing", role.value)
             provider = getattr(binding, "provider", "") or ""
-    local = is_local(provider)
+    local = custom_local if custom_backend is not None else is_local(provider)
     if not (setting == "on" or local):
         return ""
     bank = exemplars.load_bank(Path(config.voice_profile).parent)

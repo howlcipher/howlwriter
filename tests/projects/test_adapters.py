@@ -169,17 +169,23 @@ def test_dpkt_fallback_cites_frames(tmp_path):
     assert any("limited" in w for w in result.warnings)
 
 
-def _tshark():
+def _tshark(tmp_path):
     engine = pcap.TShark()
     if not engine.available:
         pytest.skip("TShark not installed")
+    pytest.importorskip("dpkt")
+    probe = make_pcap(tmp_path / "probe.pcap", http=False)
+    try:
+        engine.run(probe, ["-T", "fields", "-e", "frame.number"])
+    except (RuntimeError, OSError, subprocess.SubprocessError) as error:
+        pytest.skip(f"TShark is installed but cannot read a capture in tmp_path here ({error})")
     return engine
 
 
 def test_tshark_tls_handshake_and_payload_visibility(tmp_path):
     pytest.importorskip("dpkt")
     path = make_pcap(tmp_path / "c.pcap")
-    result = pcap.analyze(path, tshark=_tshark())
+    result = pcap.analyze(path, tshark=_tshark(tmp_path))
     tls = [i for i in result.items if i["kind"] == "tls_handshake"]
     assert len(tls) == 1
     observation = tls[0]["observation"]
@@ -198,14 +204,14 @@ def test_tshark_tls_handshake_and_payload_visibility(tmp_path):
 def test_tshark_redacts_query_strings_and_stores_no_payload(tmp_path):
     pytest.importorskip("dpkt")
     path = make_pcap(tmp_path / "c.pcap")
-    result = pcap.analyze(path, tshark=_tshark())
+    result = pcap.analyze(path, tshark=_tshark(tmp_path))
     blob = repr(result.items) + repr(result.metadata)
     assert "SECRET123" not in blob and "[query redacted]" in blob
 
 
 def test_capture_comparison_is_derived_from_packets(tmp_path):
     pytest.importorskip("dpkt")
-    engine = _tshark()
+    engine = _tshark(tmp_path)
     before = pcap.analyze(make_pcap(tmp_path / "a.pcap", tls13=False, http=False), tshark=engine).items
     after = pcap.analyze(make_pcap(tmp_path / "b.pcap", tls13=True, http=False), tshark=engine).items
     findings = pcap.compare(before, after, before_name="a.pcap", after_name="b.pcap")
@@ -326,3 +332,34 @@ def test_unreadable_media_fails(tmp_path):
         path, sha256="ef" * 32, cache_dir=tmp_path / "c", transcriber=Off(), ocr=Off()
     )
     assert result.status == "failed"
+
+
+def test_flatpak_capture_outside_home_is_staged_privately_and_removed(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(pcap.Path, "home", classmethod(lambda cls: home))
+    outside = tmp_path / "elsewhere" / "c.pcap"
+    outside.parent.mkdir()
+    outside.write_bytes(b"pcap-bytes")
+    seen = {}
+
+    def fake_run(command, **kwargs):
+        read = Path(command[command.index("-r") + 1])
+        seen["read"], seen["bytes"] = read, read.read_bytes()
+        seen["grant"] = next(c for c in command if c.startswith("--filesystem="))
+        seen["mode"] = read.parent.stat().st_mode & 0o777
+        return subprocess.CompletedProcess(command, 0, "1\t2\n", "")
+
+    monkeypatch.setattr(pcap, "governed_run", fake_run)
+    engine = pcap.TShark.__new__(pcap.TShark)
+    engine.policy, engine.command, engine.flatpak = None, ["flatpak", "run", "x"], True
+    assert engine.run(outside, ["-T", "fields"]) == [["1", "2"]]
+    staging = seen["read"].parent
+    assert home.resolve() in staging.resolve().parents and seen["bytes"] == b"pcap-bytes"
+    assert seen["grant"] == f"--filesystem={staging}:ro" and seen["mode"] == 0o700
+    assert not staging.exists()
+    # a capture already under home is read in place and never copied or deleted
+    inside = home / "c.pcap"
+    inside.write_bytes(b"x")
+    engine.run(inside, [])
+    assert seen["read"] == inside and inside.exists()

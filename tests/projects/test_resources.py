@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import time
 
@@ -60,13 +61,58 @@ def test_worker_runs_at_idle_priority():
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="SCHED_IDLE is Linux-specific")
 def test_external_tools_run_at_idle_priority():
     result = governed_run(
-        [sys.executable, "-c", "import os; print(os.sched_getscheduler(0), os.getpriority(0, 0))"],
+        [sys.executable, "-c",
+         "import os, time\n"
+         "for _ in range(200):\n"
+         "    if os.getpriority(0, 0) == 19: break\n"
+         "    time.sleep(0.01)\n"
+         "time.sleep(0.05)\n"
+         "print(os.sched_getscheduler(0), os.getpriority(0, 0))"],
         timeout=30,
         capture_output=True,
         text=True,
     )
     policy, nice = result.stdout.split()
     assert int(policy) == os.SCHED_IDLE and int(nice) == 19
+
+
+def test_governed_run_returns_a_completed_process():
+    result = governed_run([sys.executable, "-c", "import sys; print(1); print(2, file=sys.stderr); sys.exit(3)"],
+                          timeout=30, capture_output=True, text=True)
+    assert result.returncode == 3 and result.stdout.strip() == "1" and result.stderr.strip() == "2"
+    echoed = governed_run([sys.executable, "-c", "import sys; print(sys.stdin.read().upper())"],
+                          timeout=30, capture_output=True, text=True, input="abc")
+    assert echoed.stdout.strip() == "ABC"
+    with pytest.raises(subprocess.CalledProcessError):
+        governed_run([sys.executable, "-c", "raise SystemExit(2)"], timeout=30, check=True)
+
+
+def test_governed_run_kills_a_child_that_times_out():
+    started = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        governed_run([sys.executable, "-c", "import time; time.sleep(60)"], timeout=0.5)
+    assert time.monotonic() - started < 30
+
+
+@pytest.mark.skipif(not hasattr(os, "getpriority"), reason="needs os.getpriority")
+def test_governed_run_raises_the_childs_niceness_without_preexec(monkeypatch):
+    import inspect
+
+    from howlwriter.projects import resources
+
+    assert "preexec_fn" not in inspect.getsource(resources.governed_run)
+    # The parent lowers priority just after start, so the child waits for it before reading.
+    code = ("import os, time\n"
+            "for _ in range(200):\n"
+            "    if os.getpriority(0, 0) == 19: break\n"
+            "    time.sleep(0.01)\n"
+            "print(os.getpriority(0, 0))")
+    on = governed_run([sys.executable, "-c", code], timeout=30, capture_output=True, text=True,
+                      policy=ResourcePolicy(idle_priority=True))
+    assert on.stdout.strip() == "19"
+    off = governed_run([sys.executable, "-c", "import os; print(os.getpriority(0, 0))"], timeout=30,
+                       capture_output=True, text=True, policy=ResourcePolicy(idle_priority=False))
+    assert int(off.stdout.strip()) < 19
 
 
 def test_busy_machine_wait_is_bounded(monkeypatch):
