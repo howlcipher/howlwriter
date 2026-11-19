@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "howl.result/v1",
+  "title": "Howl command result envelope",
+  "description": "Machine-readable result of one component command. Consumers branch on `status`. See docs/INTEROP.md.",
+  "type": "object",
+  "required": ["schema", "component", "command", "status"],
+  "properties": {
+    "schema": {"const": "howl.result/v1"},
+    "component": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+    "command": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "status": {
+      "enum": ["ok", "partial", "needs_input", "awaiting_human", "blocked", "denied", "unavailable", "failed"]
+    },
+    "data": {"type": ["object", "null"]},
+    "error": {
+      "type": ["object", "null"],
+      "required": ["code", "message"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "message": {"type": "string"}
+      }
+    }
+  }
+}

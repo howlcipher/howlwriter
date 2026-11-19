@@ -111,3 +111,31 @@ def test_chosen_model_without_howlplane_is_reported_as_unavailable(monkeypatch):
     assert "claude" in str(exc.value) and "howlwriter[plane]" in str(exc.value)
     with pytest.raises(HowlPlaneUnavailableError):
         bridge.execute_writing_role(WritingRole.HUMANIZER, "text")
+
+
+# Names that src/ mentions in quotes but that are not user-facing settings.
+_INTERNAL_ENV = {"HOWLWRITER_WORKER_POLICY", "HOWLWRITER_NO_CONTROL_PLANE_FAKES"}
+
+
+def test_every_howlwriter_env_variable_in_src_is_listed(capsys):
+    import pathlib
+
+    from howlwriter.cli.commands import interop as interop_module
+
+    root = pathlib.Path(interop_module.__file__).resolve().parents[2]
+    literal = re.compile(r"""["'](HOWLWRITER_[A-Z0-9_]+)["']""")
+    used = set()
+    for path in root.rglob("*.py"):
+        if path.name == "interop.py" and path.parent.name == "commands":
+            continue
+        used |= set(literal.findall(path.read_text(encoding="utf-8")))
+    missing = sorted(used - set(_descriptor(capsys)["env"]) - _INTERNAL_ENV)
+    assert not missing, f"add these to ENV in cli/commands/interop.py (or mark them internal): {missing}"
+
+
+def test_linkedin_subcommands_declare_the_result_envelope(capsys):
+    d = _descriptor(capsys)
+    linkedin = {tuple(c["path"]): c for c in d["commands"] if c["path"][:1] == ["linkedin"] and len(c["path"]) == 2}
+    assert linkedin
+    for path, entry in linkedin.items():
+        assert entry["json"] and entry["emits"] == ["howl.result/v1"], path

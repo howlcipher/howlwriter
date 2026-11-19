@@ -89,7 +89,7 @@ def test_cli_materials_dir_writes_ledger(tmp_path, monkeypatch, capsys):
     out = tmp_path / "out"
     rc = main(["paper", str(pkg / "assignment.yaml"), "--materials-dir", str(pkg),
                "--deterministic", "--output-dir", str(out), "--save-artifacts"])
-    assert rc == 0
+    assert rc == 3  # not READY
     ledger_path = out / "zero-trust-architecture.materials.json"
     data = json.loads(ledger_path.read_text())
     assert str(tmp_path) not in ledger_path.read_text()
@@ -129,7 +129,7 @@ def test_cli_renders_md_docx_pdf_with_materials(tmp_path, monkeypatch):
     rc = main(["paper", str(pkg / "assignment.yaml"), "--materials-dir", str(pkg),
                "--deterministic", "--format", "md,docx", "--output-dir", str(out),
                "--provenance"])
-    assert rc == 0
+    assert rc == 3  # not READY
     assert (out / "zero-trust-architecture.md").exists()
     assert (out / "zero-trust-architecture.docx").stat().st_size > 0
     prov = json.loads((out / "zero-trust-architecture.provenance.json").read_text())

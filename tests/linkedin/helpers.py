@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import yaml
 
@@ -116,3 +118,32 @@ def make_coordinator(store, clock, transport, **kwargs) -> PublishCoordinator:
     kwargs.setdefault("gates", [AllowGate()])
     kwargs.setdefault("attempt_id_factory", lambda: f"attempt-{next(counter):03d}")
     return PublishCoordinator(store, transport, clock=clock, **kwargs)
+
+
+# `howlwriter linkedin ... --json` prints a howl.result/v1 envelope.
+_RESULT_SCHEMA = json.loads(
+    (Path(__file__).resolve().parents[1] / "fixtures" / "howl.result.v1.schema.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+def check_envelope(envelope: dict, subcommand: str, status: str) -> dict:
+    """Validate a linkedin --json envelope against the howl.result/v1 schema; return its `data`."""
+    try:
+        import jsonschema
+    except ImportError:
+        assert set(_RESULT_SCHEMA["required"]) <= set(envelope)
+        assert envelope["schema"] == "howl.result/v1"
+        assert envelope["status"] in _RESULT_SCHEMA["properties"]["status"]["enum"]
+        assert isinstance(envelope["command"], list) and isinstance(envelope["component"], str)
+        assert envelope.get("data") is None or isinstance(envelope["data"], dict)
+        error = envelope.get("error")
+        assert error is None or (isinstance(error["code"], str) and error["code"] and "message" in error)
+    else:
+        jsonschema.validate(envelope, _RESULT_SCHEMA)
+    assert envelope["component"] == "howlwriter"
+    assert envelope["command"] == ["linkedin", subcommand]
+    assert envelope["status"] == status
+    assert (envelope["error"] is None) == (envelope["data"] is not None)
+    return envelope["data"]

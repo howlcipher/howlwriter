@@ -17,14 +17,25 @@ import sys
 
 from howlwriter.linkedin.approval import ApprovalService
 from howlwriter.linkedin.checks import has_errors
-from howlwriter.linkedin.models import MediaRef, Post, parse_utc
+from howlwriter.linkedin.models import (
+    IllegalTransitionError,
+    MediaRef,
+    Post,
+    PostValidationError,
+    parse_utc,
+)
 from howlwriter.linkedin.howlproof import EXECUTABLE_ENV, HowlProofAdapter, find_executable
-from howlwriter.linkedin.service import DEFAULT, KEEP, QueueService
-from howlwriter.linkedin.store import QueueStore
+from howlwriter.linkedin.config import ConfigError
+from howlwriter.linkedin.service import DEFAULT, KEEP, OperationRefused, QueueService
+from howlwriter.linkedin.store import PostNotFoundError, QueueStore, StoreError
 from howlwriter.linkedin.verification import CONTRACT_FILENAME, DEFAULT_CONTRACT, VerificationService
 from howlwriter.publishing.base import RevisionConflictError
 
 REPO_ENV = "HOWLWRITER_LINKEDIN_REPO"
+RESULT_SCHEMA = "howl.result/v1"
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_NOT_READY = 3  # finished, but the outcome is not ready (status "blocked" in the --json envelope)
 DEFAULT_ACTOR = "local-cli"
 
 
@@ -84,7 +95,7 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
 
     command("show", _show, "Inspect one post.").add_argument("id")
     command(
-        "validate", _validate, "Run the deterministic checks on one post (exit 1 on errors)."
+        "validate", _validate, "Run the deterministic checks on one post (exit 3 on errors)."
     ).add_argument("id")
     command(
         "submit", _submit, "Move a draft to READY_FOR_REVIEW after it passes the checks.", actor=True
@@ -198,13 +209,51 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
     return parser
 
 
+# (exception type, error code), most specific first.
+_ERROR_CODES: tuple[tuple[type[BaseException], str], ...] = (
+    (OperationRefused, "refused"),  # includes ApprovalRefused
+    (RevisionConflictError, "revision_conflict"),
+    (PostNotFoundError, "post_not_found"),
+    (StoreError, "store_error"),
+    (PostValidationError, "invalid_post"),
+    (IllegalTransitionError, "illegal_transition"),
+    (ConfigError, "invalid_config"),
+    (FileNotFoundError, "file_not_found"),
+    (ValueError, "invalid_argument"),
+    (RuntimeError, "failed"),
+)
+
+
+def _error_code(error: BaseException) -> str:
+    return next(code for kind, code in _ERROR_CODES if isinstance(error, kind))
+
+
+def _envelope(args: argparse.Namespace, status: str, data: dict | None, error: dict | None) -> dict:
+    return {
+        "schema": RESULT_SCHEMA,
+        "component": "howlwriter",
+        "command": ["linkedin", args.linkedin_command],
+        "status": status,
+        "data": data,
+        "error": error,
+    }
+
+
 def _guarded(handler):
     def run(args: argparse.Namespace) -> int:
         try:
             return handler(args)
-        except RevisionConflictError as error:
+        except (RevisionConflictError, ValueError, FileNotFoundError, RuntimeError) as error:
+            if not args.json:
+                if isinstance(error, RevisionConflictError):
+                    print(f"error: {error}", file=sys.stderr)
+                    return EXIT_ERROR
+                raise  # main() prints the one-line message and exits 1
+            status = "denied" if isinstance(error, OperationRefused) else "failed"
+            failure = {"code": _error_code(error), "message": str(error)}
+            print(json.dumps(_envelope(args, status, None, failure), indent=2, ensure_ascii=False))
             print(f"error: {error}", file=sys.stderr)
-            return 1
+            return EXIT_ERROR
 
     return run
 
@@ -222,8 +271,12 @@ def _service(args: argparse.Namespace) -> QueueService:
     return QueueService(store, _FixedClock(parse_utc(at)) if at else None)
 
 
-def _emit(args: argparse.Namespace, payload, text: str) -> None:
-    print(json.dumps(payload, indent=2, ensure_ascii=False) if args.json else text)
+def _emit(args: argparse.Namespace, payload: dict, text: str, *, status: str = "ok") -> None:
+    """Print `text`, or under --json a howl.result/v1 envelope whose `data` is `payload`."""
+    if args.json:
+        print(json.dumps(_envelope(args, status, payload, None), indent=2, ensure_ascii=False))
+    else:
+        print(text)
 
 
 def _read_text(source: str) -> str:
@@ -311,8 +364,9 @@ def _list(args: argparse.Namespace) -> int:
             "invalid": [{"path": item.path, "problems": list(item.problems)} for item in snapshot.invalid],
         },
         "\n".join(lines),
+        status="blocked" if snapshot.invalid else "ok",
     )
-    return 1 if snapshot.invalid else 0
+    return EXIT_NOT_READY if snapshot.invalid else EXIT_OK
 
 
 def _show(args: argparse.Namespace) -> int:
@@ -338,8 +392,9 @@ def _validate(args: argparse.Namespace) -> int:
         args,
         {"id": args.id, "ok": not failed, "findings": [finding.to_dict() for finding in findings]},
         "\n".join(lines + [f"{args.id}: {'FAILED' if failed else 'passed the deterministic checks'}"]),
+        status="blocked" if failed else "ok",
     )
-    return 1 if failed else 0
+    return EXIT_NOT_READY if failed else EXIT_OK
 
 
 def _verify(args: argparse.Namespace) -> int:
@@ -378,8 +433,9 @@ def _verify(args: argparse.Namespace) -> int:
             "report": report,
         },
         "\n".join(lines),
+        status="ok" if result.eligible else "blocked",
     )
-    return 0 if result.eligible else 1
+    return EXIT_OK if result.eligible else EXIT_NOT_READY
 
 
 def _approval_service(args: argparse.Namespace) -> ApprovalService:
@@ -418,8 +474,8 @@ def _review(args: argparse.Namespace) -> int:
         ]
     else:
         lines.append("This post cannot be approved yet.")
-    _emit(args, review, "\n".join(lines))
-    return 0 if review["approvable"] else 1
+    _emit(args, review, "\n".join(lines), status="ok" if review["approvable"] else "blocked")
+    return EXIT_OK if review["approvable"] else EXIT_NOT_READY
 
 
 def _approve(args: argparse.Namespace) -> int:
@@ -524,8 +580,13 @@ def _reschedule_all(args: argparse.Namespace) -> int:
         lines.append("no eligible posts; nothing was changed")
     else:
         lines.append("plan only; repeat with --apply to make these changes")
-    _emit(args, plan.to_dict() | {"applied": applied}, "\n".join(lines))
-    return 1 if plan.conflicts else 0
+    _emit(
+        args,
+        plan.to_dict() | {"applied": applied},
+        "\n".join(lines),
+        status="blocked" if plan.conflicts else "ok",
+    )
+    return EXIT_NOT_READY if plan.conflicts else EXIT_OK
 
 
 def _pause(args: argparse.Namespace) -> int:

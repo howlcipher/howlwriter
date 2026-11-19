@@ -363,7 +363,7 @@ source_requirements:
     ])
 
     captured = capsys.readouterr()
-    assert exit_code == 0
+    assert exit_code == 3  # report status is NEEDS_REVIEW, not READY
     assert out_file.exists()
     assert "# Enterprise AI Governance" in out_file.read_text()
     assert "# References" in out_file.read_text()

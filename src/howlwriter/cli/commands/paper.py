@@ -415,4 +415,4 @@ def run(args: argparse.Namespace) -> int:
     print()
     print(result.report.render_text())
 
-    return 0 if result.report.status == "READY" else 0
+    return 0 if result.report.status == "READY" else 3

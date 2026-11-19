@@ -251,3 +251,12 @@ def test_a_check_that_raises_is_an_error_never_a_pass():
     record = cc.run_guarded("content.format", boom)
     assert record.status == cc.CHECK_ERROR and record.reason == "RuntimeError"
     assert "secret detail" not in str(record.to_dict())
+
+
+def test_invisible_and_bidi_sets_hold_exactly_the_expected_code_points():
+    from howlwriter.linkedin import content_checks
+
+    assert {ord(c) for c in content_checks._BIDI_CONTROLS} == {
+        0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069,
+    }
+    assert {ord(c) for c in content_checks._INVISIBLE} == {0x200B, 0x2060, 0xFEFF, 0x00AD}

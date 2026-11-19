@@ -5,6 +5,7 @@ import json
 import pytest
 
 from howlwriter.cli.main import build_parser, main
+from tests.linkedin.helpers import check_envelope
 
 
 @pytest.fixture
@@ -22,8 +23,16 @@ def run(repo, capsys, *argv, expect=0):
     return captured
 
 
-def run_json(repo, capsys, *argv, expect=0):
+def run_envelope(repo, capsys, *argv, expect=0):
     return json.loads(run(repo, capsys, *argv, "--json", expect=expect).out)
+
+
+def run_json(repo, capsys, *argv, expect=0, status=None):
+    """Run with --json, validate the howl.result/v1 envelope, and return its `data`."""
+    if status is None:
+        status = "ok" if expect == 0 else "blocked"
+    subcommand = next(item for item in argv if not item.startswith("-"))
+    return check_envelope(run_envelope(repo, capsys, *argv, expect=expect), subcommand, status)
 
 
 def add(repo, capsys, tmp_path, title="CLI post", text="Hello from the CLI.", *extra):
@@ -104,7 +113,7 @@ def test_cli_cannot_approve_or_schedule_without_the_trusted_boundary(repo, capsy
 
 def test_validate_exits_nonzero_on_blocking_findings(repo, capsys, tmp_path):
     post_id = add(repo, capsys, tmp_path, "Long", "x" * 3001)["id"]
-    payload = run_json(repo, capsys, "validate", post_id, expect=1)
+    payload = run_json(repo, capsys, "validate", post_id, expect=3)
     assert payload["ok"] is False
     assert "blocking findings" in run(repo, capsys, "submit", post_id, expect=1).err
 
@@ -143,7 +152,7 @@ def test_bulk_reschedule_plans_before_applying(repo, capsys, tmp_path):
     applied = run_json(repo, capsys, "reschedule-all", "--shift-days", "7", "--apply")
     assert applied["applied"] is True
     assert run_json(repo, capsys, "show", first)["scheduled_date"] == "2099-01-12"
-    refused = run_json(repo, capsys, "reschedule-all", "--time", "03:33", "--apply", expect=1)
+    refused = run_json(repo, capsys, "reschedule-all", "--time", "03:33", "--apply", expect=3)
     assert refused["applied"] is False and refused["conflicts"]
 
 
@@ -164,7 +173,7 @@ def test_image_requires_alt_text_and_must_live_in_media(repo, capsys, tmp_path):
 def test_invalid_config_and_corrupt_post_fail_loudly(repo, capsys, tmp_path):
     post_id = add(repo, capsys, tmp_path)["id"]
     (repo / "posts" / "junk.json").write_text("{")
-    listing = run_json(repo, capsys, "list", expect=1)
+    listing = run_json(repo, capsys, "list", expect=3)
     assert listing["invalid"][0]["path"] == "posts/junk.json" and listing["posts"][0]["id"] == post_id
     (repo / "publisher.yaml").write_text("schema: howlwriter.linkedin_publisher_config/v1\nmax_posts_per_day: 5\n")
     assert "max_posts_per_day" in run(repo, capsys, "evaluate", expect=1).err
@@ -188,3 +197,32 @@ def test_commands_appear_in_the_interop_descriptor(capsys):
     assert main(["interop", "--json"]) == 0
     paths = {tuple(command["path"]) for command in json.loads(capsys.readouterr().out)["commands"]}
     assert {("linkedin", "add"), ("linkedin", "evaluate"), ("linkedin", "reschedule-all")} <= paths
+
+
+def test_errors_under_json_are_failed_or_denied_envelopes(repo, capsys, tmp_path):
+    post_id = add(repo, capsys, tmp_path)["id"]
+    failed = run_envelope(repo, capsys, "show", "missing-post", expect=1)
+    assert check_envelope(failed, "show", "failed") is None
+    assert failed["error"]["code"] == "post_not_found" and "no post" in failed["error"]["message"]
+    approve = run_envelope(
+        repo, capsys, "approve", post_id, "--fingerprint", "x", "--limitations-digest", "y", expect=1
+    )
+    assert check_envelope(approve, "approve", "denied") is None
+    assert approve["error"]["code"] == "refused"
+    conflict = run_envelope(repo, capsys, "schedule", post_id, expect=1)
+    assert conflict["status"] in {"denied", "failed"} and conflict["error"]["message"]
+    check_envelope(conflict, "schedule", conflict["status"])
+
+
+def test_not_ready_outcomes_exit_3_with_a_blocked_envelope_and_text_mode_matches(repo, capsys, tmp_path):
+    post_id = add(repo, capsys, tmp_path, "Long", "x" * 3001)["id"]
+    assert run(repo, capsys, "validate", post_id, expect=3).out.rstrip().endswith("FAILED")
+    envelope = run_envelope(repo, capsys, "validate", post_id, expect=3)
+    assert check_envelope(envelope, "validate", "blocked")["ok"] is False
+
+
+def test_the_result_envelope_data_is_an_object(repo, capsys, tmp_path):
+    post_id = add(repo, capsys, tmp_path)["id"]
+    for argv in (["show", post_id], ["queue"], ["list"], ["pause"], ["resume"]):
+        envelope = run_envelope(repo, capsys, *argv)
+        assert isinstance(check_envelope(envelope, argv[0], "ok"), dict)

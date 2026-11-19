@@ -28,7 +28,7 @@ from howlwriter.linkedin.verification import (
     derive_outcome,
     report_problems,
 )
-from tests.linkedin.helpers import ref_for
+from tests.linkedin.helpers import check_envelope, ref_for
 from tests.linkedin.proof_fakes import FakeHowlProof, check
 from tests.linkedin.test_content_checks import png
 
@@ -676,15 +676,15 @@ def test_verify_command_without_howlproof_exits_nonzero_and_reports_no_verdict(t
     assert main(["linkedin", "--repo", str(repo), "init"]) == 0
     add = ["linkedin", "--repo", str(repo), "add", "--title", "T", "--text-file", str(text), "--json"]
     assert main(add) == 0
-    post_id = json.loads(capsys.readouterr().out.split("\n", 3)[-1])["id"]
+    post_id = check_envelope(json.loads(capsys.readouterr().out.split("\n", 3)[-1]), "add", "ok")["id"]
 
     absent = str(tmp_path / "no-howlproof")
     code = main(["linkedin", "--repo", str(repo), "verify", post_id, "--howlproof", absent, "--json"])
-    payload = json.loads(capsys.readouterr().out)
-    assert code == 1 and payload["eligible"] is False and payload["report"]["verdict"] is None
+    payload = check_envelope(json.loads(capsys.readouterr().out), "verify", "blocked")
+    assert code == 3 and payload["eligible"] is False and payload["report"]["verdict"] is None
     assert (repo / payload["report_path"]).is_file()
 
-    assert main(["linkedin", "--repo", str(repo), "verify", post_id, "--howlproof", absent]) == 1
+    assert main(["linkedin", "--repo", str(repo), "verify", post_id, "--howlproof", absent]) == 3
     text_out = capsys.readouterr().out
     assert "HowlProof verdict none" in text_out and "Blocked." in text_out
 

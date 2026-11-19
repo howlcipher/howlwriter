@@ -136,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
     except ModelRoleNotConfiguredError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    except (ValueError, FileNotFoundError, TypeError, RuntimeError) as error:
+    except (ValueError, FileNotFoundError, RuntimeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 

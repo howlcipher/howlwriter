@@ -23,8 +23,10 @@ EXIT_CODES = {
     "or a chosen model that cannot run because HowlPlane is unavailable",
     "2": "a model step had no model chosen; project: refused by the remote-inference gate or browser policy; "
     "voice scan/sync: the drive is not mounted",
-    "3": "finished but not ready (project validate verdict, voice profile, --fail-if-blocked, or a citations "
-    "verify / reply check / assignment check result that is not verified, grounded or ready)",
+    "3": "finished but not ready (paper report status not READY, project validate verdict, voice profile, "
+    "--fail-if-blocked, a citations verify / reply check / assignment check result that is not verified, "
+    "grounded or ready, or a linkedin list / validate / verify / review / reschedule-all outcome that is "
+    "not ready)",
     "4": "an owner-only decision was asked for without a terminal or --owner-confirmed",
     "130": "project: cancelled",
 }
@@ -37,12 +39,34 @@ ENV = [
     "HOWLPLANE_HOME",
     "HOWLPLANE_DIR",
     "HOWL_FORBID_LOCAL_INFERENCE",
+    "HOWL_DEV_DIR",
+    "HOWLWRITER_VOICES_DIR",
+    "HOWLWRITER_RUNS_DIR",
+    "HOWLWRITER_PROJECTS_DIR",
+    "HOWLWRITER_IDENTITIES_DIR",
+    "HOWLWRITER_PREFERENCES_FILE",
+    "HOWLWRITER_CREDENTIALS_DIR",
+    "HOWLWRITER_GOOGLE_CLIENT_CONFIG",
+    "HOWLWRITER_HOWLPROOF",
+    "HOWLWRITER_LINKEDIN_REPO",
+    "HOWLWRITER_LINKEDIN_APPROVAL_KEY",
+    "HOWLWRITER_LINKEDIN_APPROVAL_REF",
+    "HOWLWRITER_LINKEDIN_APPROVAL_WORKFLOW",
+    "HOWLWRITER_LINKEDIN_APPROVER_ID",
 ]
+
+# Every `linkedin` subcommand prints a howl.result/v1 envelope under --json.
+LINKEDIN_COMMANDS = (
+    "init", "add", "edit", "list", "show", "validate", "submit", "schedule", "cancel", "archive",
+    "queue", "evaluate", "reschedule", "reschedule-all", "verify", "review", "approve",
+    "authorize-schedule", "pause", "resume", "reconcile",
+)
 
 EMITS = {
     ("native", "request"): ["howlwriter.request/v1"],
     ("native", "write"): ["howlwriter.copy_package/v1"],
     ("interop",): [SCHEMA],
+    **{("linkedin", name): ["howl.result/v1"] for name in LINKEDIN_COMMANDS},
 }
 
 ACCEPTS = {
