@@ -58,21 +58,22 @@ def _add_checkout(root: str, *, first: bool) -> None:
     p = Path(root).resolve()
     if not p.is_dir():
         return
-    entries = [p]
-    source_root = p / "src"
-    if (source_root / "howlplane" / "control_plane").is_dir():
-        entries.insert(0, source_root)
-    for entry in reversed(entries) if first else entries:
-        if str(entry) in sys.path:
-            continue
-        if first:
-            sys.path.insert(0, str(entry))
-        else:
-            sys.path.append(str(entry))
+    if (p / "src" / "howlplane" / "control_plane").is_dir():
+        entry = p / "src"
+    elif (p / "howlplane" / "control_plane").is_dir():
+        entry = p
+    else:
+        return
+    if str(entry) in sys.path:
+        return
+    if first:
+        sys.path.insert(0, str(entry))
+    else:
+        sys.path.append(str(entry))
 
 
 def _ensure_howlplane_on_path() -> None:
-    """Discover an explicit HowlPlane checkout in current or legacy layout.
+    """Discover an explicit HowlPlane checkout (src/howlplane or howlplane layout).
 
     HOWLPLANE_ROOT is an explicit choice and takes precedence over an installed
     package. HOWLPLANE_HOME / HOWLPLANE_DIR are HowlPlane's own settings, often
@@ -97,7 +98,7 @@ def _ensure_howlplane_on_path() -> None:
 #: of its own, for instance), so the error names that instead of "not configured".
 _IMPORT_PROBLEM: str | None = None
 
-_HOWLPLANE_MODULES = ("howlplane", "src")
+_HOWLPLANE_MODULES = ("howlplane",)
 
 
 def _note_import_error(error: ImportError) -> None:
@@ -135,24 +136,7 @@ def _try_import_howlplane() -> tuple[Any, Any, Any, Any, Any] | None:
         )
     except ImportError as error:
         _note_import_error(error)
-        try:
-            from src.control_plane.role_binding import (
-                IndependenceStatus,
-                RoleBindingRegistry,
-                RoleDispatcher,
-                RoleExecutionRequest,
-                get_default_role_registry,
-            )
-            return (
-                RoleDispatcher,
-                RoleBindingRegistry,
-                RoleExecutionRequest,
-                get_default_role_registry,
-                IndependenceStatus,
-            )
-        except ImportError as error:
-            _note_import_error(error)
-            return None
+        return None
 
 
 class HowlPlaneWritingBridge:

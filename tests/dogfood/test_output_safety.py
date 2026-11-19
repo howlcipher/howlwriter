@@ -3,7 +3,7 @@ import pytest
 from howlwriter.config.defaults import default_config
 from howlwriter.domain.io import atomic_write_text
 from howlwriter.pipeline.howl import run_howl_pipeline
-from src.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.agent_execution import FakeAgentBackend
 
 
 def test_atomic_write_creates_parent_directories(tmp_path):

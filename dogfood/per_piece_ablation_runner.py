@@ -45,7 +45,7 @@ from howlwriter.integration.howlplane_bridge import (  # noqa: E402
 from howlwriter.voice.corpus.features import DocumentFeatures  # noqa: E402
 from howlwriter.voice.corpus.store import VoiceStore  # noqa: E402
 from howlwriter.voice.realization import derive_structural_realization  # noqa: E402
-from src.control_plane.role_binding import (  # noqa: E402
+from howlplane.control_plane.role_binding import (  # noqa: E402
     RoleBinding,
     RoleBindingRegistry,
     RoleDispatcher,

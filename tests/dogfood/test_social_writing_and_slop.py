@@ -9,7 +9,7 @@ from howlwriter.domain.modes import WritingMode
 from howlwriter.linting import rules
 from howlwriter.linting.engine import LintEngine
 from howlwriter.pipeline.howl import run_howl_pipeline
-from src.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.agent_execution import FakeAgentBackend
 
 
 def _codes(text: str, config: HowlWriterConfig | None = None) -> list[str]:

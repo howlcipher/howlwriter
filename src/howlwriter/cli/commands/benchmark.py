@@ -184,7 +184,7 @@ def handle_compare(args: argparse.Namespace) -> int:
     curr_path = Path(args.current)
     ref_path = Path(args.reference)
     if not curr_path.is_file() or not ref_path.is_file():
-        print(f"error: Current or reference results file not found.", file=sys.stderr)
+        print("error: Current or reference results file not found.", file=sys.stderr)
         return 1
 
     from howlwriter.evaluation.models import BenchmarkRun

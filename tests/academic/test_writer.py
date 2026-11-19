@@ -5,7 +5,7 @@ from datetime import date
 from howlwriter.academic.spec import AssignmentSpec
 from howlwriter.academic.writer import ModelAcademicWriter
 from howlwriter.domain.source import Source, SourceType
-from src.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.agent_execution import FakeAgentBackend
 
 
 def test_model_academic_writer_drafts_paper_with_sources(tmp_path):

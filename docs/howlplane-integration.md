@@ -61,7 +61,7 @@ convention.
 The two gaps identified during initial development have been resolved cleanly
 via HowlPlane's domain-neutral role execution framework:
 
-1. **Domain-Neutral Role Dispatching (`src.control_plane.role_binding`)**:
+1. **Domain-Neutral Role Dispatching (`howlplane.control_plane.role_binding`)**:
    HowlPlane provides `RoleDescriptor`, `RoleBinding`, `RoleBindingRegistry`, and `RoleDispatcher`.
    Rather than hardcoding software-only reviewer roles, HowlPlane supports registering roles
    across any domain (e.g. `domain="writing"`, `role="humanizer"`, `role="final_reviewer"`).

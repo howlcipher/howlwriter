@@ -498,7 +498,7 @@ def install_control_plane_fakes() -> None:
     """Injects control_plane fakes into sys.modules if not already present."""
     if "howlplane.control_plane" in sys.modules and "howlplane.control_plane.role_binding" in sys.modules:
         return
-    if "src.control_plane" in sys.modules and "src.control_plane.role_binding" in sys.modules:
+    if "howlplane.control_plane" in sys.modules and "howlplane.control_plane.role_binding" in sys.modules:
         return
 
     hp_pkg = types.ModuleType("howlplane")
@@ -526,9 +526,3 @@ def install_control_plane_fakes() -> None:
     sys.modules["howlplane.control_plane"] = hp_cp_pkg
     sys.modules["howlplane.control_plane.role_binding"] = rb_mod
     sys.modules["howlplane.control_plane.agent_execution"] = ae_mod
-
-    # Legacy src.control_plane aliases
-    cp_pkg = types.ModuleType("src.control_plane")
-    sys.modules["src.control_plane"] = cp_pkg
-    sys.modules["src.control_plane.role_binding"] = rb_mod
-    sys.modules["src.control_plane.agent_execution"] = ae_mod

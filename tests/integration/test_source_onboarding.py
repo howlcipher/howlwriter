@@ -49,11 +49,10 @@ def child_env(root=None, extra_path=None):
     return env
 
 
-@pytest.mark.parametrize("layout", ["src", "legacy", "installed"])
+@pytest.mark.parametrize("layout", ["src", "installed"])
 def test_discover_role_without_provider_execution(tmp_path, layout):
     relative = {
         "src": "src/howlplane/control_plane",
-        "legacy": "src/control_plane",
         "installed": "howlplane/control_plane",
     }[layout]
     package(tmp_path, relative)

@@ -38,7 +38,7 @@ from howlwriter.domain.source import (
     SourceFreshness,
     source_from_dict,
 )
-from src.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.agent_execution import FakeAgentBackend
 
 
 def _make_fake_backend(body_markdown: str, claims_made: list[dict] | None = None) -> FakeAgentBackend:

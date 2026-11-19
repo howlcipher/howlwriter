@@ -29,8 +29,8 @@ from howlwriter.integration.howlplane_bridge import (
 )
 from howlwriter.voice.application import render_profile
 from howlwriter.voice.corpus.build import build_voice
-from src.control_plane.agent_execution import FakeAgentBackend
-from src.control_plane.role_binding import (
+from howlplane.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.role_binding import (
     RoleBinding,
     RoleBindingRegistry,
     RoleDispatcher,

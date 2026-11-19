@@ -1,6 +1,6 @@
 from howlwriter.config.defaults import default_config
 from howlwriter.pipeline.howl import run_howl_pipeline
-from src.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.agent_execution import FakeAgentBackend
 
 
 def test_banned_words_remaining_gates_to_needs_review(tmp_path):

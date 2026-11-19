@@ -9,7 +9,7 @@ from howlwriter.humanize.rewriter import (
     ModelHumanizerRewriter,
 )
 from howlwriter.review.meaning import RealModelMeaningReviewer
-from src.control_plane.agent_execution import FakeAgentBackend
+from howlplane.control_plane.agent_execution import FakeAgentBackend
 
 
 def test_oversized_document_fails_cleanly_without_silent_truncation():
