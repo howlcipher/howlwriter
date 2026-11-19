@@ -304,28 +304,34 @@ class _RealGoogleApiAdapter:
                 raise RevisionConflictError(f"destination rejected the write: {exc}") from exc
             raise
 
-    def move_to_folder(self, doc_id: str, folder_name_or_id: str) -> dict[str, Any]:
-        folder_id = folder_name_or_id
-        # Search if folder_name_or_id is a name rather than an ID
+    def _resolve_folder_id(self, folder_name_or_id: str) -> str:
+        """Return the Drive folder ID for an ID or a name, creating the folder if needed.
+
+        Errors propagate: the publisher reports them rather than moving into a guessed ID.
+        """
+        folder_mime = "application/vnd.google-apps.folder"
+        # 1. A real folder ID.
         try:
-            q = (
-                f"mimeType='application/vnd.google-apps.folder' and "
-                f"name='{folder_name_or_id}' and trashed=false"
-            )
-            res = self.drive.files().list(q=q, fields="files(id, name)").execute()
-            files = res.get("files", [])
-            if files:
-                folder_id = files[0]["id"]
-            else:
-                # Create folder if it doesn't exist
-                meta = {
-                    "name": folder_name_or_id,
-                    "mimeType": "application/vnd.google-apps.folder",
-                }
-                new_folder = self.drive.files().create(body=meta, fields="id").execute()
-                folder_id = new_folder["id"]
+            meta = self.drive.files().get(fileId=folder_name_or_id, fields="id,mimeType").execute()
         except Exception:
-            pass
+            meta = None  # not an ID (or not visible); fall through to a name search
+        if isinstance(meta, dict) and meta.get("mimeType") == folder_mime and meta.get("id"):
+            return str(meta["id"])
+
+        # 2. A folder name.
+        escaped = folder_name_or_id.replace("\\", "\\\\").replace("'", "\\'")
+        q = f"mimeType='{folder_mime}' and name='{escaped}' and trashed=false"
+        res = self.drive.files().list(q=q, fields="files(id, name)").execute()
+        files = res.get("files", [])
+        if files:
+            return str(files[0]["id"])
+
+        # 3. Create it.
+        body = {"name": folder_name_or_id, "mimeType": folder_mime}
+        return str(self.drive.files().create(body=body, fields="id").execute()["id"])
+
+    def move_to_folder(self, doc_id: str, folder_name_or_id: str) -> dict[str, Any]:
+        folder_id = self._resolve_folder_id(folder_name_or_id)
 
         # Move file
         file_obj = self.drive.files().get(fileId=doc_id, fields="parents").execute()

@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 
 from howlwriter.publishing.google.auth import (
+    GOOGLE_PERMISSIONS_URL,
     get_auth_status,
     get_client_secrets_path,
     get_token_path,
@@ -81,7 +82,7 @@ def run_auth(args: argparse.Namespace) -> int:
         print(
             "error: Google OAuth client configuration not found.\n"
             "Provide a client secrets file via --client-secrets <path>, or place it at:\n"
-            f"  ~/.howlwriter/credentials/google_client_secret.json\n"
+            "  ~/.howlwriter/credentials/google_client_secret.json\n"
             "or set the HOWLWRITER_GOOGLE_CLIENT_CONFIG environment variable.",
             file=sys.stderr,
         )
@@ -112,9 +113,14 @@ def run_logout(args: argparse.Namespace) -> int:
         print("No active Google OAuth credentials found to revoke.")
         return 0
 
-    revoked = revoke_and_logout()
-    if revoked:
-        print("Google OAuth credentials revoked and local token deleted.")
+    result = revoke_and_logout()
+    if result.remote_revoked:
+        print("Google confirmed the revocation of the OAuth token.")
     else:
-        print("Failed to remove local credentials.")
-    return 0
+        print(f"The token was NOT revoked at Google: {result.detail}")
+        print(f"Review and remove access at {GOOGLE_PERMISSIONS_URL}")
+    if result.local_deleted:
+        print("Local token file deleted.")
+        return 0
+    print(f"error: the local token file was not deleted ({get_token_path()}).", file=sys.stderr)
+    return 1

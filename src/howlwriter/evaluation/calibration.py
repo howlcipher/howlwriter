@@ -68,6 +68,18 @@ def get_factuality_calibration_case() -> MetricCalibrationCase:
                 reference="The framework provides voluntary guidance.",
                 expected_max_score=0.4,
             ),
+            NegativeControl(
+                description="Polarity inversion: negated evidence against a positive claim",
+                input_text="The intervention reduces risk for adults.",
+                reference="The intervention does not reduce risk for adults.",
+                expected_max_score=0.4,
+            ),
+            NegativeControl(
+                description="Polarity inversion: negated claim against positive evidence",
+                input_text="The treatment does not improve outcomes for patients.",
+                reference="The treatment improves outcomes for patients in the trial.",
+                expected_max_score=0.4,
+            ),
         ],
     )
 

@@ -55,3 +55,25 @@ def test_writer_envelope_prefers_parsed_output_then_salvage_then_raw():
 
     prose = SimpleNamespace(structured_output={}, raw_output="```\nPlain draft.\n```")
     assert writer_envelope(prose) == {"body_markdown": "Plain draft."}
+
+
+def test_salvage_keeps_a_mid_body_key_like_line():
+    reply = (
+        "```yaml\nbody_markdown: |\n  # Notes\n\nSet this up first.\nwarnings: none\n"
+        "Then continue with the rest.\nclaims_made: []\nwarnings: []\n```"
+    )
+    recovered = salvage(reply)
+    assert "warnings: none" in recovered["body_markdown"]
+    assert recovered["body_markdown"].endswith("Then continue with the rest.")
+    assert recovered["claims_made"] == []
+    assert recovered["warnings"] == []
+
+
+def test_salvage_keeps_nested_lists_and_code_in_the_broken_shape():
+    reply = (
+        "```yaml\nbody_markdown: |\n  # Steps\n\n- first\n  - nested item\n"
+        "    deeper\n\n    indented code\nwarnings: []\n```"
+    )
+    body = salvage(reply)["body_markdown"]
+    assert "\n  - nested item\n    deeper" in body
+    assert "\n    indented code" in body

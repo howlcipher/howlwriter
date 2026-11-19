@@ -9,6 +9,7 @@ Verifies that repository-backed claims:
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -57,36 +58,58 @@ def _extract_project_name(text: str) -> str | None:
     return None
 
 
+_GIT_TIMEOUT_SECONDS = 30
+_SHA = r"[0-9a-fA-F]{7,40}"
+_COMMIT_URL_RE = re.compile(rf"/(?:commits?|blob|tree)/({_SHA})(?=[/?#\s)]|$)")
+_COMMIT_NOTE_RE = re.compile(rf"\(\s*(?:git\s+)?(?:commit|rev(?:ision)?)\s+({_SHA})\s*\)", re.IGNORECASE)
+
+
 def _find_repo_root(repo_name: str, candidate_roots: dict[str, Path] | None = None) -> Path | None:
+    """Locate a repository from explicit configuration only.
+
+    Order: ``candidate_roots[repo_name]``, then ``$HOWL_DEV_DIR/<repo_name>``. The result never
+    depends on the working directory or on where the package is installed.
+    """
     if candidate_roots and repo_name in candidate_roots:
         p = Path(candidate_roots[repo_name])
-        if p.exists() and (p / ".git").exists():
+        if p.is_dir() and (p / ".git").exists():
             return p
 
-    # Dynamic environment variable override
-    import os
-
     env_dev = os.environ.get("HOWL_DEV_DIR")
-    search_dirs: list[Path] = [Path.cwd(), Path.cwd().parent]
-    if env_dev:
-        search_dirs.append(Path(env_dev))
-
-    # Search ancestor directories and their siblings portably
-    here = Path(__file__).resolve()
-    for ancestor in here.parents:
-        search_dirs.append(ancestor)
-        sibling = ancestor / repo_name
-        if sibling.exists() and (sibling / ".git").exists():
-            return sibling
-
-    for base in search_dirs:
-        candidate = base / repo_name
-        if candidate.exists() and (candidate / ".git").exists():
+    if env_dev and env_dev.strip():
+        candidate = Path(env_dev.strip()).expanduser() / repo_name
+        if candidate.is_dir() and (candidate / ".git").exists():
             return candidate
-        if base.name == repo_name and (base / ".git").exists():
-            return base
 
     return None
+
+
+def _extract_commit(source_url: str) -> str | None:
+    """Take a commit only from a URL path segment or an explicit "(commit <sha>)" note."""
+    match = _COMMIT_URL_RE.search(source_url) or _COMMIT_NOTE_RE.search(source_url)
+    return match.group(1).lower() if match else None
+
+
+def _path_is_inside(repo_path: Path, rel_file: str) -> bool:
+    """True when rel_file is a relative path without '..' that resolves inside the repository."""
+    if not rel_file or rel_file.startswith(("/", "\\")) or Path(rel_file).is_absolute():
+        return False
+    if ".." in Path(rel_file.replace("\\", "/")).parts:
+        return False
+    try:
+        return (repo_path / rel_file).resolve().is_relative_to(repo_path.resolve())
+    except (OSError, ValueError):
+        return False
+
+
+def _git_ok(repo_path: Path, *args: str) -> bool:
+    try:
+        proc = subprocess.run(
+            ["git", *args], cwd=repo_path, capture_output=True, timeout=_GIT_TIMEOUT_SECONDS
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0
 
 
 def _extract_file_paths(location_str: str) -> list[str]:
@@ -159,19 +182,10 @@ def validate_repository_claim_evidence(
     resolved_paths: list[str] = []
     if repo_path:
         # 4. Resolve revision/commit if present
-        # Check for hex commit hash in source_url or text
-        commit_match = re.search(r"\b([a-f0-9]{7,40})\b", source_url)
-        commit_ref = commit_match.group(1) if commit_match else "HEAD"
+        commit_found = _extract_commit(source_url)
+        commit_ref = commit_found or "HEAD"
 
-        try:
-            # Check commit resolution
-            subprocess.run(
-                ["git", "cat-file", "-e", f"{commit_ref}^{{commit}}"],
-                cwd=repo_path,
-                check=True,
-                capture_output=True
-            )
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        if not _git_ok(repo_path, "cat-file", "-e", f"{commit_ref}^{{commit}}"):
             findings.append(EvidenceFinding(
                 code="COMMIT_UNRESOLVED",
                 message=f"Git commit '{commit_ref}' cannot be resolved in repository '{repo_path.name}'",
@@ -181,23 +195,23 @@ def validate_repository_claim_evidence(
         # 5. Verify referenced file paths exist in the repository
         referenced_files = _extract_file_paths(exact_loc)
         for rel_file in referenced_files:
-            # Check if file exists in working tree or at commit
-            full_file = repo_path / rel_file
-            file_exists = False
-            if full_file.exists() and full_file.is_file():
-                file_exists = True
+            if not _path_is_inside(repo_path, rel_file):
+                findings.append(EvidenceFinding(
+                    code="PATH_OUTSIDE_REPOSITORY",
+                    message=f"Referenced path '{rel_file}' is absolute, uses '..', or resolves outside "
+                            f"repository '{repo_path.name}'",
+                    field="exact_location"
+                ))
+                continue
+
+            if commit_found:
+                # A cited commit decides: the working tree must not stand in for it.
+                file_exists = _git_ok(repo_path, "cat-file", "-e", f"{commit_ref}:{rel_file}")
             else:
-                # Try git cat-file at the commit
-                try:
-                    p = subprocess.run(
-                        ["git", "cat-file", "-e", f"{commit_ref}:{rel_file}"],
-                        cwd=repo_path,
-                        capture_output=True
-                    )
-                    if p.returncode == 0:
-                        file_exists = True
-                except Exception:
-                    pass
+                full_file = repo_path / rel_file
+                file_exists = full_file.is_file() or _git_ok(
+                    repo_path, "cat-file", "-e", f"{commit_ref}:{rel_file}"
+                )
 
             if file_exists:
                 resolved_paths.append(str(rel_file))
@@ -207,11 +221,23 @@ def validate_repository_claim_evidence(
                     message=f"Referenced path '{rel_file}' does not exist in repository '{repo_path.name}' at revision '{commit_ref}'",
                     field="exact_location"
                 ))
+    elif target_project:
+        findings.append(EvidenceFinding(
+            code="REPOSITORY_NOT_LOCATED",
+            message=f"Repository '{target_project}' was not found in repo_roots or HOWL_DEV_DIR; "
+                    "commit and paths were not checked",
+            field="source_url_or_revision",
+            severity="WARNING",
+        ))
 
     # Determine final status
     has_errors = any(f.severity == "ERROR" for f in findings)
     if has_errors:
         final_status = "UNRESOLVED"
+        is_valid = False
+    elif any(f.code == "REPOSITORY_NOT_LOCATED" for f in findings) and claimed_status == "VERIFIED":
+        # Nothing was checked, so VERIFIED cannot stand.
+        final_status = "NEEDS_REVIEW"
         is_valid = False
     else:
         final_status = claimed_status

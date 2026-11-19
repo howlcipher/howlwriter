@@ -40,7 +40,7 @@ def list_benchmark_runs() -> list[dict[str, Any]]:
             "systems": summary.get("systems_evaluated"),
             "verdicts": summary.get("verdicts"),
         }]
-    except Exception as err:
+    except Exception:
         return []
 
 
