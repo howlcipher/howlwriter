@@ -78,16 +78,11 @@ The following capabilities are implemented, tested, and active on `main`:
   bookmark with style-aware `batchUpdate` requests, show a dry-run diff, and
   keep the human approval gate. Also confirm the final-newline `endIndex`
   handling against the live API, which the in-memory test double cannot catch.
-- **Frontend source is incomplete in Git.** `frontend/src/components/voices/VoicesPanel.tsx`
-  was never committed (an over-broad `voices/` ignore rule), so the SPA cannot be
-  rebuilt from a clean checkout; the CI `frontend` job warns until it is added.
 - **Materials intake v1 limits.** No OCR (scanned PDFs are reported, not read),
   no legacy `.doc`/`.pptx`/`.xlsx` parsing, and requirement lines are lifted
   deterministically from bullets and obligation sentences, so rubric tables may
   need a manual `requirements:` entry. Pcap/video/image artifacts need human or
   external inspection.
-- **The real-HowlPlane contract job tracks `main`.** It is labelled pinned but
-  checks out the `main` branch; pin it to a tag or commit.
 - **No APA reference entry can be generated for most runs.** HowlPlane's
   providers routinely report no model name, and APA's template requires a tool
   and version.

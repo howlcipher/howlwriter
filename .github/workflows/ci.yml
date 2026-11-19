@@ -25,13 +25,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
@@ -56,42 +56,38 @@ jobs:
       - name: Verify SEO Metadata & Artifacts
         run: python3 scripts/test_seo.py
 
+      - name: Release notes exist for this version
+        run: |
+          version=$(sed -n 's/^__version__ *= *["'"'"']\([^"'"'"']*\)["'"'"'].*/\1/p' src/howlwriter/__init__.py)
+          if [ -z "$version" ]; then
+            echo "::error::Could not read __version__ from src/howlwriter/__init__.py."
+            exit 1
+          fi
+          notes="docs/releases/v${version}.md"
+          if [ ! -f "$notes" ]; then
+            echo "::error::$notes is missing. Add release notes before bumping __version__ to ${version}."
+            exit 1
+          fi
+
   frontend:
     name: Frontend reproducible build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      - name: Check the frontend source tree is complete
-        id: complete
-        run: |
-          # frontend/src/components/voices/ was untracked (swallowed by a
-          # `voices/` .gitignore rule), so a clean checkout cannot build. Until
-          # the component is committed, say so loudly instead of going red or
-          # silently green. Delete this guard once the file is in the repo.
-          if [ -f frontend/src/components/voices/VoicesPanel.tsx ]; then
-            echo "complete=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning title=Frontend not reproducible::frontend/src/components/voices/VoicesPanel.tsx is missing from the repository, so the committed SPA bundle cannot be rebuilt from source."
-            echo "complete=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/setup-node@v4
-        if: steps.complete.outputs.complete == 'true'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install (locked) and build
-        if: steps.complete.outputs.complete == 'true'
         working-directory: frontend
         run: |
           npm ci
           npm run build
 
       - name: Committed bundle must match a fresh build
-        if: steps.complete.outputs.complete == 'true'
         run: |
           git status --porcelain src/howlwriter/web/static
           if [ -n "$(git status --porcelain src/howlwriter/web/static)" ]; then
@@ -105,10 +101,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.12"
           cache: "pip"
@@ -129,16 +125,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout HowlWriter
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.12"
           cache: "pip"
 
       - name: Checkout Pinned HowlPlane
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: howlcipher/howlplane
           path: deps/howlplane
