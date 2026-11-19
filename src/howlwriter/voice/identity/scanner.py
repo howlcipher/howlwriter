@@ -546,8 +546,9 @@ def scan(
         google_counts = google_fallback.fetch_native_documents(store, config, entries, **kwargs)
 
     _group_duplicates(entries)
-    decisions = store.load_decisions()
-    reopened, carried = _reconcile_decisions(store, decisions, entries)
+    with store.locked():
+        decisions = store.load_decisions()
+        reopened, carried = _reconcile_decisions(store, decisions, entries)
 
     inventory = {
         "version": previous.get("version", 1),
@@ -565,8 +566,9 @@ def scan(
             },
         ],
     }
-    store.save_config(config)
-    store.save_inventory(inventory)
+    with store.locked():
+        store.save_config(config)
+        store.save_inventory(inventory)
 
     report = build_report(
         store=store,

@@ -52,10 +52,11 @@ def summary(workspace: ProjectWorkspace) -> dict:
 
 
 def authorize_remote(workspace: ProjectWorkspace, allow: bool) -> dict:
-    meta = workspace.load_meta()
-    meta["remote_inference_authorized"] = bool(allow)
-    meta.setdefault("authorizations", []).append({"at": utc_now(), "remote_inference": bool(allow)})
-    workspace.save_meta(meta)
+    with workspace.locked():
+        meta = workspace.load_meta()
+        meta["remote_inference_authorized"] = bool(allow)
+        meta.setdefault("authorizations", []).append({"at": utc_now(), "remote_inference": bool(allow)})
+        workspace.save_meta(meta)
     return {"remote_inference_authorized": bool(allow)}
 
 

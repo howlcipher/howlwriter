@@ -1,4 +1,3 @@
-from pathlib import Path
 import pytest
 
 from howlwriter.config.defaults import default_config
@@ -30,10 +29,10 @@ def test_atomic_write_replaces_existing_file_safely(tmp_path):
 def test_atomic_write_cleans_up_on_failure(tmp_path, monkeypatch):
     target = tmp_path / "doc.md"
 
-    def fail_replace(self, dst):
+    def fail_replace(src, dst):
         raise OSError("Disk simulated write error")
 
-    monkeypatch.setattr(Path, "replace", fail_replace)
+    monkeypatch.setattr("howlwriter.domain.io.os.replace", fail_replace)
 
     with pytest.raises(OSError):
         atomic_write_text(target, "Failing write")

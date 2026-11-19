@@ -126,7 +126,7 @@ def _load(name: str) -> tuple[VoiceStore, VoiceProfile]:
 
 
 @router.get("", response_model=list[VoiceSummaryDto])
-async def list_voices() -> list[VoiceSummaryDto]:
+def list_voices() -> list[VoiceSummaryDto]:
     """Every local voice, as one summary row each."""
     summaries: list[VoiceSummaryDto] = []
     for name in VoiceStore.list_names():
@@ -150,13 +150,13 @@ async def list_voices() -> list[VoiceSummaryDto]:
 
 
 @router.get("/{name}", response_model=VoiceDetailDto)
-async def get_voice(name: str) -> VoiceDetailDto:
+def get_voice(name: str) -> VoiceDetailDto:
     _store, profile = _load(name)
     return _detail(name, profile)
 
 
 @router.get("/{name}/sources")
-async def get_voice_sources(
+def get_voice_sources(
     name: str,
     confirm: bool = Query(
         False,
@@ -198,7 +198,7 @@ async def get_voice_sources(
 
 
 @router.post("/{name}/rebuild")
-async def rebuild_voice(name: str, request: VoiceRebuildRequest) -> dict:
+def rebuild_voice(name: str, request: VoiceRebuildRequest) -> dict:
     """Rebuild a voice from its stored roots, on the existing job runner."""
     store, profile = _load(name)
     roots = store.load_roots()

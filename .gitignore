@@ -42,6 +42,7 @@ review_queue.yaml
 scan_report.json
 profile_changes.jsonl
 chat_evidence.json
+.lock
 supporting_evidence.json
 *.voice-eval.json
 # A ChatGPT data export is the person's whole conversation history.

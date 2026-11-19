@@ -82,7 +82,7 @@ class Job:
         self.error_message: Optional[str] = None
         self.failure_category: Optional[str] = None
         self.result: Optional[JobResult] = None
-        self._listeners: list[asyncio.Queue] = []
+        self._listeners: list[tuple[asyncio.AbstractEventLoop, asyncio.Queue]] = []
         self._lock = threading.Lock()
 
     def update_stage(self, stage_id: str, status: str, data: Optional[dict[str, Any]] = None) -> None:
@@ -172,20 +172,27 @@ class Job:
             self._broadcast_event(event)
 
     def _broadcast_event(self, event: dict[str, Any]) -> None:
-        for q in self._listeners[:]:
+        # Called from worker threads: hand each event to the listener's own
+        # event loop, since asyncio queues are not thread-safe.
+        for entry in self._listeners[:]:
+            loop, queue = entry
             try:
-                q.put_nowait(event)
+                loop.call_soon_threadsafe(queue.put_nowait, event)
+            except RuntimeError:  # the listener's loop is closed
+                try:
+                    self._listeners.remove(entry)
+                except ValueError:
+                    pass
             except Exception:
                 pass
 
-    def add_listener(self, queue: asyncio.Queue) -> None:
+    def add_listener(self, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop) -> None:
         with self._lock:
-            self._listeners.append(queue)
+            self._listeners.append((loop, queue))
 
     def remove_listener(self, queue: asyncio.Queue) -> None:
         with self._lock:
-            if queue in self._listeners:
-                self._listeners.remove(queue)
+            self._listeners = [entry for entry in self._listeners if entry[1] is not queue]
 
     def to_dto(self) -> JobResponse:
         with self._lock:
@@ -212,6 +219,9 @@ class Job:
 class JobManager:
     """Manages active and historical local jobs."""
 
+    #: Running jobs are evicted only when this many are retained.
+    _HARD_CAP = 200
+
     def __init__(self, max_retained_jobs: int = 50):
         self._jobs: dict[str, Job] = {}
         self._max_retained = max_retained_jobs
@@ -226,10 +236,13 @@ class JobManager:
         with self._lock:
             job = Job(job_type=job_type, run_id=run_id, stages=stages)
             self._jobs[job.job_id] = job
-            # Trim old jobs
+            # Trim: oldest finished job first; a running one only above the hard cap.
             if len(self._jobs) > self._max_retained:
-                oldest_key = min(self._jobs.keys(), key=lambda k: self._jobs[k].created_at)
-                del self._jobs[oldest_key]
+                finished = [k for k, j in self._jobs.items() if j.status in ("COMPLETED", "FAILED")]
+                if finished:
+                    del self._jobs[min(finished, key=lambda k: self._jobs[k].created_at)]
+                elif len(self._jobs) > self._HARD_CAP:
+                    del self._jobs[min(self._jobs, key=lambda k: self._jobs[k].created_at)]
             return job
 
     def get_job(self, job_id: str) -> Optional[Job]:

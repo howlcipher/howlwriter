@@ -207,3 +207,22 @@ def test_concurrent_writers_cannot_lose_an_update(service, store):
         worker.join(timeout=60)
     assert results == ["conflict", "conflict", "saved"]
     assert store.load_post(post.id).revision == 1
+
+
+def test_write_artifact_collision_suffix_handles_names_without_a_dot(store):
+    assert store.write_artifact("reports/plain", b"1") == "reports/plain"
+    assert store.write_artifact("reports/plain", b"2") == "reports/plain-2"
+    assert store.write_artifact("reports/r.json", b"1") == "reports/r.json"
+    assert store.write_artifact("reports/r.json", b"2") == "reports/r-2.json"
+
+
+def test_store_lock_is_reentrant_and_excludes_a_second_thread(store):
+    import threading
+
+    got = threading.Event()
+    with store.lock():
+        with store.lock():
+            thread = threading.Thread(target=lambda: (store.lock().__enter__(), got.set()))
+            thread.daemon = True
+            thread.start()
+            assert not got.wait(0.3)
