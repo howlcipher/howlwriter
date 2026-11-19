@@ -2,6 +2,7 @@
 
 from howlwriter.publishing.google.auth import (
     GOOGLE_DOCS_SCOPES,
+    LogoutResult,
     get_auth_status,
     load_credentials,
     revoke_and_logout,
@@ -10,6 +11,7 @@ from howlwriter.publishing.google.publisher import GoogleDocsPublisher
 
 __all__ = [
     "GOOGLE_DOCS_SCOPES",
+    "LogoutResult",
     "get_auth_status",
     "load_credentials",
     "revoke_and_logout",

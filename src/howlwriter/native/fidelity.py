@@ -59,7 +59,7 @@ _PHRASE_STOP = frozenset({
     "passed", "failed", "succeeded", "completed", "validated", "executed",
     "remained", "ran", "blocked", "identified", "processed", "scanned",
     "without", "between", "among", "against", "through", "toward", "towards",
-    "because", "so", "but", "if", "then", "while", "whereas", "since", "until",
+    "because", "so", "but", "if", "then", "whereas", "since", "until",
 })
 # Words that never name what a number counts.
 _NOT_A_UNIT = frozenset({

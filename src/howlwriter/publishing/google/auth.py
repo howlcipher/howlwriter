@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +43,7 @@ def get_token_path() -> Path:
 def get_client_secrets_path() -> Path | None:
     """Locates user-supplied OAuth client configuration."""
     env_path = os.environ.get("HOWLWRITER_GOOGLE_CLIENT_CONFIG")
-    if env_path and Path(env_path).is_file():
+    if env_path and Path(env_path).expanduser().is_file():
         return Path(env_path).expanduser().resolve()
 
     candidate = get_credentials_dir() / "google_client_secret.json"
@@ -122,39 +127,82 @@ def load_credentials() -> Any | None:
 
 
 def save_credentials(creds: Any) -> None:
-    """Saves credentials securely to disk with 0600 permissions."""
-    token_p = get_token_path()
-    token_json = creds.to_json()
-    token_p.write_text(token_json, encoding="utf-8")
+    """Saves credentials atomically with owner-only (0600) permissions."""
+    from howlwriter.voice.identity.privacy import write_private_text
+
+    write_private_text(get_token_path(), creds.to_json())
+
+
+GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+GOOGLE_PERMISSIONS_URL = "https://myaccount.google.com/permissions"
+
+
+@dataclass
+class LogoutResult:
+    """What `revoke_and_logout` actually did."""
+
+    remote_revoked: bool
+    local_deleted: bool
+    detail: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "remote_revoked": self.remote_revoked,
+            "local_deleted": self.local_deleted,
+            "detail": self.detail,
+        }
+
+
+def _revoke_remote(token: str) -> tuple[bool, str]:
+    data = urllib.parse.urlencode({"token": token}).encode("ascii")
+    req = urllib.request.Request(
+        GOOGLE_REVOKE_URL,
+        data=data,
+        method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
     try:
-        token_p.chmod(0o600)
-    except OSError:
-        pass
+        with urllib.request.urlopen(req, timeout=10.0) as resp:  # noqa: S310 - fixed https URL
+            status = getattr(resp, "status", None) or resp.getcode()
+    except urllib.error.HTTPError as exc:
+        return False, f"Google returned HTTP {exc.code}"
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    if status == 200:
+        return True, "Google confirmed the revocation"
+    return False, f"Google returned HTTP {status}"
 
 
-def revoke_and_logout() -> bool:
-    """Revokes local credentials and deletes token file."""
+def revoke_and_logout() -> LogoutResult:
+    """Revoke the token at Google when possible, then delete the local token file."""
     token_p = get_token_path()
-    revoked = False
+    remote_revoked = False
+    notes: list[str] = []
 
-    if token_p.is_file():
-        try:
-            creds = load_credentials()
-            if creds and hasattr(creds, "token"):
-                import httpx
+    token: str | None = None
+    try:
+        data = json.loads(token_p.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            for key in ("refresh_token", "token"):
+                value = data.get(key)
+                if isinstance(value, str) and value:
+                    token = value
+                    break
+    except FileNotFoundError:
+        return LogoutResult(False, False, "No local token file was found.")
+    except (OSError, ValueError) as exc:
+        notes.append(f"could not read the token file ({type(exc).__name__})")
 
-                httpx.post(
-                    "https://oauth2.googleapis.com/revoke",
-                    params={"token": creds.token},
-                    timeout=5.0,
-                )
-        except Exception:
-            pass
+    if token:
+        remote_revoked, why = _revoke_remote(token)
+        notes.append(why if remote_revoked else f"remote revocation failed: {why}")
+    elif not notes:
+        notes.append("the token file holds no token to revoke")
 
-        try:
-            token_p.unlink()
-            return True
-        except OSError:
-            return False
-
-    return False
+    local_deleted = False
+    try:
+        token_p.unlink()
+        local_deleted = True
+    except OSError as exc:
+        notes.append(f"could not delete the local token file: {exc}")
+    return LogoutResult(remote_revoked, local_deleted, "; ".join(notes))

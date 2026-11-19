@@ -243,7 +243,6 @@ class FactualityEvaluator:
         ])
         known_context_text = " ".join([str(v) for v in case.context.values()]) + " " + (case.input_text or "")
         ground_truth = (known_corpus_text + " " + known_context_text + " " + case.task).strip()
-        ground_truth_lower = ground_truth.lower()
 
         # Deterministic checks: numbers, dates, citations
         candidate_numbers = set(_NUMBER_RE.findall(text))

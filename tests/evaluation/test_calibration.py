@@ -85,3 +85,38 @@ def test_validate_all_evaluators():
     assert len(results) >= 5
     for metric_name, result in results.items():
         assert result.health in (EvaluatorHealth.CALIBRATED, EvaluatorHealth.PARTIALLY_CALIBRATED)
+
+
+def test_calibration_includes_polarity_inversion_controls():
+    case = get_factuality_calibration_case()
+    texts = [c.description for c in case.negative_controls]
+    assert sum("Polarity inversion" in t for t in texts) >= 2
+    evaluator = DeterministicEntailmentEvaluator()
+    for control in case.negative_controls:
+        if "Polarity inversion" in control.description:
+            res = evaluator.evaluate(control.input_text, control.reference)
+            assert res.verdict == EntailmentVerdict.CONTRADICTED
+            assert "Polarity inversion" in res.rationale
+
+
+def test_negated_evidence_contradicts_positive_claim():
+    res = DeterministicEntailmentEvaluator().evaluate(
+        "The drug reduces risk in adults", "The drug does not reduce risk in adults."
+    )
+    assert res.verdict == EntailmentVerdict.CONTRADICTED
+    assert res.confidence == 0.85
+
+
+def test_both_negated_is_not_a_contradiction():
+    res = DeterministicEntailmentEvaluator().evaluate(
+        "The drug does not reduce risk for adults", "The drug doesn't reduce risk in adults."
+    )
+    assert res.verdict != EntailmentVerdict.CONTRADICTED
+
+
+def test_unrelated_not_in_another_clause_is_not_a_contradiction():
+    res = DeterministicEntailmentEvaluator().evaluate(
+        "The drug reduces risk for adults",
+        "The drug reduces risk in adults. It is not approved for children.",
+    )
+    assert res.verdict != EntailmentVerdict.CONTRADICTED

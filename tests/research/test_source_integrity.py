@@ -156,15 +156,13 @@ def test_dns_resolution_failure(monkeypatch):
 
 
 def test_post_connect_peer_ip_verification():
-    """Verify that SSRFSafeSyncBackend checks sock.getpeername() after TCP connection."""
+    """Verify that SSRFSafeSyncBackend checks get_extra_info('server_addr') after TCP connection."""
     if SSRFSafeSyncBackend is None:
         pytest.skip("SSRFSafeSyncBackend not available")
 
     backend = SSRFSafeSyncBackend()
-    mock_sock = MagicMock()
-    mock_sock.getpeername.return_value = ("127.0.0.1", 8080)
     mock_stream = MagicMock()
-    mock_stream._sock = mock_sock
+    mock_stream.get_extra_info.return_value = ("127.0.0.1", 8080)
 
     with pytest.MonkeyPatch.context() as mp:
         import httpcore
@@ -647,3 +645,81 @@ def test_scraped_doi_without_expected_title_is_not_reported_as_fabricated():
         Source(id="S002", title="DOI Reference 10.9999/nope", authors=["Unknown"], doi="10.9999/nope")
     )
     assert fake.severity == SEV_BLOCKING
+
+
+def _connect_with_stream(stream):
+    import httpcore
+
+    backend = SSRFSafeSyncBackend()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(httpcore.SyncBackend, "connect_tcp", lambda self, *a, **k: stream)
+        return backend.connect_tcp("example.org", 443)
+
+
+def test_peer_check_fails_closed_when_address_is_unknown_or_raises():
+    if SSRFSafeSyncBackend is None:
+        pytest.skip("SSRFSafeSyncBackend not available")
+
+    class NoAddr:
+        closed = False
+
+        def get_extra_info(self, name):
+            return None
+
+        def close(self):
+            self.closed = True
+
+    class Raises(NoAddr):
+        def get_extra_info(self, name):
+            raise AttributeError("gone")
+
+    class NoMethod:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    for stream in (NoAddr(), Raises(), NoMethod()):
+        with pytest.raises(SSRFSecurityError):
+            _connect_with_stream(stream)
+        assert stream.closed
+
+    class Public(NoAddr):
+        def get_extra_info(self, name):
+            assert name == "server_addr"
+            return ("93.184.216.34", 443)
+
+    ok = Public()
+    assert _connect_with_stream(ok) is ok
+
+
+@pytest.mark.parametrize("doi", ["10.1234/../../members", "10.1234/x?rows=1000", "10.1234/x#frag"])
+def test_invalid_doi_makes_no_request_and_yields_a_finding(doi):
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(200, json={})
+
+    verifier = SourceIntegrityVerifier(mock_transport=httpx.MockTransport(handler))
+    finding = verifier.verify_source(Source(id="S1", title="T", authors=["A"], doi=doi))
+    assert calls == []
+    assert finding.severity == SEV_BLOCKING
+    assert any("not a valid DOI" in d for d in finding.diagnostics)
+
+
+def test_crossref_user_agent_has_version_and_no_email():
+    from howlwriter import __version__
+
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["ua"] = request.headers["user-agent"]
+        seen["url"] = str(request.url)
+        return httpx.Response(404, text="nope")
+
+    verifier = SourceIntegrityVerifier(mock_transport=httpx.MockTransport(handler))
+    verifier.verify_source(Source(id="S1", title="T", authors=["A"], doi="10.1000/abc"))
+    assert seen["ua"] == f"HowlWriter-SourceIntegrity/{__version__}"
+    assert "@" not in seen["ua"] and "mailto" not in seen["ua"]
+    assert seen["url"] == "https://api.crossref.org/works/10.1000/abc"

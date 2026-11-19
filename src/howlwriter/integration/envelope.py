@@ -43,11 +43,22 @@ def _fenced_block(text: str) -> str:
 
 
 def _outdent(lines: list[str]) -> str:
-    """Remove the first line's indentation from every line that has at least that much."""
-    first = next((line for line in lines if line.strip()), "")
+    """Remove the block scalar's indentation, or only the first line's when the rest is unindented.
+
+    A well-formed block scalar indents every line, so the prefix comes off all of them. In the
+    broken shape only the first line is indented; the other lines (nested lists, code) are left
+    exactly as written.
+    """
+    first_idx = next((i for i, line in enumerate(lines) if line.strip()), 0)
+    first = lines[first_idx] if lines else ""
     indent = len(first) - len(first.lstrip(" "))
     prefix = " " * indent
-    return "\n".join(line[indent:] if line.startswith(prefix) else line.lstrip(" ") for line in lines).strip()
+    if indent and all(line.startswith(prefix) for line in lines if line.strip()):
+        return "\n".join(line[indent:] for line in lines).strip()
+    return "\n".join(line.lstrip(" ") if i == first_idx else line for i, line in enumerate(lines)).strip()
+
+
+_STRUCTURAL_LINE = re.compile(r"^(?:\s+\S|\s*-\s|[A-Za-z_]\w*\s*:|\s*$)")
 
 
 def salvage(raw: str) -> dict[str, Any]:
@@ -61,16 +72,26 @@ def salvage(raw: str) -> dict[str, Any]:
     if body_key is None:
         return {}
     rest = text[body_key.end():]
-    next_key = _NEXT_KEY.search(rest)
-    body_text = rest[: next_key.start()] if next_key else rest
-    recovered: dict[str, Any] = {"body_markdown": _outdent(body_text.strip("\n").splitlines())}
-    if next_key:
+    # A key line only ends the body when everything from there on is an envelope mapping.
+    body_text, tail = rest, None
+    for candidate in _NEXT_KEY.finditer(rest):
         try:
-            tail = yaml.safe_load(rest[next_key.start():])
+            parsed = yaml.safe_load(rest[candidate.start():])
         except yaml.YAMLError:
-            tail = None
-        if isinstance(tail, dict):
-            recovered.update({k: v for k, v in tail.items() if k in _ENVELOPE_KEYS})
+            continue
+        if isinstance(parsed, dict) and parsed and all(k in _ENVELOPE_KEYS for k in parsed):
+            body_text, tail = rest[: candidate.start()], parsed
+            break
+    if tail is None:
+        # Nothing parsed as a whole. Still end the body at the first key line when everything
+        # after it at least looks like YAML (so a broken tail does not leak into the draft).
+        for candidate in _NEXT_KEY.finditer(rest):
+            if all(_STRUCTURAL_LINE.match(ln) for ln in rest[candidate.start():].splitlines()):
+                body_text = rest[: candidate.start()]
+                break
+    recovered: dict[str, Any] = {"body_markdown": _outdent(body_text.strip("\n").splitlines())}
+    if tail:
+        recovered.update(tail)
     return recovered
 
 

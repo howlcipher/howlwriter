@@ -113,13 +113,13 @@ def _office_metadata(raw: bytes, signals: ProvenanceSignals) -> None:
             signals.created = _text(root, "}created")[:32]
             signals.modified = _text(root, "}modified")[:32]
             revision = _text(root, "}revision")
-            signals.revision = int(revision) if revision.isdigit() else None
+            signals.revision = int(revision) if revision.isdecimal() else None
             signals.metadata_available = True
         if app:
             root = ET.fromstring(app)
             signals.application = _text(root, "}Application")[:80]
             total = _text(root, "}TotalTime")
-            signals.edit_minutes = int(total) if total.isdigit() else None
+            signals.edit_minutes = int(total) if total.isdecimal() else None
             signals.template = _text(root, "}Template")[:80]
             signals.metadata_available = True
         if meta:
@@ -130,7 +130,7 @@ def _office_metadata(raw: bytes, signals: ProvenanceSignals) -> None:
             )
             signals.created = _text(root, "}creation-date")[:32] or signals.created
             cycles = _text(root, "}editing-cycles")
-            signals.revision = int(cycles) if cycles.isdigit() else signals.revision
+            signals.revision = int(cycles) if cycles.isdecimal() else signals.revision
             signals.metadata_available = True
     except ET.ParseError:
         signals.notes.append("document metadata part was not well-formed XML")

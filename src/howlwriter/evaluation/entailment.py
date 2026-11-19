@@ -47,6 +47,60 @@ _SYNONYM_MAP = {
 }
 
 
+
+_NEGATION_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(w) for w in sorted(_NEGATION_WORDS)) + r")\b|\b\w+n't\b"
+)
+_POLARITY_AUX = {"does", "do", "did", "doesn", "don", "didn", "can", "will", "won", "isn", "aren",
+                 "wasn", "weren", "has", "have", "had", "hasn", "haven", "hadn", "t"}
+_CLAUSE_SPLIT_RE = re.compile(r"[.;!?\n]+|,\s+|\s+(?:but|however|although|whereas|while)\s+")
+_POLARITY_OVERLAP = 0.8
+
+
+def _is_negated(text: str) -> bool:
+    return bool(_NEGATION_RE.search(text.replace("\u2019", "'")))
+
+
+def _stem(word: str) -> str:
+    for suffix in ("ing", "ed", "es", "s"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            word = word[: -len(suffix)]
+            break
+    if word.endswith("e") and len(word) > 3:
+        word = word[:-1]
+    return word
+
+
+def _content_stems(text: str) -> set[str]:
+    words = re.findall(r"[a-z0-9]+", text.replace("\u2019", "'"))
+    return {
+        _stem(w)
+        for w in words
+        if w not in _STOP_WORDS and w not in _NEGATION_WORDS and w not in _POLARITY_AUX and len(w) > 2
+    }
+
+
+def _find_polarity_inversion(claim_lower: str, claim_negated: bool, evidence_lower: str) -> str | None:
+    """Return the evidence clause that covers the claim with opposite polarity, else None."""
+    claim_stems = _content_stems(claim_lower)
+    if len(claim_stems) < 2:
+        return None
+    best_ratio = 0.0
+    best_clause = ""
+    for clause in _CLAUSE_SPLIT_RE.split(evidence_lower):
+        clause = clause.strip()
+        if not clause:
+            continue
+        ratio = len(claim_stems & _content_stems(clause)) / len(claim_stems)
+        if ratio > best_ratio:
+            best_ratio, best_clause = ratio, clause
+    if best_ratio < _POLARITY_OVERLAP:
+        return None
+    if _is_negated(best_clause) != claim_negated:
+        return best_clause
+    return None
+
+
 @runtime_checkable
 class EntailmentEvaluator(Protocol):
     """Protocol for semantic claim entailment evaluators."""
@@ -123,10 +177,7 @@ class DeterministicEntailmentEvaluator:
                 matched_evidence=evidence_clean,
             )
 
-        # 3. Negation & Polarity Inversion check
-        claim_negated = any(re.search(r"\b" + re.escape(w) + r"\b", claim_lower) for w in _NEGATION_WORDS)
-        evidence_negated = any(re.search(r"\b" + re.escape(w) + r"\b", evidence_lower) for w in _NEGATION_WORDS)
-
+        # 3. Antonym / stance checks (polarity inversion is checked after these)
         # Antonym / Incompatible stance check (e.g. voluntary vs mandatory)
         if ("voluntary" in evidence_lower or "optional" in evidence_lower) and ("mandatory" in claim_lower or "compulsory" in claim_lower or "required" in claim_lower):
             return EntailmentResult(
@@ -154,6 +205,20 @@ class DeterministicEntailmentEvaluator:
                 verdict=EntailmentVerdict.CONTRADICTED,
                 confidence=0.90,
                 rationale="Modal overstatement: evidence hedges ('may reduce in some environments') but claim makes an unhedged absolute claim ('eliminates risk').",
+                extracted_claim=claim_clean,
+                matched_evidence=evidence_clean,
+            )
+
+        # 4b. Polarity inversion: the evidence clause that covers the claim says the opposite.
+        # Conservative: only the best-matching evidence clause is compared, and only when it
+        # covers nearly all of the claim's content words (an unrelated "not" elsewhere is ignored).
+        claim_negated = _is_negated(claim_lower)
+        inverted_clause = _find_polarity_inversion(claim_lower, claim_negated, evidence_lower)
+        if inverted_clause is not None:
+            return EntailmentResult(
+                verdict=EntailmentVerdict.CONTRADICTED,
+                confidence=0.85,
+                rationale=f"Polarity inversion: the evidence states the opposite polarity: {inverted_clause!r}.",
                 extracted_claim=claim_clean,
                 matched_evidence=evidence_clean,
             )

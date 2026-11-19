@@ -134,14 +134,21 @@ try:
                 host, port, timeout=timeout, local_address=local_address, socket_options=socket_options
             )
             try:
-                sock = getattr(stream, "_sock", None)
-                if sock is not None:
-                    peer_ip = sock.getpeername()[0]
-                    if is_prohibited_ip(peer_ip):
-                        stream.close()
-                        raise SSRFSecurityError(
-                            f"Post-connect peer IP {peer_ip} for '{host}' is in a prohibited range."
-                        )
+                try:
+                    server_addr = stream.get_extra_info("server_addr")
+                except Exception as exc:
+                    raise SSRFSecurityError(
+                        f"Cannot determine the connected peer for '{host}'; refusing the connection."
+                    ) from exc
+                if not server_addr:
+                    raise SSRFSecurityError(
+                        f"Cannot determine the connected peer for '{host}'; refusing the connection."
+                    )
+                peer_ip = server_addr[0]
+                if is_prohibited_ip(peer_ip):
+                    raise SSRFSecurityError(
+                        f"Post-connect peer IP {peer_ip} for '{host}' is in a prohibited range."
+                    )
             except Exception:
                 stream.close()
                 raise
@@ -429,13 +436,23 @@ class SourceIntegrityVerifier:
     def _verify_doi(self, source: Source) -> SourceIntegrityFinding:
         """Verifies DOI against official Crossref registrar."""
         doi = source.doi.strip()  # type: ignore[union-attr]
-        clean_doi = normalize_doi(doi)
 
-        api_url = f"https://api.crossref.org/works/{clean_doi}"
-        headers = {
-            "User-Agent": "HowlWriter-SourceIntegrity/1.0 (mailto:integrity@howlwriter.dev)"
-        }
         evidence_support = getattr(source, "relevance", "UNVERIFIED")
+        api_url = crossref_works_url(doi)
+        if api_url is None:
+            return SourceIntegrityFinding(
+                source_id=source.id,
+                source_title=source.title,
+                url_or_doi=doi,
+                access_status=ACCESS_BROKEN,
+                metadata_status=METADATA_UNKNOWN,
+                evidence_support=evidence_support,
+                severity=SEV_BLOCKING,
+                diagnostics=[f"'{doi}' is not a valid DOI; no registry lookup was made."],
+            )
+        from howlwriter import __version__
+
+        headers = {"User-Agent": f"HowlWriter-SourceIntegrity/{__version__}"}
 
         try:
             with self._build_client() as client:
