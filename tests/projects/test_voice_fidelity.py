@@ -362,3 +362,41 @@ def test_every_model_draft_is_validated_and_the_verdict_saved(project, tmp_path,
     validation = draft(project, build_brief(project), config=config, revise=False)["provenance"]["validation"]
     assert validation["verdict"] in ("BLOCKED", "INCOMPLETE")
     assert validation["issue_counts"].get("unsupported_claim", 0) >= 1
+
+
+def test_a_cloud_tagged_local_model_is_gated_like_a_remote_one(project, monkeypatch):
+    from howlwriter.config.defaults import default_config
+    from howlwriter.integration import provider_choice as pc
+    from howlwriter.projects.writing import RemoteInferenceNotAuthorized
+
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    monkeypatch.setitem(pc.PROCESS_DEFAULTS, "local_model", "gpt-oss:120b-cloud")
+    bridge = ScriptedBridge("local_ollama")
+    set_howlplane_bridge(bridge)
+    with pytest.raises(RemoteInferenceNotAuthorized):
+        draft(project, build_brief(project), config=default_config(), revise=False)
+    assert bridge.calls == []
+
+
+def test_voice_examples_are_not_automatic_for_a_cloud_tag(project, tmp_path, private_dirs, monkeypatch):
+    from howlwriter.integration import provider_choice as pc
+
+    config = _voice_config(tmp_path, private_dirs, bank_paragraphs=BANK)
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    monkeypatch.setitem(pc.PROCESS_DEFAULTS, "local_model", "qwen3:cloud")
+    bridge = ScriptedBridge("local_ollama")
+    set_howlplane_bridge(bridge)
+    draft(project, build_brief(project), config=config, revise=False, allow_remote=True)
+    assert bridge.calls and all(PARAGRAPH not in c["prompt"] for c in bridge.calls)
+
+
+def test_a_custom_backend_is_remote_unless_it_declares_local(project):
+    from types import SimpleNamespace
+
+    from howlwriter.config.defaults import default_config
+    from howlwriter.projects.writing import RemoteInferenceNotAuthorized
+
+    set_howlplane_bridge(ScriptedBridge("local_ollama"))
+    with pytest.raises(RemoteInferenceNotAuthorized):
+        draft(project, build_brief(project), config=default_config(), revise=False,
+              custom_backend=SimpleNamespace(agent_id="fake"))

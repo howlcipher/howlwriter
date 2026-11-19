@@ -327,22 +327,61 @@ class HeavyWorker:
         return payload
 
 
-if __name__ == "__main__":
-    import sys
-
-    if "--worker" in sys.argv:
-        raise SystemExit(_worker_main())
+def _lower_priority_of(pid: int, policy: ResourcePolicy) -> None:
+    """Lower a running child's priority from the parent (no preexec_fn: unsafe with threads)."""
+    if not policy.idle_priority:
+        return
+    try:
+        os.setpriority(os.PRIO_PROCESS, pid, 19)
+    except (OSError, AttributeError):
+        pass
+    sched_idle = getattr(os, "SCHED_IDLE", None)
+    if sched_idle is not None:
+        try:
+            os.sched_setscheduler(pid, sched_idle, os.sched_param(0))
+        except OSError:
+            pass
 
 
 def governed_run(command: list[str], *, policy: ResourcePolicy | None = None, timeout: float, **kwargs):
-    """subprocess.run for external tools (ffmpeg, pdftoppm, tshark) under the same policy."""
+    """subprocess.run for external tools (ffmpeg, pdftoppm, tshark) under the same policy.
+
+    The child is started normally and its priority is lowered from here right after
+    it starts, so a tiny window exists before the change; nothing runs between fork and exec.
+    """
     import subprocess
 
     policy = policy or ResourcePolicy()
     env = dict(kwargs.pop("env", None) or os.environ)
     env.update(thread_env(policy.threads))
+    check = kwargs.pop("check", False)
+    input_data = kwargs.pop("input", None)
+    if input_data is not None:
+        kwargs["stdin"] = subprocess.PIPE
+    if kwargs.pop("capture_output", False):
+        kwargs["stdout"] = subprocess.PIPE
+        kwargs["stderr"] = subprocess.PIPE
+    with subprocess.Popen(command, env=env, **kwargs) as process:
+        _lower_priority_of(process.pid, policy)
+        try:
+            stdout, stderr = process.communicate(input_data, timeout=timeout)
+        except subprocess.TimeoutExpired as expired:
+            process.kill()
+            process.wait()
+            raise subprocess.TimeoutExpired(command, timeout, output=expired.output,
+                                            stderr=expired.stderr) from None
+        except BaseException:
+            process.kill()
+            raise
+        code = process.poll()
+    if check and code:
+        raise subprocess.CalledProcessError(code, command, output=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(command, code, stdout, stderr)
 
-    def _prepare() -> None:
-        _lower_priority(policy)
 
-    return subprocess.run(command, env=env, timeout=timeout, preexec_fn=_prepare, **kwargs)
+
+if __name__ == "__main__":
+    import sys
+
+    if "--worker" in sys.argv:
+        raise SystemExit(_worker_main())

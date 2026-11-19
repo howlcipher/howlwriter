@@ -297,3 +297,70 @@ def test_local_model_choice_selects_that_ollama_model(monkeypatch):
     monkeypatch.setenv(pc.ENV_LOCAL_MODEL, "llama3.1:8b")
     assert pc.make_backend("local_ollama").model == "llama3.1:8b"
     assert pc.make_backend("codex").agent_id == "codex"
+
+
+@pytest.mark.parametrize(
+    "provider, model, host, expected",
+    [
+        ("local_ollama", None, None, True),
+        ("local", "qwen2.5:7b-instruct", None, True),
+        ("ollama_local", None, None, True),
+        ("ollama", "llama3.1:8b", None, True),
+        ("local_ollama", "gpt-oss:120b-cloud", None, False),
+        ("local_ollama", "qwen3-coder:cloud", None, False),
+        ("claude_code", None, None, False),
+        ("agy", None, None, False),
+        ("codex", None, None, False),
+        ("llama_api", None, None, False),
+        ("localai", None, None, False),
+        ("ollama_proxy", None, None, False),
+        ("", None, None, False),
+        (None, None, None, False),
+    ],
+)
+def test_locality_table_fails_closed(monkeypatch, provider, model, host, expected):
+    monkeypatch.setattr(pc, "PROCESS_DEFAULTS", {"local_model": None})
+    monkeypatch.delenv(pc.ENV_LOCAL_MODEL, raising=False)
+    if host is None:
+        monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    else:
+        monkeypatch.setenv("OLLAMA_HOST", host)
+    local, reason = pc.runs_on_this_machine(provider, model)
+    assert local is expected and reason
+    assert pc.is_local(provider, model) is expected
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "http://10.0.0.5:11434", "127.0.0.1:11434"])
+def test_ollama_host_does_not_change_locality(monkeypatch, host):
+    monkeypatch.setattr(pc, "PROCESS_DEFAULTS", {"local_model": None})
+    monkeypatch.delenv(pc.ENV_LOCAL_MODEL, raising=False)
+    monkeypatch.setenv("OLLAMA_HOST", host)
+    assert pc.is_local("local_ollama", "llama3.1:8b") is True
+    assert pc.is_local("local_ollama", "x:cloud") is False
+
+
+def test_chosen_local_model_tag_is_what_decides(monkeypatch):
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    monkeypatch.setattr(pc, "PROCESS_DEFAULTS", {"local_model": "big:cloud"})
+    assert pc.is_local("local_ollama") is False
+    monkeypatch.setattr(pc, "PROCESS_DEFAULTS", {"local_model": None})
+    monkeypatch.setenv(pc.ENV_LOCAL_MODEL, "big-cloud")
+    assert pc.is_local("local_ollama") is False
+
+
+def test_choosing_local_with_a_cloud_model_shows_the_disclosure_and_needs_a_yes(monkeypatch):
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    monkeypatch.setattr(pc, "PROCESS_DEFAULTS", {"local_model": "x:cloud"})
+    out = io.StringIO()
+    answers = iter(["4", "n"])
+    with pytest.raises(pc.ProviderChoiceCancelled):
+        pc.ask(purpose="t", input_fn=lambda prompt: next(answers), output=out, rows=ALL_READY)
+    assert "not private here" in out.getvalue() and "cloud model" in out.getvalue()
+    answers = iter(["4", "y"])
+    assert pc.ask(purpose="t", input_fn=lambda prompt: next(answers), output=io.StringIO(),
+                  rows=ALL_READY) == ("local_ollama", True)
+    monkeypatch.setattr(pc, "PROCESS_DEFAULTS", {"local_model": None})
+    answers = iter(["4"])
+    assert pc.ask(purpose="t", input_fn=lambda prompt: next(answers), output=io.StringIO(),
+                  rows=ALL_READY) == ("local_ollama", False)
+

@@ -36,7 +36,7 @@ OPTIONS: tuple[ProviderOption, ...] = (
     ProviderOption("claude_code", "Claude Code", False, ("claude_code", "claude", "claude-code")),
     ProviderOption("agy", "Antigravity (agy)", False, ("agy", "antigravity")),
     ProviderOption("codex", "Codex", False, ("codex",)),
-    ProviderOption("local_ollama", "Local model (Ollama)", True, ("local", "ollama", "local_ollama")),
+    ProviderOption("local_ollama", "Local model (Ollama)", True, ("local", "ollama", "local_ollama", "ollama_local")),
 )
 
 #: A per-request choice (the web UI sends one with each request).
@@ -83,16 +83,31 @@ def option_for(provider: str) -> ProviderOption | None:
     return next((o for o in OPTIONS if o.provider == provider), None)
 
 
-def is_local(provider: str | None) -> bool:
-    option = option_for(provider or "")
-    if option is not None:
-        return option.local
-    return (provider or "").lower().startswith(("ollama", "local", "llama"))
-
-
 def local_model() -> str | None:
     """The Ollama model chosen with --local-model or HOWLWRITER_LOCAL_MODEL, if any."""
     return PROCESS_DEFAULTS.get("local_model") or os.environ.get(ENV_LOCAL_MODEL, "").strip() or None
+
+
+def runs_on_this_machine(provider: str | None, model: str | None = None) -> tuple[bool, str]:
+    """(local, reason). Fails closed: only a known local backend on this machine is local.
+
+    ``local_ollama`` is local only when its model is not an Ollama cloud model
+    (tags ending in ``-cloud`` or ``:cloud`` run on ollama.com). ``OLLAMA_HOST``
+    is not consulted: HowlPlane's backend always uses its own host (127.0.0.1).
+    """
+    option = option_for(provider or "")
+    if option is None:
+        return False, f"{provider or 'unbound'!r} is not a known local model"
+    if not option.local:
+        return False, f"{option.label} sends text to its provider"
+    tag = (model if model is not None else local_model()) or ""
+    if tag.strip().lower().endswith(("-cloud", ":cloud")):
+        return False, f"the Ollama model {tag!r} is a cloud model that runs on ollama.com"
+    return True, "a local model on this machine"
+
+
+def is_local(provider: str | None, model: str | None = None) -> bool:
+    return runs_on_this_machine(provider, model)[0]
 
 
 def make_backend(provider: str):
@@ -146,8 +161,12 @@ def availability() -> list[tuple[ProviderOption, bool, str]]:
 
 
 def disclosure(option: ProviderOption) -> str:
+    _, why = runs_on_this_machine(option.provider)
+    lead = f"{option.label} is not a local model"
+    if option.local:
+        lead = f"{option.label} is not private here ({why})"
     return (
-        f"{option.label} is not a local model. The text of this run (your draft or sources, "
+        f"{lead}. The text of this run (your draft or sources, "
         "and for a project draft, evidence excerpts from the project), and a summary of your voice "
         f"profile when one is in use, will be sent to {option.label}'s provider."
     )
@@ -180,7 +199,8 @@ def ask(
         )
     selectable: dict[str, ProviderOption] = {}
     for number, (option, ready, why) in enumerate(rows, start=1):
-        tags = ["private, on this machine" if option.local else "sends text to its provider"]
+        tags = ["private, on this machine" if runs_on_this_machine(option.provider)[0]
+                else "sends text to its provider"]
         if option.provider == avoid_id:
             tags.append("wrote the text")
         line = f"  {number}. {option.label} ({'; '.join(tags)})"
@@ -202,7 +222,7 @@ def ask(
     option = selectable[answer]
     if option is None:
         return NO_MODEL, False
-    if option.local:
+    if runs_on_this_machine(option.provider)[0]:
         return option.provider, False
     print(disclosure(option), file=out)
     if input_fn(f"Send it to {option.label}? [y/N]: ").strip().lower() not in ("y", "yes"):
@@ -231,8 +251,8 @@ def from_environment() -> tuple[str | None, str | None]:
 def choices_payload() -> list[dict]:
     """The options and whether each can run now, for the web picker."""
     return [
-        {"provider": o.provider, "label": o.label, "local": o.local, "available": ready, "detail": why,
-         "disclosure": "" if o.local else disclosure(o)}
+        {"provider": o.provider, "label": o.label, "local": runs_on_this_machine(o.provider)[0], "available": ready,
+         "detail": why, "disclosure": "" if runs_on_this_machine(o.provider)[0] else disclosure(o)}
         for o, ready, why in availability()
     ]
 

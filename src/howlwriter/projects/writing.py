@@ -35,7 +35,6 @@ from howlwriter.projects.retrieval import EvidenceIndex
 from howlwriter.projects.workspace import ProjectWorkspace, utc_now
 from howlwriter.voice.identity import privacy
 
-LOCAL_PROVIDERS = ("ollama", "llamacpp", "llama.cpp", "lmstudio", "local", "vllm-local")
 EVIDENCE_PER_SECTION = 6
 MAX_PROMPT_EVIDENCE = 60
 EXCERPT_IN_PROMPT = 500
@@ -289,7 +288,8 @@ def _provider_is_local(bridge) -> tuple[bool, str, bool]:
         provider = (getattr(binding, "provider", "") or "").lower()
     except Exception:
         provider = ""
-    return any(provider.startswith(p) for p in LOCAL_PROVIDERS), provider or "unbound", False
+    # Exact backend ids only; an unknown or unbound provider is remote.
+    return is_local(provider), provider or "unbound", False
 
 
 #: Prompt size (system instruction included) per call. Local models get a few
@@ -367,7 +367,8 @@ def draft(
     bridge = get_howlplane_bridge()
     meta = workspace.load_meta()
     if custom_backend is not None:
-        local, provider, confirmed = True, "custom", False
+        # A custom backend is remote unless it declares itself local.
+        local, provider, confirmed = bool(getattr(custom_backend, "local", False)), "custom", False
     else:
         local, provider, confirmed = _provider_is_local(bridge)
     if not local and not (allow_remote or confirmed or meta.get("remote_inference_authorized")):

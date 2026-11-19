@@ -108,7 +108,9 @@ observations. Leave the file alone if you do not know how it was made.
   `authorize-remote`, `--voice-examples on` with a remote model (it sends
   passages of the owner's writing), and `X-HowlWriter-Send-Confirmed: 1` all
   send private material to a provider. Say what will be sent and to whom,
-  and wait for a yes.
+  and wait for a yes. "Local" fails closed: `--provider local` counts as
+  private only for a non-cloud Ollama model; a `-cloud`/`:cloud` tag or an
+  unknown backend is remote.
 - **Do not read or quote the private stores.** `~/.howlwriter/` holds the
   owner's documents, exports, and profiles. Use the commands, which report
   counts and reasons by default, and `voice review --preview` only when the

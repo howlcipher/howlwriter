@@ -30,6 +30,7 @@ import math
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 
 from howlwriter.projects.adapters import AdapterResult
 from howlwriter.projects.resources import governed_run
@@ -84,16 +85,42 @@ class TShark:
 
     def run(self, capture: Path, args: list[str]) -> list[list[str]]:
         command = list(self.command or [])
+        staging: Path | None = None
+        source = capture
         if self.flatpak:
-            # Grant the sandbox read-only access to this capture's folder only.
-            command.insert(2, f"--filesystem={capture.parent}:ro")
-        command += ["-r", str(capture), "-n", *args]
-        completed = governed_run(
-            command, policy=self.policy, capture_output=True, text=True, timeout=TIMEOUT_SECONDS
-        )
+            # The sandbox cannot see host /tmp or /var/tmp, so a capture outside the home
+            # directory is copied into a private folder under the home directory first.
+            source, staging = _stage_for_flatpak(capture)
+            command.insert(2, f"--filesystem={source.parent}:ro")
+        command += ["-r", str(source), "-n", *args]
+        try:
+            completed = governed_run(
+                command, policy=self.policy, capture_output=True, text=True, timeout=TIMEOUT_SECONDS
+            )
+        finally:
+            if staging is not None:
+                shutil.rmtree(staging, ignore_errors=True)
         if completed.returncode != 0:
             raise RuntimeError((completed.stderr or "tshark failed").strip().splitlines()[-1][:200])
         return [line.split("\t") for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _stage_for_flatpak(capture: Path) -> tuple[Path, Path | None]:
+    """(path TShark should read, private directory to delete afterwards or None)."""
+    home = Path.home().resolve()
+    resolved = capture.resolve()
+    if resolved == home or home in resolved.parents:
+        return capture, None
+    root = home / ".cache" / "howlwriter" / "pcap"
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    staging = Path(tempfile.mkdtemp(prefix="cap-", dir=root))  # mkdtemp creates it 0700
+    try:
+        copied = staging / (capture.name or "capture.pcap")
+        shutil.copyfile(capture, copied)
+    except OSError:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    return copied, staging
 
 
 def _fields(*names: str) -> list[str]:
