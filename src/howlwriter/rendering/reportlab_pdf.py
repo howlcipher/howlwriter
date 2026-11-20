@@ -39,6 +39,8 @@ def render_reportlab(text: str, title: str, ctx: RenderContext) -> bytes:
                           allowWidows=False, allowOrphans=False)
     heading = ParagraphStyle('Heading', parent=base, fontName=bold,
                              spaceBefore=10, spaceAfter=6, keepWithNext=True)
+    reference = ParagraphStyle('Reference', parent=base, leftIndent=36, firstLineIndent=-36,
+                               leading=ctx.font_size_pt * 2, spaceAfter=0)
     caption = ParagraphStyle('Caption', parent=base, keepWithNext=False)
     code = ParagraphStyle('Code', parent=base, fontName='Courier', fontSize=9,
                           leading=12, spaceAfter=4)
@@ -82,6 +84,7 @@ def render_reportlab(text: str, title: str, ctx: RenderContext) -> bytes:
     if current:
         blocks.append('\n'.join(current))
 
+    in_references = False
     for block in blocks:
         lines = block.splitlines()
         first = lines[0].strip()
@@ -92,7 +95,8 @@ def render_reportlab(text: str, title: str, ctx: RenderContext) -> bytes:
                 story.append(Paragraph(html.escape(line).replace(' ', '&nbsp;') or '&#160;', code))
         elif re.match(r'^#{1,6} ', first):
             value = re.sub(r'^#+\s+', '', first)
-            if ctx.title_page and value.lower() == 'references':
+            in_references = value.casefold() == 'references'
+            if ctx.title_page and in_references:
                 story.append(PageBreak())
             story.append(Paragraph(inline(value), heading))
         elif (image := re.fullmatch(r'!\[([^\]]*)\]\(([^)]+)\)', block.strip())):
@@ -123,7 +127,8 @@ def render_reportlab(text: str, title: str, ctx: RenderContext) -> bytes:
                 story.append(Paragraph(inline(value), base, bulletText='•'))
         else:
             value = ' '.join(line.lstrip('> ').strip() for line in lines)
-            story.append(Paragraph(inline(value), caption if first.startswith('Figure ') else base))
+            style = reference if in_references else caption if first.startswith('Figure ') else base
+            story.append(Paragraph(inline(value), style))
     if ctx.include_ai_disclosure and ctx.ai_disclosure_text:
         story.extend([Paragraph('AI-Use Disclosure', heading),
                       Paragraph(inline(ctx.ai_disclosure_text), base)])

@@ -26,7 +26,6 @@ from howlwriter.domain.serialization import DataClassSerializationMixin
 _IDENTIFIER_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("cve", re.compile(r"\bCVE-\d{4}-\d{4,7}\b")),
     ("mitre_attack_technique", re.compile(r"\bT\d{4}(?:\.\d{3})?\b")),
-    ("windows_event_id", re.compile(r"\bEvent\s?ID\s*\d{2,5}\b", re.IGNORECASE)),
     ("cloud_finding_name", re.compile(r"\b[A-Z][a-zA-Z]+:[A-Z][a-zA-Z]+/[A-Za-z]+\b")),
     ("precise_percentage", re.compile(r"\b\d{1,3}\.\d{1,2}%")),
     (
@@ -37,6 +36,19 @@ _IDENTIFIER_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         ),
     ),
 ]
+
+
+_EVENT_IDS = re.compile(
+    r"\b(?:event\s*ids?\b|(?:windows|security|system)\s+events?\b)"
+    r"\s*[:#]?\s*(?P<ids>\d{2,5}(?:\s*(?:,\s*(?:and\s+|or\s+)?|(?:and|or)\s+)\d{2,5}\b)*)\b",
+    re.IGNORECASE,
+)
+
+
+def _event_ids(text: str):
+    for match in _EVENT_IDS.finditer(text):
+        for number in re.finditer(r"\d+", match["ids"]):
+            yield number.group(), match.start("ids") + number.start(), match.start("ids") + number.end()
 
 
 @dataclass
@@ -61,7 +73,10 @@ def identifier_kinds_present(text: str) -> set[str]:
     grounding corpus / present in the document, without duplicating the
     pattern table here.
     """
-    return {kind for kind, pattern in _IDENTIFIER_PATTERNS if pattern.search(text)}
+    kinds = {kind for kind, pattern in _IDENTIFIER_PATTERNS if pattern.search(text)}
+    if _EVENT_IDS.search(text):
+        kinds.add("windows_event_id")
+    return kinds
 
 
 def find_ungrounded_identifiers(
@@ -97,4 +112,14 @@ def find_ungrounded_identifiers(
                 )
             )
 
+    grounded_events = {number for text in lowered_grounding for number, _, _ in _event_ids(text)}
+    seen_events = set()
+    for number, start, end in _event_ids(document_text):
+        if number not in grounded_events and number not in seen_events:
+            findings.append(IdentifierFinding(
+                identifier=f"Event ID {number}",
+                kind="windows_event_id",
+                context_snippet=_context_snippet(document_text, start, end),
+            ))
+        seen_events.add(number)
     return findings

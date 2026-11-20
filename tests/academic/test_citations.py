@@ -52,7 +52,7 @@ Recent studies demonstrate that dynamic delegated authorization reduces stale pr
 
     # Check References Section
     assert "# References" in analysis.references_section_text
-    assert "Rose, S., & Borchert, O. (2020). Zero trust architecture." in analysis.references_section_text
+    assert "Rose, S., & Borchert, O. (2020). *Zero trust architecture*." in analysis.references_section_text
     assert "Ahmadi, S. (2025). Autonomous AI agent security." in analysis.references_section_text
     assert "Uncited, A." not in analysis.references_section_text
 
@@ -232,3 +232,18 @@ def test_parenthetical_asides_are_not_mistaken_for_citations():
     )
 
     assert analysis.unmatched_in_text_citations == []
+
+
+def test_academic_citations_resolve_same_year_suffix_and_undated_source():
+    sources = [
+        Source("S002", "Zebra report", ["Lee, Ada"], publication_date=date(2024, 1, 1)),
+        Source("S001", "Atlas report", ["Lee, Ada"], publication_date=date(2024, 1, 1)),
+        Source("S003", "Undated report", ["Lee, Ada"]),
+    ]
+    analysis = AcademicCitationManager().analyze_and_build_references(
+        Document.parse("See (Lee, 2024b) and (Lee, n.d.)."), sources,
+    )
+    assert [source.id for source in analysis.used_sources] == ["S002", "S003"]
+    assert not analysis.unmatched_in_text_citations
+    assert "(2024b). Zebra report." in analysis.references_section_text
+    assert "Atlas report" not in analysis.references_section_text

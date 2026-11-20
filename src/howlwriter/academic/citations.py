@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import re
 
-from howlwriter.citations.apa7 import APA7Formatter, CitationWarning
+from howlwriter.citations.apa7 import APA7Formatter, CitationWarning, citation_years
 from howlwriter.citations.extract import (  # noqa: F401  (re-exported for existing importers)
     _InTextCitation,
     _NARRATIVE_PATTERN,
@@ -27,24 +27,12 @@ CITATION_NO_IN_TEXT_CITATIONS = "CITATION_NO_IN_TEXT_CITATIONS"
 CITATION_TOO_MANY_SOURCES = "CITATION_TOO_MANY_SOURCES"
 
 
-def _source_year(source: Source) -> str:
-    return str(source.publication_date.year) if source.publication_date else "n.d."
-
-
-def _citation_matches_source(citation: _InTextCitation, source: Source) -> bool:
-    """Does this single in-text citation resolve to this source?
-
-    Deliberately conservative: it answers "could a reader reasonably read this
-    citation as pointing at this source", so a citation is only reported as
-    unresolved when no collected source is a plausible referent. It is used
-    only to detect unresolved citations and never to decide which sources are
-    considered used, so it cannot change which entries reach the References
-    page.
-    """
+def _citation_matches_source(citation: _InTextCitation, source: Source, year: str) -> bool:
+    """Resolve a citation against the label given to the writer."""
     if citation.source_id is not None:
         return source.id == citation.source_id
 
-    if citation.year is not None and citation.year != _source_year(source):
+    if citation.year is not None and citation.year != year:
         return False
 
     names = citation.names.lower()
@@ -94,6 +82,7 @@ class AcademicCitationManager:
         # Only sources that pass the relevance gate are eligible for use.
         eligible_sources = [s for s in available_sources if s.is_usable]
 
+        years = citation_years(eligible_sources)
         used_sources: list[Source] = []
         unused_sources: list[Source] = []
         all_warnings: list[CitationWarning] = []
@@ -105,7 +94,7 @@ class AcademicCitationManager:
         # simultaneously reported unresolvable, or a cited work could be left
         # out of the references entirely.
         for source in eligible_sources:
-            if any(_citation_matches_source(c, source) for c in extracted):
+            if any(_citation_matches_source(c, source, years[source.id]) for c in extracted):
                 used_sources.append(source)
             else:
                 unused_sources.append(source)
@@ -115,7 +104,7 @@ class AcademicCitationManager:
         # gets an empty page rather than a list of everything that was
         # retrieved -- publishing uncited works as references misrepresents
         # them as having supported the text.
-        ref_page_result = self.formatter.reference_page(used_sources)
+        ref_page_result = self.formatter.reference_page(used_sources, markdown=True, years=years)
         all_warnings.extend(ref_page_result.warnings)
         if eligible_sources and not used_sources:
             all_warnings.append(
@@ -143,7 +132,7 @@ class AcademicCitationManager:
             if citation.raw in seen:
                 continue
             seen.add(citation.raw)
-            if any(_citation_matches_source(citation, s) for s in eligible_sources):
+            if any(_citation_matches_source(citation, s, years[s.id]) for s in eligible_sources):
                 continue
             unmatched.append(citation.raw)
 

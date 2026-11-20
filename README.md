@@ -204,6 +204,22 @@ See [HowlPlane integration](docs/howlplane-integration.md) for other roles,
 source layouts, and setup details. Missing setup produces an actionable error
 and exit status 2; a chosen model with no HowlPlane to run it exits 1.
 
+For a local academic draft with a named voice, put the title and topic in
+`assignment.yaml` and supply a vetted source packet:
+
+```bash
+howlwriter --provider local --local-model qwen2.5:7b-instruct paper assignment.yaml \
+  --identity student --sources sources.json --format md,docx,pdf --save-artifacts
+```
+
+Supply enough usable sources to meet the assignment minimum when working
+offline. Each evidence excerpt should say what was observed live, what was
+tested with a fixture or predicate, and what is still planned. A review
+verdict remains necessary for unsupported claims and exact identifiers.
+Academic reference exports keep each entry in one paragraph. Word and PDF
+apply double spacing and a half-inch hanging indent. Verify uncertain
+publication metadata with `howlwriter citations verify` before handoff.
+
 ## Using HowlWriter from an AI agent
 
 Agents (Claude Code, Codex, Antigravity, scripts) can drive the CLI and the

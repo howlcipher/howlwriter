@@ -9,13 +9,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
-_YEAR_TOKEN = re.compile(r"\b(\d{4}[a-z]?|n\.d\.)\b")
+_YEAR_TOKEN = re.compile(r"\b(\d{4}[a-z]*|n\.d\.(?:-[a-z]+)?)(?![\w-])")
 _WORD_TOKEN = re.compile(r"[a-z]+")
 _PARENTHETICAL_GROUP = re.compile(r"\(([^()\n]{3,300})\)")
 # Narrative form: Author (2024), Author et al. (2024a), Author (2024, p. 12).
 _NARRATIVE_PATTERN = re.compile(
     r"\b([A-Z][A-Za-z'-]+(?:\s+(?:and|&)\s+[A-Z][A-Za-z'-]+|\s+et\s+al\.)?)"
-    r"\s+\((\d{4}[a-z]?|n\.d\.)(?:,\s*[^()\n]{0,40})?\)"
+    r"\s+\((\d{4}[a-z]*|n\.d\.(?:-[a-z]+)?)(?:,\s*[^()\n]{0,40})?\)"
 )
 _SOURCE_ID_PATTERN = re.compile(r"\b(S\d{3})\b")
 # Parentheticals that carry a year but are not citations.
