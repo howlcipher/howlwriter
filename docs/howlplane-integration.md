@@ -157,3 +157,15 @@ in the prompt, so no model is ever started in the user's folder.
 The separation of concerns is clean and domain-neutral:
 HowlPlane owns model execution, provider pools, and control plane guarantees.
 HowlWriter owns writing semantics, provenance graphs, linting, and verification contracts.
+
+
+## Recovering a local launcher after a checkout moves
+
+Check `command -v howlwriter` and inspect the launcher or symlink target before
+diagnosing a model role. If the target or its shebang names an old mount,
+reinstall from the current checkout into the intended environment with
+`python -m pip install -e /current/path/to/howlwriter`. Run that environment's
+`howlwriter --help` from another directory before restoring a PATH shim.
+Use the same interpreter for HowlPlane dependencies. A named missing module
+after selecting a provider means HowlPlane was found but could not import.
+An unavailable checkout and an unconfigured role have separate diagnostics.

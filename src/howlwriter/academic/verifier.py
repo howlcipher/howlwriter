@@ -76,6 +76,10 @@ _CORRELATIONAL_MARKERS = (
     "associated with", "correlated with", "correlation", "linked to",
     "related to", "connected to",
 )
+_LIVE_OBSERVATION = re.compile(
+    r"(?<!not )(?<!never )\b(?:observed|confirmed|verified)\s+(?:in\s+)?(?:the\s+)?live\b"
+    r"|\blive\s+(?:[\w-]+\s+){1,4}(?:was|were)\s+(?:observed|confirmed|verified)\b"
+)
 _SCOPE_ESC_MARKERS = frozenset({
     "all", "every", "always", "never", "none", "entire", "universal",
     "across all", "in every",
@@ -96,6 +100,13 @@ def _claim_escalates_evidence(claim: Claim, source_text: str) -> bool:
     """True if the claim uses stronger language than the retrieved source."""
     claim_lower = claim.text.lower()
     source_lower = source_text.lower()
+
+    # Lexical overlap with an example or plan cannot establish a live result.
+    if _LIVE_OBSERVATION.search(claim_lower):
+        subject = re.sub(r"\b(?:live|observed|confirmed|verified)\b", "", claim_lower)
+        passage = _best_snippet(subject, source_lower)
+        if not _LIVE_OBSERVATION.search(passage):
+            return True
 
     # Certainty escalation
     for marker in _CERTAINTY_ESC_MARKERS:

@@ -312,7 +312,7 @@ class DocxRenderer(DocumentRenderer):
                 h_text = first_line[2:].strip()
                 h_p = doc.add_heading(h_text, level=1)
                 if ctx.title_page:
-                    h_p.paragraph_format.page_break_before = "reference" in h_text.lower()
+                    h_p.paragraph_format.page_break_before = h_text.strip().casefold() == "references"
                     h_p.paragraph_format.space_before = Pt(0)
                     h_p.paragraph_format.space_after = Pt(0)
                     for run in h_p.runs:
@@ -323,7 +323,7 @@ class DocxRenderer(DocumentRenderer):
                     h_p.paragraph_format.space_after = Pt(6)
                     for run in h_p.runs:
                         run.font.name = ctx.font_family
-                in_references = "reference" in h_text.lower()
+                in_references = h_text.strip().casefold() == "references"
                 continue
 
             # Heading 2
@@ -331,7 +331,7 @@ class DocxRenderer(DocumentRenderer):
                 h_text = first_line[3:].strip()
                 h_p = doc.add_heading(h_text, level=2)
                 if ctx.title_page:
-                    h_p.paragraph_format.page_break_before = "reference" in h_text.lower()
+                    h_p.paragraph_format.page_break_before = h_text.strip().casefold() == "references"
                     h_p.paragraph_format.space_before = Pt(0)
                     h_p.paragraph_format.space_after = Pt(0)
                     for run in h_p.runs:
@@ -342,7 +342,7 @@ class DocxRenderer(DocumentRenderer):
                     h_p.paragraph_format.space_after = Pt(4)
                     for run in h_p.runs:
                         run.font.name = ctx.font_family
-                in_references = "reference" in h_text.lower()
+                in_references = h_text.strip().casefold() == "references"
                 continue
 
             # Heading 3
@@ -417,7 +417,8 @@ class DocxRenderer(DocumentRenderer):
             p.paragraph_format.line_spacing = ctx.line_spacing
 
             if in_references:
-                # APA 7 hanging indent for References
+                # APA 7 spacing and hanging indent for References
+                p.paragraph_format.line_spacing = 2
                 p.paragraph_format.left_indent = Inches(0.5)
                 p.paragraph_format.first_line_indent = Inches(-0.5)
 

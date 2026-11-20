@@ -89,3 +89,17 @@ def test_identifier_kinds_present_reports_matching_kinds():
         "cve",
         "mitre_attack_technique",
     }
+
+
+def test_windows_event_lists_check_each_complete_identifier():
+    findings = find_ungrounded_identifiers(
+        "Security event IDs 4720, 4722, and 4725 were reported.",
+        ["Event ID: 4720", "Security event 47250"],
+    )
+    assert [finding.identifier for finding in findings] == ["Event ID 4722", "Event ID 4725"]
+
+
+def test_windows_event_shorthand_matches_explicit_source_label():
+    assert not find_ungrounded_identifiers(
+        "Windows event 4720 was documented.", ["The provider lists Event ID 4720."]
+    )

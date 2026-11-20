@@ -281,3 +281,41 @@ def test_writer_provider_failure_raises_clear_error():
             existing_sources=[s1],
             custom_backend=fake_failing_backend,
         )
+
+
+def test_mock_writer_cannot_promote_a_fixture_result_to_live_observation(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOWLWRITER_RUNS_DIR", str(tmp_path / "runs"))
+    sources = [
+        Source("S001", "Live check", ["Example Team"],
+               retrieved_text="The gateway health signal was observed live."),
+        Source("S002", "Native fixture", ["Example Team"],
+               retrieved_text="The endpoint alert was reproduced in a native fixture only."),
+        Source("S003", "Predicate check", ["Example Team"],
+               retrieved_text="A predicate-only check matched the simulated service tag."),
+        Source("S004", "Pending work", ["Example Team"],
+               retrieved_text="The planned test will check replay deduplication."),
+    ]
+    spec = AssignmentSpec(
+        title="Telemetry evidence review", topic="Validation of telemetry checks.",
+        target_words=35, word_tolerance_percent=50, outline=["Analysis"],
+        source_requirements=SourceRequirements(minimum_sources=1),
+    )
+    backend = FakeAgentBackend(
+        agent_id="fake_writer",
+        default_stdout="""```yaml
+body_markdown: |
+  # Telemetry evidence review
+
+  ## Analysis
+  The gateway health signal was observed live [S001].
+  The endpoint alert was observed live [S002].
+  The predicate-only check matched the simulated service tag [S003].
+  Replay deduplication remains planned [S004].
+  Security event IDs 4720, 4722, and 4725 were reported.
+word_count_estimate: 38
+```""",
+    )
+    result = run_academic_pipeline(spec, default_config(), existing_sources=sources, custom_backend=backend)
+    assert result.report.status == "NEEDS_REVIEW"
+    assert result.verification_summary.unsupported_claims >= 1
+    assert any("4725" in warning for warning in result.verification_summary.identifier_warnings)

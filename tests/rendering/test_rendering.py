@@ -161,6 +161,9 @@ def test_docx_renderer_assignment_formatting():
     word_doc = docx.Document(io.BytesIO(artifact.binary_content))
 
     assert word_doc.styles["Normal"].paragraph_format.line_spacing == 1.5
+    reference = next(p for p in word_doc.paragraphs if p.text == "Ref (2024).")
+    assert reference.paragraph_format.line_spacing == 2
+    assert reference.paragraph_format.first_line_indent.inches == -0.5
     texts = [p.text for p in word_doc.paragraphs]
     for line in ("Jane Student", "Example University", "INFA 000", "Deliverable 1", "Dr. Example", "2026-09-12"):
         assert line in texts
@@ -224,6 +227,8 @@ def test_pdf_renderer_assignment_formatting_adds_title_page_and_spacing():
     assert "line-height: 1.5;" in html_doc
     assert 'class="title-page"' in html_doc
     assert 'class="references-heading"' in html_doc
+    assert '.reference-entry {\n    line-height: 2;' in html_doc
+    assert '<p class="reference-entry">Ref (2024).</p>' in html_doc
     assert "break-before: page;" in html_doc
     assert "h1 {\n    font-size: 12pt;" in html_doc
     assert "h2 {\n    font-size: 12pt;" in html_doc

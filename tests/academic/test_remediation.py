@@ -1,6 +1,7 @@
 """Focused regression tests for the correctness-remediation milestone."""
 
 from datetime import date
+import pytest
 
 from howlwriter.academic.research import (
     classify_source_relevance,
@@ -162,3 +163,15 @@ def test_abstract_does_not_support_stronger_claim():
     )
     _, summary = AcademicVerifier().build_provenance_and_verify(doc, [src])
     assert summary.unsupported_claims >= 1
+
+
+@pytest.mark.parametrize("limited", [
+    "A native fixture reported the endpoint alert. Live verification was not performed.",
+    "The endpoint alert passed a predicate-only check.",
+    "The planned test will check the endpoint alert.",
+    "The gateway health signal was observed live. The endpoint alert passed a predicate-only check.",
+])
+def test_live_observation_cannot_be_inferred_from_limited_evidence(limited):
+    claim = Claim(id="c1", text="The endpoint alert was observed live.", claim_type=ClaimType.FACTUAL)
+    assert _claim_escalates_evidence(claim, limited)
+    assert not _claim_escalates_evidence(claim, "The endpoint alert was observed live.")

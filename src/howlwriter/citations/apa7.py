@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 import re
 
 from howlwriter.domain.serialization import DataClassSerializationMixin
-from howlwriter.domain.source import Source
+from howlwriter.domain.source import Source, SourceType
 
 CITATION_METADATA_MISSING = "CITATION_METADATA_MISSING"
 CITATION_TITLE_CASE = "CITATION_TITLE_CASE"
@@ -281,8 +281,37 @@ def _short_title(title: str, *, max_words: int = 6) -> str:
     return sentence_title if len(words) <= max_words else " ".join(words[:max_words]) + "..."
 
 
+def _reference_sort_key(source: Source) -> tuple:
+    names = tuple(_format_author(author).casefold() for author in source.authors)
+    day = source.publication_date
+    return names or (source.title.casefold(),), day.year if day else -1, source.title.casefold(), source.id
+
+
+def _year_suffix(index: int) -> str:
+    prefix, letter = divmod(index, 26)
+    return (_year_suffix(prefix - 1) if prefix else "") + chr(ord("a") + letter)
+
+
+def citation_years(sources: list[Source]) -> dict[str, str]:
+    """Allocate stable citation labels over the evidence given to the writer."""
+    groups: dict[tuple, list[Source]] = {}
+    for source in sorted(sources, key=_reference_sort_key):
+        names = tuple(" ".join(author.split()).casefold() for author in source.authors)
+        year, _ = _year_str(source)
+        groups.setdefault((names, year), []).append(source)
+
+    years = {}
+    for group in groups.values():
+        for index, source in enumerate(group):
+            year, _ = _year_str(source)
+            if len(group) > 1 and source.authors:
+                year += ("-" if year == "n.d." else "") + _year_suffix(index)
+            years[source.id] = year
+    return years
+
+
 class APA7Formatter:
-    def reference_entry(self, source: Source) -> CitationResult:
+    def reference_entry(self, source: Source, *, markdown: bool = False, year: str | None = None) -> CitationResult:
         warnings: list[CitationWarning] = []
 
         author_str, author_warning = _author_list_str(source.authors)
@@ -290,6 +319,7 @@ class APA7Formatter:
             warnings.append(author_warning)
 
         year_str, year_warning = _year_str(source)
+        year_str = year or year_str
         if year_warning:
             warnings.append(year_warning)
 
@@ -308,6 +338,11 @@ class APA7Formatter:
                     ),
                 )
             )
+
+        if markdown and source.source_type in {
+            SourceType.BOOK, SourceType.DATASET, SourceType.REPORT, SourceType.WEBSITE,
+        }:
+            title = f"*{title}*"
 
         segments: list[str] = []
         if author_str:
@@ -338,8 +373,9 @@ class APA7Formatter:
 
         return CitationResult(text=" ".join(segments), warnings=warnings)
 
-    def in_text_parenthetical(self, source: Source) -> CitationResult:
+    def in_text_parenthetical(self, source: Source, *, year: str | None = None) -> CitationResult:
         year_str, year_warning = _year_str(source)
+        year_str = year or year_str
         warnings = [year_warning] if year_warning else []
 
         if not source.authors:
@@ -361,8 +397,9 @@ class APA7Formatter:
             who = f"{surnames[0]} et al."
         return CitationResult(text=f"({who}, {year_str})", warnings=warnings)
 
-    def narrative(self, source: Source) -> CitationResult:
+    def narrative(self, source: Source, *, year: str | None = None) -> CitationResult:
         year_str, year_warning = _year_str(source)
+        year_str = year or year_str
         warnings = [year_warning] if year_warning else []
 
         if not source.authors:
@@ -384,23 +421,16 @@ class APA7Formatter:
             who = f"{surnames[0]} et al."
         return CitationResult(text=f"{who} ({year_str})", warnings=warnings)
 
-    def reference_page(self, sources: list[Source]) -> CitationResult:
+    def reference_page(
+        self, sources: list[Source], *, markdown: bool = False, years: dict[str, str] | None = None,
+    ) -> CitationResult:
         """Alphabetize references, then order one author's works by year."""
-
-        def sort_key(source: Source) -> tuple[str, int, str]:
-            if source.authors:
-                author_or_title = _surname(source.authors[0]).casefold()
-            else:
-                author_or_title = source.title.casefold()
-            # Undated works precede dated works for the same author. Title is
-            # a stable tie-breaker for multiple works from the same year.
-            year = source.publication_date.year if source.publication_date else -1
-            return author_or_title, year, source.title.casefold()
-
+        if years is None:
+            years = citation_years(sources)
         warnings: list[CitationWarning] = []
         entries: list[str] = []
-        for source in sorted(sources, key=sort_key):
-            result = self.reference_entry(source)
+        for source in sorted(sources, key=_reference_sort_key):
+            result = self.reference_entry(source, markdown=markdown, year=years[source.id])
             entries.append(result.text)
             warnings.extend(result.warnings)
-        return CitationResult(text="\n".join(entries), warnings=warnings)
+        return CitationResult(text=("\n\n" if markdown else "\n").join(entries), warnings=warnings)

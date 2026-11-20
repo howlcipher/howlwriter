@@ -57,14 +57,14 @@ def _markdown_to_html(markdown_text: str, title: str, context: RenderContext) ->
         # Headings
         if first.startswith("# "):
             h_text = html.escape(first[2:].strip())
-            css_class = ' class="references-heading"' if "reference" in h_text.lower() else ""
+            css_class = ' class="references-heading"' if h_text.strip().casefold() == "references" else ""
             html_parts.append(f"<h1{css_class}>{h_text}</h1>")
-            in_references = "reference" in h_text.lower()
+            in_references = h_text.strip().casefold() == "references"
             continue
         elif first.startswith("## "):
             h_text = html.escape(first[3:].strip())
             html_parts.append(f"<h2>{h_text}</h2>")
-            in_references = "reference" in h_text.lower()
+            in_references = h_text.strip().casefold() == "references"
             continue
         elif first.startswith("### "):
             h_text = html.escape(first[4:].strip())
@@ -237,6 +237,7 @@ def _markdown_to_html(markdown_text: str, title: str, context: RenderContext) ->
     text-align: justify;
   }}
   .reference-entry {{
+    line-height: 2;
     margin-left: 0.5in;
     text-indent: -0.5in;
     margin-bottom: {reference_after};

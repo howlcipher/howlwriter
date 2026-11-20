@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+* Hold academic drafts for review when an explicit live observation lacks matching live evidence or a Windows event identifier is unsupported, including identifiers in lists. Carry fixture and predicate scope into drafting instructions.
+* Resolve same-author, same-year and undated APA citation labels consistently during drafting and reference generation. Format standalone work titles and reference paragraphs for Word and both PDF renderers. Document the public local academic workflow and launcher recovery.
+
 * Make the test suite hermetic and tighten the lint gate. Every test now runs with its own empty home folder, HowlWriter stores (voices, identities, projects, credentials, preferences), XDG folders and git identity, so a run no longer creates or reads `~/.howlwriter` or the developer's git settings. HowlWriter no longer imports the legacy `src.control_plane` layout: HowlPlane is found as `howlplane.control_plane`, from an installed package or from a checkout that has `src/howlplane` or `howlplane` (a folder without that package is never added to the import path). CI lint now covers `tests/` and checks F811, F841, F632 and F541 in addition to F821 and F401; the unused imports and variables it found were removed.
 * Fix publishing and verification: `google logout` reports what it actually did; Drive folder IDs are validated and quoted in queries; entailment checks notice negation; repository evidence requires explicit roots, stays inside them and checks cited commits; DOI lookups validate the identifier before contacting a service.
 * Harden the web server: requests are accepted only for the hosts being served; cross-origin write requests are refused; static files are served only from the bundled folder; document endpoints and publishing accept only text files in ordinary folders; CORS headers are removed; `howlwriter ui` refuses non-loopback hosts unless `--allow-network-access` is given. FastAPI 0.132 or newer is required.

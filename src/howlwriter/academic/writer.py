@@ -14,7 +14,7 @@ from howlwriter.domain.genres import PROFILES, parse_genre
 from howlwriter.replies.untrusted import FENCE_RULE, fence_untrusted, one_line
 from howlwriter.academic.redundancy import RedundancyResult
 from howlwriter.academic.spec import AssignmentSpec
-from howlwriter.citations.apa7 import APA7Formatter
+from howlwriter.citations.apa7 import APA7Formatter, citation_years
 from howlwriter.config.schema import HowlWriterConfig
 from howlwriter.domain.document import Document
 from howlwriter.domain.modes import WritingMode
@@ -85,13 +85,15 @@ class ModelAcademicWriter:
 
         # Build formatted source list with exact APA in-text citation keys
         source_context_lines: list[str] = []
-        for s in sources:
-            parenthetical = one_line(formatter.in_text_parenthetical(s).text, 120)
-            narrative = one_line(formatter.narrative(s).text, 120)
+        usable_sources = [source for source in sources if source.is_usable]
+        years = citation_years(usable_sources)
+        for s in usable_sources:
+            year_str = years[s.id]
+            parenthetical = one_line(formatter.in_text_parenthetical(s, year=year_str).text, 120)
+            narrative = one_line(formatter.narrative(s, year=year_str).text, 120)
             authors_str = one_line(", ".join(s.authors), 300) if s.authors else "No listed author"
             safe_id = re.sub(r"[^A-Za-z0-9._-]", "", s.id)[:24] or "source"
             safe_title = one_line(s.title, 300)
-            year_str = str(s.publication_date.year) if s.publication_date else "n.d."
 
             source_context_lines.append(
                 f"[{safe_id}] Title: {safe_title}\n"
@@ -189,7 +191,10 @@ CRITICAL ACADEMIC WRITING RULES:
    retrieved source evidence above and is relevant to the point being made, prefer reusing it
    exactly as given rather than generalizing it away -- grounded precision is preferred over
    unnecessary vagueness. Only generalize when no such grounded value exists.
-6. If evidence is insufficient for a claim, qualify the statement (e.g. "Research suggests...") or omit it.
+6. If evidence is insufficient for a claim, qualify it or omit it. Keep the scope of each
+   verification result. Live observations, native fixture tests, and isolated predicate checks
+   support different conclusions. An assignment requirement or planned test supplies no evidence
+   of execution. Never turn a fixture or predicate result into a live observation.
 7. {outline_rule}
 8. Aim for approximately {aim_words} words -- near the lower-middle of the allowed range, not the
    maximum. Stop once the outline and explicit requirements are fully addressed with sufficient
