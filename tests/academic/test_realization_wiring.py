@@ -155,14 +155,20 @@ def test_academic_pipeline_forwards_realization_to_humanizer(tmp_path, monkeypat
     cfg = default_config()
     cfg.voice_profile = str(tmp_path / "profile.json")
 
+    backend = FakeAgentBackend(agent_id="fake_academic_backend", default_stdout=BACKEND_STDOUT)
+
+    def refine_or_draft(_task, _cwd, prompt):
+        backend.default_stdout = (
+            "```yaml\nresulting_text: ''\nchanges_made: []\nrationale: Already clear.\n```"
+            if "HUMANIZER writing role" in prompt else BACKEND_STDOUT
+        )
+
+    backend.side_effect = refine_or_draft
     run_academic_pipeline(
         spec,
         cfg,
         existing_sources=[source],
-        custom_backend=FakeAgentBackend(
-            agent_id="fake_academic_backend",
-            default_stdout=BACKEND_STDOUT,
-        ),
+        custom_backend=backend,
     )
 
     assert "realization" in captured, (

@@ -1,5 +1,7 @@
 """Tests for deterministic academic word counting and tolerance evaluation."""
 
+import pytest
+
 from howlwriter.academic.length import (
     calculate_word_tolerance,
     count_body_words,
@@ -10,6 +12,7 @@ from howlwriter.academic.length import (
     strip_frontmatter,
 )
 from howlwriter.academic.spec import AssignmentSpec, LengthConstraints
+from howlwriter.domain.markdown import split_short_form_document
 
 
 def test_strip_frontmatter():
@@ -190,3 +193,15 @@ def test_evaluate_word_count_bounds_too_short_unaffected_by_hard_max():
         1000, _MIN_WORDS, _SOFT_MAX_WORDS, _TARGET_WORDS, hard_max_words=_HARD_MAX_WORDS
     )
     assert status == "TOO_SHORT"
+
+
+@pytest.mark.parametrize("heading", [
+    "# References", "### Bibliography", "**REFERENCES**", "References",
+    "###### Works Cited", "Bibliography\n------------", "## 3. Reference List:",
+])
+def test_short_form_count_and_reference_section_use_the_same_boundary(heading):
+    body = "Tally the rows (Vale, 2024).\n\n## Next steps\n\nCompare the totals."
+    refs = "Vale, T. (2024). *Tallying rows*."
+    text = f"---\nkey: value\n---\n# Orchard notes\n\n{body}\n\n{heading}\n\n{refs}"
+    assert split_short_form_document(text) == (body, "\n" + refs)
+    assert count_body_words(text, short_form=True) == count_body_words(body) == 10

@@ -392,5 +392,13 @@ def _bridge_with(body: str):
         "```yaml\nbody_markdown: |\n  " + body + "\nadded_claims: []\ngaps: []\nwarnings: []\n```"
     )
     _, backend = _bridge(agent_id="fake", stdout=stdout)
+
+    def respond_by_role(_task, _cwd, prompt):
+        backend.default_stdout = (
+            "resulting_text: ''\nchanges_made: []\n"
+            if "HUMANIZER writing role" in prompt else stdout
+        )
+
+    backend.side_effect = respond_by_role
     _BACKEND = backend
     return backend

@@ -374,6 +374,8 @@ package), `lint --workflow-leakage --genre ...` and `finalize --changes` check
 accuracy, context and completeness without editing your text. The Google Docs
 publisher confirms a publication by reading it back. See
 [docs/reliability.md](docs/reliability.md) for the states, exit codes and limits.
+The [academic discussion workflow](docs/reliability.md#academic-discussion-workflow)
+covers shared body counts, voice-score thresholds, peer grounding and handoff.
 
 ## LinkedIn post queue (in progress)
 

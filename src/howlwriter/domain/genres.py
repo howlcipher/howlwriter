@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import enum
 import re
 
+from howlwriter.domain.markdown import split_short_form_document
 from howlwriter.domain.serialization import DataClassSerializationMixin
 
 
@@ -32,6 +33,10 @@ def parse_genre(value: str | AcademicGenre | None) -> AcademicGenre | None:
         return AcademicGenre(str(value).strip().lower().replace("-", "_"))
     except ValueError:
         return None
+
+
+def is_short_form_academic(genre: AcademicGenre | str | None) -> bool:
+    return parse_genre(genre) in (AcademicGenre.DISCUSSION, AcademicGenre.PEER_REPLY)
 
 
 def base_mode_name(mode: str | None) -> str:
@@ -122,8 +127,7 @@ _THIRD_PERSON_OPENING = re.compile(
 _PAPER_REGISTER = re.compile(
     r"\b(?:this\s+(?:paper|essay|study|report)\s+(?:will|examines|argues|explores)|in\s+conclusion|"
     r"the\s+remainder\s+of\s+this|in\s+summary,|to\s+summari[sz]e,)", re.IGNORECASE)
-_HEADING = re.compile(r"^\s*#{1,6}\s+\S", re.MULTILINE)
-_REFERENCES_HEADING = re.compile(r"^[ \t]*(?:#{1,6}[ \t]*|\*\*)[ \t]*(?:references|bibliography)\b", re.IGNORECASE | re.MULTILINE)
+_HEADING = re.compile(r"^[ \t]*(?:#{1,6}[ \t]+\S[^\n]*|\S[^\n]*\n[ \t]*(?:=+|-+)[ \t]*$)", re.MULTILINE)
 
 
 @dataclass
@@ -134,17 +138,12 @@ class GenreFinding(DataClassSerializationMixin):
     matched_text: str = ""
 
 
-def _body_before_references(text: str) -> str:
-    m = _REFERENCES_HEADING.search(text)
-    return text[: m.start()] if m else text
-
-
 def check_genre_conformance(text: str, genre: AcademicGenre | str | None) -> list[GenreFinding]:
     """Findings where text reads like the wrong genre. Reports only; never edits."""
     genre = parse_genre(genre)
     if genre is None or genre is AcademicGenre.RESEARCH_PAPER:
         return []
-    body = _body_before_references(text).strip()
+    body, _ = split_short_form_document(text)
     findings: list[GenreFinding] = []
     heading = _HEADING.search(body)
     if heading:

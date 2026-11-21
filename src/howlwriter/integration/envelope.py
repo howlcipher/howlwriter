@@ -1,4 +1,4 @@
-"""The draft inside a writer reply, even when the reply's YAML does not parse.
+"""Extract draft and refinement prose from provider responses.
 
 Writer prompts ask for a fenced YAML block whose ``body_markdown`` holds the
 draft. HowlPlane parses it into ``structured_output``. A small model often
@@ -103,3 +103,109 @@ def writer_envelope(result: Any) -> dict[str, Any]:
         return structured
     raw = getattr(result, "raw_output", None) or ""
     return salvage(raw) or {"body_markdown": unfenced(raw)}
+
+
+_REFINEMENT_FIELDS = {"resulting_text", "changes_made", "rationale", "warnings"}
+_REFINEMENT_KEY = re.compile(
+    r'^["\']?(?:resulting_text|changes_made)["\']?[ \t]*:', re.MULTILINE
+)
+_REFINEMENT_JSON_KEY = re.compile(r'"(?:resulting_text|changes_made)"\s*:')
+_FENCE_LINE = re.compile(r"^( {0,3})(`{3,}|~{3,})([^\n]*)$", re.MULTILINE)
+
+
+class _RefinementLoader(yaml.SafeLoader):
+    """Read data without aliases or silently overwritten mapping keys."""
+
+    def compose_node(self, parent, index):
+        if self.check_event(yaml.AliasEvent):
+            raise yaml.YAMLError("aliases are ambiguous in a refinement")
+        return super().compose_node(parent, index)
+
+    def construct_mapping(self, node, deep=False):
+        mapping = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if not isinstance(key, str) or key in mapping:
+                raise yaml.YAMLError("refinement mapping keys must be unique strings")
+            mapping[key] = self.construct_object(value_node, deep=deep)
+        return mapping
+
+
+def _has_refinement_fields(text: str) -> bool:
+    text = text.lstrip()
+    return bool(_REFINEMENT_KEY.search(text) or (text.startswith("{") and _REFINEMENT_JSON_KEY.search(text)))
+
+
+def _refinement_candidates(raw: str) -> list[str]:
+    candidates = []
+    outside = []
+    offset = 0
+    opening = None
+    for fence in _FENCE_LINE.finditer(raw):
+        if opening is None:
+            opening = fence
+            continue
+        indent, marker, tail = fence.groups()
+        if tail.strip() or len(indent) > len(opening[1]) or not marker.startswith(opening[2]):
+            continue
+        content = raw[opening.end() + 1:fence.start()]
+        language = opening[3].strip().lower()
+        if language in ("", "yaml", "yml", "json"):
+            standalone = not (raw[:opening.start()].strip() or raw[fence.end():].strip())
+            if _has_refinement_fields(content) or (language and standalone):
+                candidates.append(content)
+        outside.append(raw[offset:opening.start()])
+        offset = fence.end()
+        opening = None
+
+    outside.append(raw[offset:])
+    unwrapped = "".join(outside).strip()
+    unfinished_wrapper = opening is not None and opening[3].strip().lower() in ("yaml", "yml", "json")
+    if _has_refinement_fields(unwrapped) or unfinished_wrapper:
+        candidates.append(unwrapped)
+    return candidates
+
+
+def refinement_envelope(result: Any) -> dict[str, Any]:
+    """Validate a single provider envelope, or preserve an ordinary Markdown response."""
+    raw = (result.raw_output or "").replace("\r\n", "\n")
+    # The agent CLI can include the echoed prompt before the model's answer.
+    if raw.lstrip().startswith("OpenAI Codex"):
+        raw = raw.partition("\ncodex\n")[2].partition("\ntokens used\n")[0] or raw
+    candidates = _refinement_candidates(raw)
+
+    error = "Invalid refinement response. Ask the provider for one YAML block with resulting_text and changes_made."
+    if len(candidates) > 1:
+        raise ValueError(error)
+    structured = result.structured_output
+    if candidates:
+        try:
+            structured = yaml.load(candidates[0], Loader=_RefinementLoader)
+        except (yaml.YAMLError, RecursionError):
+            raise ValueError(error) from None
+    elif not isinstance(structured, dict) or not (_REFINEMENT_FIELDS & structured.keys()):
+        if not raw.strip():
+            raise RuntimeError("The provider returned an empty or unparseable refinement response. Retry the command.")
+        return {"resulting_text": raw}
+
+    if not isinstance(structured, dict):
+        raise ValueError(error)
+    text = structured.get("resulting_text")
+    changes = structured.get("changes_made", None)
+    if not isinstance(text, str) or (not text.strip() and changes != []):
+        raise ValueError(error)
+    if changes is not None and not isinstance(changes, list):
+        raise ValueError(error)
+    for change in changes or []:
+        if not isinstance(change, (str, dict)):
+            raise ValueError(error)
+        if isinstance(change, dict) and any(
+            field in change and not isinstance(change[field], str) for field in ("description", "reason")
+        ):
+            raise ValueError(error)
+    for field, expected in (("rationale", str), ("warnings", list)):
+        if field in structured and not isinstance(structured[field], expected):
+            raise ValueError(error)
+    if any(not isinstance(warning, str) for warning in structured.get("warnings", [])):
+        raise ValueError(error)
+    return structured

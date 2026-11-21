@@ -32,6 +32,20 @@ def test_evaluate_reports_both_scores_independently(built):
     assert report["voice_match"]["status"] == "SCORED"
 
 
+def test_short_discussion_stays_below_calibrated_voice_and_naturalness_thresholds(built):
+    body = "The volunteers log readings so the next shift can compare new and old totals. " * 13
+    adorned = "# " + "Orchard " * 150 + "\n\n" + body + "\n\n## References\n\n" + "Reading notes. " * 160
+    options = {"identity": "william", "mode": "academic_discussion"}
+    plain = evaluate_text(body, **options)
+    report = evaluate_text(adorned, **options)
+    assert report["profile_selection"]["voice"] == "william-academic"
+    assert report["words"] == plain["words"] == 182
+    for metric in ("naturalness", "voice_match"):
+        assert report[metric] == plain[metric]
+        assert report[metric]["score"] is None
+        assert "at least" in report[metric]["reason"]
+
+
 def test_mode_routing_and_missing_profiles_degrade_with_reasons(built):
     report = evaluate_text(author_a(901), identity="william", mode="linkedin")
     assert report["context"] == "professional"

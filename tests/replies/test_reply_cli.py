@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from datetime import date
 
+import pytest
+
 from howlwriter.academic.pipeline import run_academic_pipeline
 from howlwriter.academic.spec import AssignmentSpec
 from howlwriter.cli.main import main
@@ -48,6 +50,44 @@ class TestReplyCheckCommand:
 
     def test_unreadable_reply_is_a_usage_error(self, tmp_path):
         assert main(["reply", "check", str(tmp_path / "nope.md")]) == 1
+
+    @pytest.mark.parametrize("post, opening, state, finding", [
+        ("Fifth step: Test incident response before the exercise.",
+         "Your fifth step about testing incident response is worth expanding.",
+         "GROUNDED", None),
+        ("Fifth step: Test incident response before the exercise.",
+         "Your fifth step about never testing incident response is worth expanding.",
+         "PARTIALLY_GROUNDED", "REPLY_ATTRIBUTION_POLARITY"),
+        ("Does endpoint management need to see personal apps?",
+         "Your question about whether endpoint management needs to see personal apps deserves a closer look.",
+         "GROUNDED", None),
+        ("Does endpoint management need to see personal apps?",
+         "Your question about whether grounds crews should replace garden beds deserves a closer look.",
+         "UNSUPPORTED", "REPLY_ATTRIBUTION_UNSUPPORTED"),
+    ])
+    def test_direct_address_topics_still_require_support(self, tmp_path, capsys, post, opening, state, finding):
+        peer = _write(tmp_path, "peer.md", post)
+        reply = _write(tmp_path, "reply.md", opening + "\n\n"
+                       "I would assign separate roles for logging and debriefing. "
+                       "A dated checklist would give the next shift a baseline.")
+        assert main(["reply", "check", reply, "--post", f"Casey={peer}", "--json"]) == (0 if not finding else 3)
+        report = json.loads(capsys.readouterr().out)
+        assert report["state"] == state
+        assert report["attributions"][0]["best_post_sentence"] == post
+        if finding:
+            assert finding in {f["code"] for f in report["findings"]}
+        else:
+            assert report["attributions"][0]["status"] == "SUPPORTED"
+
+    @pytest.mark.parametrize("opening", ["Hi, Casey.", "Casey, your turn.", "Hi, Casey. Your post was thoughtful."])
+    def test_greeting_or_thin_attribution_is_not_grounding(self, tmp_path, capsys, opening):
+        peer = _write(tmp_path, "peer.md", "Does endpoint management need to see personal apps?")
+        reply = _write(tmp_path, "reply.md", opening + "\n\n"
+                       "I would assign separate roles for logging and debriefing. "
+                       "A dated checklist would give the next shift a baseline.")
+        assert main(["reply", "check", reply, "--post", f"Casey={peer}", "--json"]) == 3
+        report = json.loads(capsys.readouterr().out)
+        assert "REPLY_NO_ATTRIBUTION_FOUND" in {f["code"] for f in report["findings"]}
 
 
 _BACKEND_REPLY = """```yaml

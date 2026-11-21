@@ -22,6 +22,7 @@ from pathlib import Path
 
 import yaml
 
+from howlwriter.domain.genres import is_short_form_academic
 from howlwriter.evaluation.personal import compare_texts, evaluate_text
 from howlwriter.voice.corpus.extract import extract
 
@@ -38,7 +39,7 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
     parser.add_argument(
         "--mode",
         default=None,
-        help="Writing mode (academic, professional, linkedin, technical, documentation, email).",
+        help="Writing mode or academic genre (e.g. academic_discussion or academic_peer_reply).",
     )
     parser.add_argument("--voice", default=None, help="Compare against this named profile.")
     parser.add_argument("--identity", default=None, help="Choose among this identity's profiles.")
@@ -91,11 +92,16 @@ def _score_line(label: str, block: dict, extra: str = "") -> str:
 def render(report: dict, display_name: str = "") -> str:
     lines: list[str] = []
     selection = report["profile_selection"]
-    lines.append(f"Evaluation ({report['context']} context, {report['words']} words)")
+    short_form = is_short_form_academic(report["mode"])
+    word_label = "body words" if short_form else "words"
+    lines.append(f"Evaluation ({report['context']} context, {report['words']} {word_label})")
     lines.append(f"Profile: {selection['voice'] or 'none'} -- {selection['reason']}")
     lines.append("")
     natural = report["naturalness"]
     voice = report["voice_match"]
+    if short_form:
+        lines.append(f"Naturalness sample: {natural['words']} words")
+        lines.append(f"Voice Match sample: {voice['words']} words")
     voice_label = f"{display_name} Voice Match" if display_name else "Personal Voice Match"
     lines.append(_score_line("Human Naturalness", natural))
     lines.append(_score_line(voice_label, voice, f"{voice['band']}  " if voice.get("band") else ""))

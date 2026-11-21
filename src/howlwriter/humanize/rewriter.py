@@ -23,6 +23,7 @@ from howlwriter.domain.report import ChangeRecord
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.domain.voice import VoiceProfile
 from howlwriter.humanize.detector import detect
+from howlwriter.integration.envelope import refinement_envelope
 from howlwriter.integration.howlplane_bridge import get_howlplane_bridge
 from howlwriter.integration.model_role import NotConfiguredRole, WritingRole
 from howlwriter.linting.engine import LintEngine
@@ -98,6 +99,7 @@ class ModelHumanizeResult(DataClassSerializationMixin):
     duration_seconds: float = 0.0
     independence_status: str = "INDEPENDENT"
     metadata: dict[str, Any] = field(default_factory=dict)
+    replacement_text: str | None = None
 
 
 MAX_SINGLE_PASS_CHARS = 100_000
@@ -447,16 +449,11 @@ class ModelHumanizerRewriter:
                 f"Humanizer provider '{result.provider}' failed: {err}"
             )
 
-        structured = result.structured_output or {}
-        new_text = structured.get("resulting_text")
-        if not new_text or not isinstance(new_text, str) or not new_text.strip():
-            # Fallback to raw output if structured parse didn't find resulting_text
-            new_text = result.raw_output.strip()
-
-        if not new_text or not new_text.strip():
-            raise RuntimeError(
-                f"Humanizer provider '{result.provider}' returned an empty or unparseable response."
-            )
+        structured = refinement_envelope(result)
+        new_text = structured["resulting_text"]
+        unchanged = not new_text.strip() or (
+            structured.get("changes_made") == [] and new_text.rstrip("\n") == document.text
+        )
 
         changes: list[ChangeRecord] = []
         if "changes_made" in structured and isinstance(structured["changes_made"], list):
@@ -483,9 +480,7 @@ class ModelHumanizerRewriter:
             str(w) for w in structured.get("warnings", []) if isinstance(w, str)
         ]
 
-        new_doc = Document.parse(
-            new_text, title=document.title, mode=document.mode
-        )
+        new_doc = document if unchanged else Document.parse(new_text, title=document.title, mode=document.mode)
         return ModelHumanizeResult(
             document=new_doc,
             changes=changes,
@@ -496,4 +491,5 @@ class ModelHumanizerRewriter:
             duration_seconds=result.duration_seconds,
             independence_status=result.independence_status,
             metadata=result.metadata,
+            replacement_text=None if unchanged else new_text,
         )

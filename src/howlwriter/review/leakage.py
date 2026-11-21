@@ -18,6 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from howlwriter.domain.markdown import split_short_form_document
+from howlwriter.domain.genres import is_short_form_academic
 from howlwriter.domain.sentences import split_sentences
 from howlwriter.domain.serialization import DataClassSerializationMixin
 
@@ -121,7 +123,8 @@ def detect_leakage(text: str, *, genre: str = "") -> list[LeakageFinding]:
     placeholders) still are.
     """
     findings: list[LeakageFinding] = []
-    sentences = split_sentences(_body(text).replace("\n", " "))
+    body = split_short_form_document(text)[0] if is_short_form_academic(genre) else _body(text)
+    sentences = split_sentences(body.replace("\n", " "))
     for index, sentence in enumerate(sentences):
         for code, severity, pattern, why in _RULES:
             if code == LEAK_SOURCE_PROCESS and genre == "academic_research_paper":

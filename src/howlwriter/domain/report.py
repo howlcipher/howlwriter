@@ -190,7 +190,7 @@ class WritingReport(DataClassSerializationMixin):
             lines.append("")
 
         # Academic Word Count Section
-        if self.target_words is not None:
+        if self.target_words is not None or self.actual_body_words is not None:
             lines.append("Word Count:")
             if self.target_pages_min is not None and self.target_pages_max is not None:
                 lines.append(
@@ -198,7 +198,8 @@ class WritingReport(DataClassSerializationMixin):
                 )
             if self.max_pages is not None:
                 lines.append(f"  Maximum Pages:       {self.max_pages:g}")
-            lines.append(f"  Target Words:        {self.target_words}")
+            if self.target_words is not None:
+                lines.append(f"  Target Words:        {self.target_words}")
             if self.min_words is not None and self.max_words is not None:
                 lines.append(f"  Allowed Range:       {self.min_words}–{self.max_words}")
             if self.hard_max_words is not None:

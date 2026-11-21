@@ -61,6 +61,16 @@ def _configure(stdout: str):
             RoleBinding(domain="writing", role=role, provider="fake_provider")
         )
     backend = FakeAgentBackend(agent_id="fake_provider", default_stdout=stdout)
+
+    def respond_by_role(_task, _cwd, prompt):
+        if "HUMANIZER writing role" in prompt:
+            backend.default_stdout = "resulting_text: ''\nchanges_made: []\n"
+        elif "MEANING_REVIEWER" in prompt:
+            backend.default_stdout = 'verdict: "PASS"\ndifferences: []\n'
+        else:
+            backend.default_stdout = stdout
+
+    backend.side_effect = respond_by_role
     set_howlplane_bridge(
         HowlPlaneWritingBridge(
             dispatcher=RoleDispatcher(binding_registry=registry), registry=registry

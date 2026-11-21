@@ -9,11 +9,12 @@ import json
 from pathlib import Path
 import sys
 
+from howlwriter.domain.markdown import split_short_form_document
 from howlwriter.config.loader import ConfigLoader
 from howlwriter.domain.document import Document
 from howlwriter.linting.engine import LintEngine
 from howlwriter.linting.rules import RuleMatch
-from howlwriter.domain.genres import check_genre_conformance, parse_genre
+from howlwriter.domain.genres import check_genre_conformance, is_short_form_academic, parse_genre
 from howlwriter.review.leakage import detect_leakage
 
 
@@ -44,14 +45,15 @@ def add_subparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPa
 
 def run(args: argparse.Namespace) -> int:
     text = Path(args.path).read_text(encoding="utf-8")
-    document = Document.parse(text, title=Path(args.path).stem)
+    genre = parse_genre(args.genre)
+    if args.genre and genre is None:
+        print(f"error: unknown genre {args.genre!r}", file=sys.stderr)
+        return 1
+    prose = split_short_form_document(text)[0] if is_short_form_academic(genre) else text
+    document = Document.parse(prose, title=Path(args.path).stem)
     config = ConfigLoader().load(project_config_path=args.project_config_path)
     matches = LintEngine().run(document, config)
-    if args.genre:
-        genre = parse_genre(args.genre)
-        if genre is None:
-            print(f"error: unknown genre {args.genre!r}", file=sys.stderr)
-            return 1
+    if genre:
         matches = matches + [
             RuleMatch(rule_code=f.code, matched_text=f.matched_text, message=f.message, severity=f.severity)
             for f in check_genre_conformance(text, genre)
@@ -60,7 +62,7 @@ def run(args: argparse.Namespace) -> int:
         matches = matches + [
             RuleMatch(rule_code=f.code, matched_text=f.matched_text, message=f.message,
                       sentence_index=f.sentence_index, severity=f.severity)
-            for f in detect_leakage(text)
+            for f in detect_leakage(text, genre=genre.value if is_short_form_academic(genre) else "")
         ]
     if args.platform:
         from howlwriter.linting.platforms import check_platform_rules

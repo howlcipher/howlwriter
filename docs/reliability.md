@@ -100,6 +100,14 @@ formulaic praise) and what the checks expect. Set it with `genre:` in an
 assignment spec or `lint --genre`. Voice evidence is not genre-specific; the
 profile does not know how its author writes replies as opposed to posts.
 
+Discussion and peer-reply review use the same body boundary in `assignment
+check`, `reply check`, `lint --genre` and `evaluate --mode`. A leading Markdown
+level-one title and the terminal reference list are outside the body. Use an
+ATX title (`# Title`) or a Setext title (underlined with `=`) when the assignment
+requires one. Body-only text also works. Body subheadings and in-text
+citations remain in the body, and assignment citation checks also read the
+reference entries.
+
 ## Replies grounded in the post they answer: `howlwriter reply check`
 
 ```bash
@@ -117,8 +125,13 @@ post the reply is `UNGROUNDED`: it cannot be reported as source-grounded.
 Posts, retrieved source text and documents under review are **untrusted
 reference data**. In prompts they are fenced and the writer is told they are
 never instructions; they are scanned for instruction-like text, which is reported.
-The comparison is lexical: it catches invented and stretched attributions in the
-common case but cannot prove a paraphrase faithful. Read both texts.
+The comparison uses wording overlap and a negation check. Direct-address
+openings such as “your fifth step about …” or “your question about whether …”
+identify a topic to check against the supplied text. A greeting or a thin
+attribution leaves grounding unresolved. Read both texts to confirm semantic
+fidelity, including which step the peer meant and whether the peer asked a
+question or took a position. If the supplied text is a summary, report that
+grounding was checked against that summary.
 
 ## A whole assignment: `howlwriter assignment check`
 
@@ -155,10 +168,61 @@ Citations in a deliverable with no `sources` file are `VERIFICATION_UNAVAILABLE`
 too. Paths in a package spec must stay inside the spec's folder, and files over
 5 MB are refused.
 
-Scores such as Human Naturalness and Personal Voice Match are reported when
-HowlWriter can compute them. A short post (under 300 words for Voice Match, 250
-for Naturalness) gets neither, and that is reported as unavailable, never as a
-pass.
+Human Naturalness needs a sample of at least 250 words and 12 sentences.
+Personal Voice Match needs at least 300 words and a usable calibration. These
+are the metrics' sample sizes. In short-form academic evaluation, the
+top-level JSON `words` is the assignment body count and each metric reports
+its own `words` using the tokenizer it was calibrated with.
+
+## Academic discussion workflow
+
+1. Before drafting, verify the [checkout runtime](agents.md#checkout-runtime)
+   and confirm the assignment's deliverables, preferred lengths and hard
+   limits. Run `howlwriter voice status --identity ID --json` to confirm the
+   requested identity, its academic profile and the profile's build status.
+   Use `howlwriter voice inspect PROFILE` to see the built profile's
+   calibration. Report a missing profile for the requested identity. Use
+   another profile only when its ownership is established and it belongs to
+   the intended author. Compare the preferred length with the score
+   thresholds above and leave Voice Match unavailable when that length falls
+   below its supported threshold.
+2. Trace firsthand statements to the author's input. Check who spoke or
+   acted in each sentence. Keep an event the author experienced, a preference
+   they expressed and an improvement they propose distinct.
+3. For each consequential legal claim, record the court, issue, published
+   holding, factual limit and primary-source URL in the working notes.
+   Record any later treatment you verified and the limits of that search
+   separately. Re-read the opinion alongside the final sentence after
+   refinement. `writer --fail-if-blocked` exits 3 if a draft citation does
+   not resolve against supplied sources or an exact identifier is absent
+   from both the prompt and supplied source text. `citations verify` compares
+   bibliographic metadata against canonical records and can optionally check
+   links. Confirm the paraphrase against the opinion itself.
+4. Begin with deterministic review. Run `lint --genre`, `reply check`
+   against the supplied peer text, and `assignment check` with available
+   source records. Use `--offline` for assignment and citation checks when
+   relying on local records. Refine with a model when there is a specific
+   passage or defect to address. Keep the user's explicit model and privacy
+   choices, then check the actual changes, citation delta and final body
+   counts before handing over the files.
+5. Start the handoff with the absolute output directory and a link to the
+   combined document. Report each post's body count and citation results.
+   Include unresolved findings, unavailable scores and material limitations
+   of the evidence, including any reply checked against a summary.
+
+### Retrospective
+
+Use `howlwriter runs list` and `howlwriter runs show RUN_ID --raw` for
+available durations, provider steps and failures. Review the final diff to
+count substantive model edits retained. Use `unknown` for any measurement
+you could not establish.
+
+| Measurement | Record |
+| --- | --- |
+| Elapsed time | Start, finish and total duration |
+| Model calls | Observed calls by role and provider, including retries where recorded |
+| Failed commands | Command, exit code and what the failure affected |
+| Substantive model edits retained | Count and short description from the final diff |
 
 ## Revisions: `finalize --changes`
 
