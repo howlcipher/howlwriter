@@ -16,6 +16,7 @@ from howlwriter.diagnostic.run_record import (
     generate_run_id,
 )
 from howlwriter.domain.document import Document
+from howlwriter.domain.genres import is_short_form_academic
 from howlwriter.domain.io import atomic_write_text
 from howlwriter.domain.modes import parse_mode
 from howlwriter.domain.report import WritingReport
@@ -101,6 +102,7 @@ def add_subparser(
 
 def run(args: argparse.Namespace) -> int:
     mode = parse_mode(args.mode)
+    short_form = is_short_form_academic(args.mode)
     config = ConfigLoader().load(
         mode=mode, project_config_path=args.project_config_path
     )
@@ -118,7 +120,8 @@ def run(args: argparse.Namespace) -> int:
         mode=mode.value if mode else None,
     )
 
-    text = Path(args.path).read_text(encoding="utf-8")
+    source_text = Path(args.path).read_bytes().decode("utf-8")
+    text = source_text.replace("\r\n", "\n").replace("\r", "\n")
     document = Document.parse(text, title=Path(args.path).stem, mode=mode)
 
     lint_before = LintEngine().run(document, config)
@@ -177,7 +180,7 @@ def run(args: argparse.Namespace) -> int:
         profile = _load_voice_profile(config.voice_profile)
         require_loaded(config, profile)
         if profile is not None:
-            input_words = count_body_words(document.text)
+            input_words = count_body_words(text, short_form=short_form)
             realization = derive_structural_realization(
                 profile=profile,
                 mode=mode,
@@ -198,6 +201,7 @@ def run(args: argparse.Namespace) -> int:
             realization=realization,
         )
         transformed_doc = humanize_res.document
+        output_text = humanize_res.replacement_text if humanize_res.replacement_text is not None else source_text
         humanizer_provider = humanize_res.provider
 
         lint_after = LintEngine().run(transformed_doc, config)
@@ -264,6 +268,7 @@ def run(args: argparse.Namespace) -> int:
             total_duration_seconds=total_duration,
             changes=list(humanize_res.changes),
             change_count=len(humanize_res.changes),
+            actual_body_words=count_body_words(output_text, short_form=short_form),
         )
         from howlwriter.evaluation.personal import attach_voice_match
 
@@ -274,7 +279,7 @@ def run(args: argparse.Namespace) -> int:
             if args.out
             else Path(args.path).with_suffix(".humanized.md")
         )
-        atomic_write_text(out_path, transformed_doc.text)
+        atomic_write_text(out_path, output_text)
         print(f"Wrote {out_path}")
         print()
         print(report.render_text())
@@ -310,8 +315,8 @@ def run(args: argparse.Namespace) -> int:
             input_chars=input_chars,
             input_sha256=input_sha256,
             output_path=str(out_path),
-            output_chars=len(transformed_doc.text),
-            output_sha256=compute_sha256(transformed_doc.text),
+            output_chars=len(output_text),
+            output_sha256=compute_sha256(output_text),
             exit_code=0,
         )
         try:

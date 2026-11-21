@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+* Align discussion and peer-reply review on the same body text and assignment count. Report evaluation sample sizes separately and keep reference entries available for citation checks.
+* Extract and validate model refinement envelopes before writing. Preserve the returned Markdown and keep the source text when the provider reports a no-op.
+* Check direct-address step and question attributions against the supplied peer text. Require a substantive attribution for a grounded reply.
 * Hold academic drafts for review when an explicit live observation lacks matching live evidence or a Windows event identifier is unsupported, including identifiers in lists. Carry fixture and predicate scope into drafting instructions.
 * Resolve same-author, same-year and undated APA citation labels consistently during drafting and reference generation. Format standalone work titles and reference paragraphs for Word and both PDF renderers. Document the public local academic workflow and launcher recovery.
 

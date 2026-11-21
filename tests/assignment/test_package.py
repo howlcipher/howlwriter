@@ -303,3 +303,42 @@ class TestHonestRequirements:
         monkeypatch.setattr(package, "MAX_FILE_BYTES", 10)
         with pytest.raises(ValueError, match="larger than"):
             check_package(spec, providers=[])
+
+
+@pytest.mark.parametrize("genre", ["academic_discussion", "academic_peer_reply"])
+def test_short_form_review_commands_share_assignment_body(tmp_path, capsys, genre):
+    spec = _package(tmp_path)
+    path = tmp_path / "main.md"
+    body = (
+        "You suggest logging orchard water use. Gauges show when a valve opens (Moreno, 2025).\n\n"
+        "I would add a second gauge by the fence. Volunteers could compare readings.\n\n"
+        "A weekly check would catch slow leaks. The readings could guide repairs."
+    )
+    title = "# This paper examines " + "orchard " * 300
+    refs = "\n\n**References**\n\n" + REF + "\n" + "In conclusion, " * 300
+    args = ["evaluate", str(path), "--mode", genre, "--json"]
+
+    def invoke(*argv):
+        code = main(list(argv))
+        return code, json.loads(capsys.readouterr().out)
+
+    path.write_text(body, encoding="utf-8")
+    _, bare = invoke(*args)
+    path.write_text(title + "\n\n" + body + refs, encoding="utf-8")
+    package = tmp_path / "package.yaml"
+    _, assignment = invoke("assignment", "check", str(package), "--records",
+                           str(tmp_path / "records.json"), "--offline", "--json")
+    _, reply = invoke("reply", "check", str(path), "--genre", genre, "--json")
+    _, wrapped = invoke(*args)
+    _, lint = invoke("lint", str(path), "--genre", genre, "--workflow-leakage", "--json")
+    assert assignment["deliverables"][0]["word_count"] == reply["word_count"] == wrapped["words"] == 39
+    assert wrapped["naturalness"] == bare["naturalness"]
+    assert wrapped["voice_match"] == bare["voice_match"]
+    assert wrapped["naturalness"]["score"] is None and wrapped["voice_match"]["score"] is None
+    assert not lint
+
+    path.write_text(title + "\n\n" + body + "\n\n## Body section\n\nMore prose.", encoding="utf-8")
+    _, lint = invoke("lint", str(path), "--genre", genre, "--json")
+    assert any(f["rule_code"] == "GENRE_HEADINGS_IN_SHORT_FORM" for f in lint)
+    report = check_package(spec, providers=_providers(tmp_path))
+    assert "REFERENCE_LIST_MISSING" in _codes(report)

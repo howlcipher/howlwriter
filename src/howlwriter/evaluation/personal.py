@@ -43,7 +43,8 @@ from howlwriter.voice.corpus.features import extract_features
 from howlwriter.voice.corpus.store import VoiceStore
 from howlwriter.voice.identity import classify, privacy
 from howlwriter.voice.identity.profiles import load_calibration
-from howlwriter.domain.genres import base_mode_name
+from howlwriter.domain.genres import base_mode_name, is_short_form_academic
+from howlwriter.domain.markdown import count_body_words, split_short_form_document
 from howlwriter.voice.identity.store import IdentityStore
 
 REPORT_VERSION = "personal-evaluation/v1"
@@ -228,7 +229,9 @@ def evaluate_text(
         auto_voice=auto_voice,
         identities_root=identities_root,
     )
-    cleaned = clean_document(text).text
+    short_form = is_short_form_academic(mode)
+    prose = split_short_form_document(text)[0] if short_form else text
+    cleaned = clean_document(prose).text
 
     natural_cal = _naturalness_calibration(
         choice.context, choice.identity, naturalness_reference, identities_root
@@ -244,7 +247,7 @@ def evaluate_text(
             profile="",
             context=choice.context,
             reason=choice.reason,
-            words=len(cleaned.split()),
+            words=extract_features(cleaned).words if short_form else len(cleaned.split()),
         )
         drift_result = {"status": "UNAVAILABLE", "reason": "no profile selected", "findings": []}
     else:
@@ -260,7 +263,7 @@ def evaluate_text(
                 profile=choice.voice,
                 context=choice.context,
                 reason=reason,
-                words=len(cleaned.split()),
+                words=extract_features(cleaned).words if short_form else len(cleaned.split()),
             )
             drift_result = {"status": "UNAVAILABLE", "reason": reason, "findings": []}
         else:
@@ -288,7 +291,7 @@ def evaluate_text(
             "reason": choice.reason,
             "document_category": choice.document_category,
         },
-        "words": len(cleaned.split()),
+        "words": count_body_words(text, short_form=True) if short_form else len(cleaned.split()),
         "naturalness": naturalness.to_dict(),
         "voice_match": voice_report.to_dict(),
         "drift": drift_result,
@@ -304,13 +307,13 @@ def _citations(text: str) -> list[str]:
     return sorted(m.group(0) for m in _CITATION.finditer(text))
 
 
-def _requirements(text: str, requirements: dict[str, Any] | None) -> dict[str, Any]:
+def _requirements(text: str, requirements: dict[str, Any] | None, *, short_form: bool = False) -> dict[str, Any]:
     if not requirements:
         return {
             "status": "NOT_EVALUATED",
             "reason": "no requirements were supplied (--requirements FILE)",
         }
-    words = len(text.split())
+    words = count_body_words(text, short_form=True) if short_form else len(text.split())
     problems = []
     if requirements.get("min_words") and words < int(requirements["min_words"]):
         problems.append(f"{words} words is below the minimum of {requirements['min_words']}")
@@ -413,7 +416,7 @@ def compare_texts(
         integrity_problems.append(f"factual fidelity: {fidelity.status}")
     if citations_changed:
         integrity_problems.append("citations differ between versions")
-    req = _requirements(revised, requirements)
+    req = _requirements(revised, requirements, short_form=is_short_form_academic(kwargs.get("mode")))
     if req["status"] == "FAIL":
         integrity_problems.append("revision fails a stated requirement")
 

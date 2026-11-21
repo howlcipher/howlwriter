@@ -34,6 +34,20 @@ Use `--json` wherever a command offers it (`evaluate`, `lint`, `project`,
 `sources`, `benchmark`, `citations verify`, `reply check`, `assignment check`, and the `voice` identity commands) and read the exit
 code, not the prose.
 
+### Checkout runtime
+
+If the installed launcher points to an old mount, run the module from the
+checkout root using its virtual environment:
+
+```bash
+.venv/bin/python -m howlwriter --help
+# If the editable install also points to the old mount:
+PYTHONPATH=src .venv/bin/python -m howlwriter --help
+```
+
+Use the invocation that passed for the rest of the task. The second form
+loads the checkout's source and keeps the virtual environment's dependencies.
+
 ## Choosing the model
 
 Without a terminal there is no menu. Pass `--provider claude|agy|codex|local`

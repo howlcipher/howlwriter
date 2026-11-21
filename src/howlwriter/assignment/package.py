@@ -39,7 +39,6 @@ from typing import Any
 import yaml
 
 from howlwriter.academic.citations import AcademicCitationManager
-from howlwriter.academic.length import count_body_words
 from howlwriter.citations.apa7 import APA7Formatter
 from howlwriter.citations.registry import build_registry
 from howlwriter.citations.extract import extract_in_text_citations
@@ -51,7 +50,8 @@ from howlwriter.citations.verification import (
     verify_sources,
 )
 from howlwriter.domain.document import Document
-from howlwriter.domain.genres import AcademicGenre, check_genre_conformance, parse_genre
+from howlwriter.domain.genres import AcademicGenre, check_genre_conformance, is_short_form_academic, parse_genre
+from howlwriter.domain.markdown import count_body_words, split_short_form_document
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.domain.source import Source, source_from_dict
 from howlwriter.replies.grounding import GroundingState, SourcePost, check_reply
@@ -186,15 +186,22 @@ def _reference_lines(text: str) -> list[str]:
     return [ln.strip() for ln in text[m.end():].split("\n") if ln.strip()]
 
 
-def _check_references(text: str, sources: list[Source], deliverable: str) -> list[PackageFinding]:
+def _check_references(
+    text: str, sources: list[Source], deliverable: str, *, short_form: bool = False,
+) -> list[PackageFinding]:
     """In-text citations resolve, and the reference list matches what is cited."""
     findings: list[PackageFinding] = []
-    analysis = AcademicCitationManager().analyze_and_build_references(Document.parse(text, title=deliverable), sources)
+    if short_form:
+        body, references = split_short_form_document(text)
+        raw_lines = [line.strip() for line in references.splitlines() if line.strip()]
+    else:
+        body = text
+        raw_lines = _reference_lines(text)
+    analysis = AcademicCitationManager().analyze_and_build_references(Document.parse(body, title=deliverable), sources)
     for raw in analysis.unmatched_in_text_citations:
         findings.append(PackageFinding(
             LEVEL_BLOCKED, "CITATION_UNRESOLVED",
             f"In-text citation “{raw}” matches no supplied source.", deliverable))
-    raw_lines = _reference_lines(text)
     lines = [_norm(ln) for ln in raw_lines]
     formatter = APA7Formatter()
     cited_keys: list[str] = []
@@ -315,7 +322,9 @@ def check_package(
             continue
         text = _read(path)
         texts[did] = text
-        words = count_body_words(text)
+        short_form = is_short_form_academic(genre)
+        words = count_body_words(text, short_form=short_form)
+        citation_body = split_short_form_document(text)[0] if short_form else split_body_and_references(text)[0]
         report.word_count = words
 
         lo, hi = entry.get("min_words"), entry.get("max_words")
@@ -332,12 +341,14 @@ def check_package(
             findings.append(PackageFinding(LEVEL_REVISE, f.code, f.message, did))
 
         if sources:
-            findings.extend(_check_references(text, sources, did))
-            analysis = AcademicCitationManager().analyze_and_build_references(Document.parse(text, title=did), sources)
+            findings.extend(_check_references(text, sources, did, short_form=short_form))
+            analysis = AcademicCitationManager().analyze_and_build_references(
+                Document.parse(citation_body if short_form else text, title=did), sources
+            )
             for s in analysis.used_sources:
                 cited_sources[s.id] = s
         else:
-            has_citations = bool([c for c in extract_in_text_citations(split_body_and_references(text)[0])
+            has_citations = bool([c for c in extract_in_text_citations(citation_body)
                                   if c.source_id is None])
             if entry.get("require_citations") or has_citations:
                 findings.append(PackageFinding(
@@ -390,7 +401,7 @@ def check_package(
                                                "The original to compare against was not found.", did))
                 unavailable.append(f"{did}: meaning preservation (original not found)")
 
-        voice = _evaluate_voice(split_body_and_references(text)[0], genre, spec.get("identity"))
+        voice = _evaluate_voice(text if short_form else citation_body, genre, spec.get("identity"))
         report.scores.update({f"voice.{k}": v for k, v in voice.items()})
         required = [(k, lbl) for k, lbl in (("voice_match", "Personal Voice Match"), ("naturalness", "Human Naturalness"))
                     if spec.get(f"require_{k}")]
@@ -411,7 +422,7 @@ def check_package(
                             LEVEL_UNAVAILABLE, f"{kind.upper()}_UNAVAILABLE",
                             f"{label} is required but cannot be computed.", did))
 
-        _record(records, did, "word count", "howlwriter.academic.length.count_body_words", findings,
+        _record(records, did, "word count", "howlwriter.domain.markdown.count_body_words", findings,
                 ("WORD_COUNT",), f"{words} words, required {lo if lo is not None else 0}-{hi if hi is not None else 'any'}")
         _record(records, did, "required topics", "howlwriter.assignment.package", findings, ("TOPIC_NOT_COVERED",),
                 "every required topic phrase found in the body",

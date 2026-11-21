@@ -18,7 +18,8 @@ from dataclasses import dataclass, field
 import enum
 import re
 
-from howlwriter.domain.genres import check_genre_conformance
+from howlwriter.domain.markdown import count_body_words, split_short_form_document
+from howlwriter.domain.genres import check_genre_conformance, is_short_form_academic
 from howlwriter.domain.sentences import split_sentences
 from howlwriter.domain.serialization import DataClassSerializationMixin
 from howlwriter.replies.untrusted import InjectionFinding, scan_untrusted
@@ -69,6 +70,11 @@ _YOU = re.compile(rf"\byou(?:'ve|\s+have)?\s+(?:also\s+|then\s+|already\s+|right
                   re.I)
 _YOUR = re.compile(r"\byour\s+(?:point|argument|claim|post|view|observation|suggestion|recommendation|"
                    r"emphasis|framing|description)\s+(?:about|on|that|regarding|is\s+that|of)?\s*(.*)", re.I)
+_YOUR_TOPIC = re.compile(
+    r"\byour\s+(?:question|(?:(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|"
+    r"\d+(?:st|nd|rd|th))\s+)?step)\s+(?:about|on|regarding)\s+(?:whether\s+)?(.+)", re.I)
+_TOPIC_FOLLOWUP = re.compile(
+    r"\s+(?:is worth|deserves|stands out|stood out|made me|got me|is where I|is one I)\b", re.I)
 _QUOTE = re.compile(r"[“\"]([^”\"]{10,300})[”\"]")
 # Where the reply stops reporting the peer and starts speaking for itself. ", and that ..." continues
 # the attribution; ", and the ..." or ", which ..." is the author's own clause.
@@ -157,10 +163,13 @@ def _attributions(reply: str, posts: list[SourcePost]) -> list[tuple[str, str]]:
     named = [re.compile(rf"\b{re.escape(n)}\s+(?:also\s+)?{_VERBS}\b(?:\s+that)?\s*(.*)", re.I)
              for n in _peer_names(posts)]
     for sentence in _sentences(reply):
-        for pattern in (_YOU, _YOUR, *named):
+        for pattern in (_YOU, _YOUR_TOPIC, _YOUR, *named):
             m = pattern.search(sentence)
             if m and _starts_a_clause(sentence, m.start()):
-                clause = _CUT_AT_OWN_VIEW.split(_CITATION_PAREN.sub("", m.group(1)))[0].strip(" ,;.")
+                clause = _CUT_AT_OWN_VIEW.split(_CITATION_PAREN.sub("", m.group(1)), maxsplit=1)[0]
+                if pattern is _YOUR_TOPIC:
+                    clause = _TOPIC_FOLLOWUP.split(clause, maxsplit=1)[0]
+                clause = clause.strip(" ,;.")
                 pairs.append((sentence, clause))
                 break
     return pairs
@@ -180,8 +189,13 @@ def check_reply(
     genre: str = "academic_peer_reply",
 ) -> GroundingReport:
     """Ground a reply against the post(s) it answers."""
-    body = re.split(r"\n[ \t]*(?:#{1,6}[ \t]*|\*\*)[ \t]*(?:references|bibliography)\b", reply, maxsplit=1, flags=re.I)[0]
-    words = len(re.findall(r"\b[\w'-]+\b", body))
+    if is_short_form_academic(genre):
+        body, _ = split_short_form_document(reply)
+        words = count_body_words(reply, short_form=True)
+    else:
+        body = re.split(r"\n[ \t]*(?:#{1,6}[ \t]*|\*\*)[ \t]*(?:references|bibliography)\b",
+                        reply, maxsplit=1, flags=re.I)[0]
+        words = len(re.findall(r"\b[\w'-]+\b", body))
     findings: list[GroundingFinding] = []
 
     if min_words is not None and words < min_words or max_words is not None and words > max_words:
@@ -251,11 +265,10 @@ def check_reply(
                 ATTRIBUTION_PARTIAL, f"Only part of this attribution is in the post ({coverage:.0%}).",
                 "warning", clause[:160]))
 
-    if not attributions:
+    if not any(a.status != "TOO_THIN" for a in attributions):
         findings.append(GroundingFinding(
             NO_ATTRIBUTION,
-            "No sentence attributes a position to the peer, so the reply's engagement with their "
-            "argument cannot be checked.", "warning"))
+            "No attribution contains enough detail to check the reply against the peer's post.", "warning"))
 
     haystack = re.sub(r"\s+", " ", (post_text + " " + extra_quotable_text).lower())
     for m in _QUOTE.finditer(body):
@@ -278,7 +291,7 @@ def check_reply(
             f"Only {novel} sentence(s) add wording beyond the post; the reply may restate the peer's "
             "argument without extending it.", "warning"))
 
-    for f in check_genre_conformance(body, genre):
+    for f in check_genre_conformance(reply, genre):
         findings.append(GroundingFinding(f.code, f.message, f.severity, f.matched_text))
 
     if any(a.status == "UNSUPPORTED" for a in attributions) or any(
