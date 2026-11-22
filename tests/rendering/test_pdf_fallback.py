@@ -111,3 +111,13 @@ def test_inline_code_keeps_literal_query_wildcards():
         artifact = PdfRenderer().render(Document.parse(text))
     extracted = PdfReader(io.BytesIO(artifact.raw_bytes)).pages[0].extract_text()
     assert 'winlog.channel:*Synthetic*' in extracted
+
+
+def test_fallback_keeps_code_inside_a_longer_fence():
+    from howlwriter.rendering.reportlab_pdf import render_reportlab
+
+    text = "## Example\n   ````text\n```\n## Still code\n   ````\n\nFollowing prose."
+    artifact = render_reportlab(text, "Paper", RenderContext())
+    extracted = "\n".join(page.extract_text() for page in PdfReader(io.BytesIO(artifact)).pages)
+    assert "```\n## Still code" in extracted
+    assert "Following prose." in extracted

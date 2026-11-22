@@ -151,8 +151,8 @@ See [docs/architecture.md](docs/architecture.md) for the full walkthrough.
 - Multi-format deliverable renderers: Markdown with frontmatter, APA 7 DOCX (running head, hanging indents, tables, hyperlinks), PDF (Playwright headless Chromium with ReportLab fallback), and `CombinedDocument` for multi-section assignments
   PDF exports fall back to ReportLab Platypus when Chromium is unavailable, with wrapped prose,
   headings, tables, local Markdown figures, and explicit `<!-- pagebreak -->` blocks.
-  DOCX also embeds local Markdown figures, preserves fenced command lines, and honors those page breaks. For relative
-  figure paths, pass `RenderContext(metadata={"asset_base_dir": "/path/to/manuscript"})`.
+  DOCX preserves prose immediately after headings, embeds local Markdown figures, and preserves fenced command lines.
+  It also honors those page breaks. For relative figure paths, pass `RenderContext(metadata={"asset_base_dir": "/path/to/manuscript"})`.
   The fallback uses standard PDF Times, Helvetica, or Courier fonts; it does not promise
   pixel parity with Chromium or substitute evidence for missing image files.
 

@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from howlwriter.rendering.base import RenderContext
+from howlwriter.rendering.blocks import markdown_blocks
 
 
 def render_reportlab(text: str, title: str, ctx: RenderContext) -> bytes:
@@ -60,37 +61,8 @@ def render_reportlab(text: str, title: str, ctx: RenderContext) -> bytes:
         story.extend(Paragraph(html.escape(line), title_metadata) for line in ctx.title_page_lines())
         story.append(PageBreak())
 
-    # Keep fenced code intact across blank lines; paragraph blocks otherwise
-    # follow the existing renderer's Markdown contract.
-    blocks = []
-    current = []
-    fenced = False
-    for line in text.splitlines():
-        if line.startswith('```'):
-            if not fenced and current:
-                blocks.append('\n'.join(current))
-                current = []
-            current.append(line)
-            fenced = not fenced
-            if not fenced:
-                blocks.append('\n'.join(current))
-                current = []
-        elif not fenced and re.match(r'^#{1,6} ', line.strip()):
-            if current:
-                blocks.append('\n'.join(current))
-                current = []
-            blocks.append(line)
-        elif not line.strip() and not fenced:
-            if current:
-                blocks.append('\n'.join(current))
-                current = []
-        else:
-            current.append(line)
-    if current:
-        blocks.append('\n'.join(current))
-
     in_references = False
-    for block in blocks:
+    for block in markdown_blocks(text, max_heading_level=6):
         lines = block.splitlines()
         first = lines[0].strip()
         if first == '<!-- pagebreak -->':
