@@ -10,6 +10,7 @@ from typing import Any
 from howlwriter.domain.document import Document
 from howlwriter.integration.improvement import measured
 from howlwriter.rendering.base import DocumentRenderer, RenderContext, RenderedArtifact
+from howlwriter.rendering.blocks import is_fenced_code, markdown_blocks
 
 
 def _set_run_font(run: Any, ctx: RenderContext, *, size_pt: float | None = None) -> None:
@@ -233,36 +234,21 @@ class DocxRenderer(DocumentRenderer):
             meta_run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
             meta_p.paragraph_format.space_after = Pt(18)
 
-        # Parse text into block chunks
-        raw_text = document.text.strip()
-        # Split on double newlines
-        blocks = re.split(r"\n\s*\n", raw_text)
-
         in_references = False
 
-        for block in blocks:
+        for block in markdown_blocks(document.text.strip(), max_heading_level=3):
             block = block.strip()
-            if not block:
-                continue
-
             lines = block.split("\n")
             first_line = lines[0].strip()
 
-            # Skip duplicate title at top if identical
             if first_line.startswith("# ") and first_line[2:].strip().lower() == title.lower():
-                # Remainder of block if any
-                remaining = "\n".join(lines[1:]).strip()
-                if not remaining:
-                    continue
-                block = remaining
-                lines = block.split("\n")
-                first_line = lines[0].strip()
+                continue
 
             if first_line == "<!-- pagebreak -->":
                 doc.add_page_break()
                 continue
 
-            if first_line.startswith("```") and lines[-1].strip() == "```":
+            if is_fenced_code(lines):
                 paragraph = doc.add_paragraph()
                 paragraph.paragraph_format.line_spacing = 1.0
                 paragraph.paragraph_format.space_after = Pt(6)

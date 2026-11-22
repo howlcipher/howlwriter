@@ -67,3 +67,8 @@
 
 - Added optional HowlLoop measurements for academic writing, rendering, and publication.
 - Preserved paragraphs immediately following ATX headings in Chromium and ReportLab PDF output.
+
+### DOCX heading content
+
+- Preserve adjacent prose, heading structure, and fenced code in DOCX exports.
+- Share Markdown block boundaries with the ReportLab renderer while retaining each format's heading levels.
