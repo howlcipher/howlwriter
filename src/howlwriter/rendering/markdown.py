@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from howlwriter.domain.document import Document
+from howlwriter.integration.improvement import measured
 from howlwriter.rendering.base import DocumentRenderer, RenderContext, RenderedArtifact
 
 
@@ -14,6 +15,7 @@ class MarkdownRenderer(DocumentRenderer):
     def __init__(self, include_frontmatter: bool = False) -> None:
         self.include_frontmatter = include_frontmatter
 
+    @measured("markdown")
     def render(
         self, document: Document, context: RenderContext | None = None
     ) -> RenderedArtifact:

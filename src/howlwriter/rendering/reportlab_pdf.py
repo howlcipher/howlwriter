@@ -75,6 +75,11 @@ def render_reportlab(text: str, title: str, ctx: RenderContext) -> bytes:
             if not fenced:
                 blocks.append('\n'.join(current))
                 current = []
+        elif not fenced and re.match(r'^#{1,6} ', line.strip()):
+            if current:
+                blocks.append('\n'.join(current))
+                current = []
+            blocks.append(line)
         elif not line.strip() and not fenced:
             if current:
                 blocks.append('\n'.join(current))

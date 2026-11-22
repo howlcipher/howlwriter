@@ -62,3 +62,8 @@
 * Add isolated process regressions for current, legacy, and installed discovery, absent packages, missing bindings, and public writer help. Discovery never executes a provider.
 * Use SPDX MIT license metadata and a compatible setuptools floor so fresh wheel builds avoid deprecated license table warnings.
 * Declare httpx2 as a development dependency for the current Starlette TestClient, avoiding its deprecated httpx fallback in fresh native test environments.
+
+### Improvement evidence and PDF rendering
+
+- Added optional HowlLoop measurements for academic writing, rendering, and publication.
+- Preserved paragraphs immediately following ATX headings in Chromium and ReportLab PDF output.

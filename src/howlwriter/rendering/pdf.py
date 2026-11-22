@@ -6,6 +6,7 @@ import html
 import re
 
 from howlwriter.domain.document import Document
+from howlwriter.integration.improvement import measured
 from howlwriter.rendering.base import DocumentRenderer, RenderContext, RenderedArtifact
 
 
@@ -23,6 +24,27 @@ def _markdown_to_html(markdown_text: str, title: str, context: RenderContext) ->
 
         lines = block.split("\n")
         first = lines[0].strip()
+
+        # A blank line is optional after a Markdown heading.
+        consumed = 0
+        for line in lines:
+            heading = re.fullmatch(r"(#{1,4}) (.*)", line.strip())
+            if heading is None:
+                break
+            level = len(heading[1])
+            heading_text = heading[2].strip()
+            references = heading_text.casefold() == "references"
+            css_class = ' class="references-heading"' if level == 1 and references else ""
+            if level in (1, 2):
+                in_references = references
+            html_parts.append(f"<h{level}{css_class}>{html.escape(heading_text)}</h{level}>")
+            consumed += 1
+        if consumed:
+            lines = lines[consumed:]
+            if not lines:
+                continue
+            block = "\n".join(lines)
+            first = lines[0].strip()
 
         if first == "<!-- pagebreak -->":
             html_parts.append('<div style="break-before:page"></div>')
@@ -52,27 +74,6 @@ def _markdown_to_html(markdown_text: str, title: str, context: RenderContext) ->
         if first.startswith("```") and lines[-1].strip() == "```":
             html_parts.append('<pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
                               + html.escape("\n".join(lines[1:-1])) + '</pre>')
-            continue
-
-        # Headings
-        if first.startswith("# "):
-            h_text = html.escape(first[2:].strip())
-            css_class = ' class="references-heading"' if h_text.strip().casefold() == "references" else ""
-            html_parts.append(f"<h1{css_class}>{h_text}</h1>")
-            in_references = h_text.strip().casefold() == "references"
-            continue
-        elif first.startswith("## "):
-            h_text = html.escape(first[3:].strip())
-            html_parts.append(f"<h2>{h_text}</h2>")
-            in_references = h_text.strip().casefold() == "references"
-            continue
-        elif first.startswith("### "):
-            h_text = html.escape(first[4:].strip())
-            html_parts.append(f"<h3>{h_text}</h3>")
-            continue
-        elif first.startswith("#### "):
-            h_text = html.escape(first[5:].strip())
-            html_parts.append(f"<h4>{h_text}</h4>")
             continue
 
         # Horizontal rule
@@ -339,6 +340,7 @@ def _format_inline_html(text: str) -> str:
 class PdfRenderer(DocumentRenderer):
     """Renders a Document into a print-ready PDF using headless Chromium or ReportLab."""
 
+    @measured("pdf")
     def render(
         self, document: Document, context: RenderContext | None = None
     ) -> RenderedArtifact:
