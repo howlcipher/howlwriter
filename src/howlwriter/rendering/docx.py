@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from howlwriter.domain.document import Document
+from howlwriter.integration.improvement import measured
 from howlwriter.rendering.base import DocumentRenderer, RenderContext, RenderedArtifact
 
 
@@ -172,6 +173,7 @@ def _parse_markdown_table(lines: list[str]) -> tuple[list[str], list[list[str]]]
 class DocxRenderer(DocumentRenderer):
     """Renders a Document into a polished DOCX file with APA 7 layout conventions."""
 
+    @measured("docx")
     def render(
         self, document: Document, context: RenderContext | None = None
     ) -> RenderedArtifact:

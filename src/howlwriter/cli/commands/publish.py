@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 
 from howlwriter.diagnostic.run_record import compute_sha256, generate_run_id
+from howlwriter.integration.improvement import observe
 from howlwriter.publishing import (
     PublicationArtifact,
     PublishContext,
@@ -123,7 +124,10 @@ def run(args: argparse.Namespace) -> int:
         return 1
 
     print(f"Publishing '{file_path.name}' to {args.destination}...")
-    result = publisher.publish(artifact, dest, ctx)
+    with observe("publish") as observation:
+        result = publisher.publish(artifact, dest, ctx)
+        if not result.is_success:
+            observation.result = "failed"
 
     if result.is_success:
         print("\nPublication Successful!")

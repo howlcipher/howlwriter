@@ -13,6 +13,7 @@ import re
 import time
 from typing import Any, Callable
 
+from howlwriter.integration.improvement import observe, validation
 from howlwriter.academic.citations import (
     AcademicCitationManager,
     CitationAnalysis,
@@ -235,7 +236,14 @@ def run_academic_pipeline(
     from howlwriter.integration.provenance_capture import reset_recorder
 
     try:
-        return _run_academic_pipeline(assignment, *args, **kwargs)
+        with observe("document") as observation:
+            result = _run_academic_pipeline(assignment, *args, **kwargs)
+            if result.report.status != "READY":
+                observation.result = "incomplete"
+                observation.detail = "validation"
+            if result.publish_result is not None and not result.publish_result.is_success:
+                observation.result = "failed"
+            return result
     finally:
         reset_recorder()
 
@@ -979,6 +987,14 @@ def _run_academic_pipeline(
     else:
         final_status = "READY"
 
+    validation("format", not (genre_findings or outline_res.status != "PASS"))
+    if citation_changes or has_unresolved_citation_deficiency or has_citation_metadata_deficiency:
+        validation("citations", False)
+    else:
+        validation("citations", True if citation_metadata_state is CitationState.VERIFIED else None)
+    validation("fidelity", not (claim_review.blocks_readiness or has_claim_deficiency))
+    validation("meaning", meaning_det.status == "PASS")
+
     total_duration = round(time.time() - start_time, 2)
     _notify("final_report", "DONE", "Final Report & Dogfood Record", {
         "status": final_status,
@@ -1104,7 +1120,12 @@ def _run_academic_pipeline(
     )
     from howlwriter.evaluation.personal import attach_voice_match
 
-    attach_voice_match(report, cfg.voice_profile, final_document.text)
+    with observe("voice") as voice_observation:
+        attach_voice_match(report, cfg.voice_profile, final_document.text)
+        if report.voice_match is None:
+            voice_observation.result = "unavailable"
+        else:
+            voice_observation.voice_match_bps = round(report.voice_match * 10000)
 
     # 11. RECORD DOGFOOD DIAGNOSTIC ARTIFACT
     record = RunRecord(
@@ -1327,7 +1348,10 @@ def _run_academic_pipeline(
                 "max_words": bounds.max_words,
             },
         )
-        publish_result = pub.publish(pub_art, pub_dest, pub_ctx)
+        with observe("publish") as publication:
+            publish_result = pub.publish(pub_art, pub_dest, pub_ctx)
+            if not publish_result.is_success:
+                publication.result = "failed"
 
     # Update report and record with local deliverables & publication results
     report.local_outputs = [d.to_dict() for d in local_deliverables]

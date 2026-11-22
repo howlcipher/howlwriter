@@ -511,3 +511,12 @@ immutable revision `4ba3e71a777747445173b381ca6db0a3d5366fe2`. This includes Mis
 state-exit and published-Frame artifact fixes; no owner-installed package is changed
 by source verification. Source pins require reviewed release replacement before
 published-install readiness can be claimed.
+
+### Optional improvement evidence
+
+Install HowlLoop in the same environment and set `HOWLLOOP_STORE` to a private local
+database path. Academic pipeline outcomes, renderer duration, structured validation
+outcomes, optional voice score, and publication outcomes are recorded without document
+content or filenames. A voice score describes similarity under the selected calibration.
+Operator corrections can be reported explicitly with
+`howlloop friction RUN_UUID heading_correction`. Unset `HOWLLOOP_STORE` to disable capture.
