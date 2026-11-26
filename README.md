@@ -371,8 +371,10 @@ See [docs/evaluation.md](docs/evaluation.md) for details on metric calculations,
 `citations verify` (citation metadata against canonical records), `reply check`
 (a reply against the post it answers), `assignment check` (a whole submission
 package), `lint --workflow-leakage --genre ...` and `finalize --changes` check
-accuracy, context and completeness without editing your text. The Google Docs
-publisher confirms a publication by reading it back. See
+accuracy, context and completeness without editing your text. A deliverable
+with zero counted body words is `INCOMPLETE` even when the package sets no
+minimum word count. The Google Docs publisher confirms a publication by
+reading it back. See
 [docs/reliability.md](docs/reliability.md) for the states, exit codes and limits.
 The [academic discussion workflow](docs/reliability.md#academic-discussion-workflow)
 covers shared body counts, voice-score thresholds, peer grounding and handoff.

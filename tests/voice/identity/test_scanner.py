@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import hashlib
 import json
+import os
 from pathlib import Path
 import stat
 import subprocess
@@ -12,12 +13,12 @@ import subprocess
 import pytest
 
 from howlwriter.voice.identity import analysis as analysis_module
-from howlwriter.voice.identity import privacy
+from howlwriter.voice.identity import privacy, review
 from howlwriter.voice.identity import scanner as scanner_module
 from howlwriter.voice.identity.scanner import MountUnavailableError, scan
 from howlwriter.voice.identity.store import IdentityStore
 
-from tests.voice.identity.conftest import author_a
+from tests.voice.identity.conftest import author_a, author_b
 
 
 def _snapshot(root: Path) -> dict[str, tuple[str, float, int]]:
@@ -97,6 +98,126 @@ def test_modified_added_removed_and_renamed_files_are_detected(env, drive):
     assert "school/lab02.md" in renamed["previous_paths"]
 
 
+def test_reusing_a_renamed_documents_path_preserves_its_attestation(env, tmp_path):
+    root = tmp_path / "drive"
+    root.mkdir()
+    original = root / "a.md"
+    renamed = root / "b.md"
+    original.write_text(author_a(1), encoding="utf-8")
+    first = scan("william", sources=[str(root)])
+    (original_id,) = first.inventory["entries"]
+    store = IdentityStore("william")
+    attestation = review.attest(store, original_id, "h")
+
+    original.rename(renamed)
+    moved = scan("william").inventory["entries"]
+    assert moved[original_id]["relative_path"] == renamed.name
+
+    original.write_text(author_b(1), encoding="utf-8")
+    reused = scan("william").inventory["entries"]
+    ids = {entry["relative_path"]: doc_id for doc_id, entry in reused.items()}
+    assert set(ids) == {original.name, renamed.name}
+    assert ids[renamed.name] == original_id
+    assert ids[original.name] != original_id
+    assert reused[ids[original.name]]["change"] == "added"
+
+    unchanged = scan("william")
+    assert unchanged.report["read_this_scan"] == 0
+    assert {entry["relative_path"]: doc_id for doc_id, entry in unchanged.inventory["entries"].items()} == ids
+    assert store.load_decisions().keys() == {original_id}
+    decision = store.load_decisions()[original_id]
+    assert decision.status == "active"
+    assert decision.path == renamed.name
+    assert decision.content_hash == attestation.content_hash
+
+
+@pytest.mark.parametrize(("old_names", "new_names"), [
+    (("a.md", "b.md"), ("c.md",)),
+    (("a.md",), ("b.md", "c.md")),
+])
+def test_ambiguous_renames_do_not_transfer_attestation(env, tmp_path, old_names, new_names):
+    root = tmp_path / "drive"
+    root.mkdir()
+    content = author_a(1)
+    for name in old_names:
+        (root / name).write_text(content, encoding="utf-8")
+    first = scan("william", sources=[str(root)])
+    store = IdentityStore("william")
+    old_ids = set(first.inventory["entries"])
+    owner_id = next(iter(old_ids))
+    decision = review.attest(store, owner_id, "h")
+
+    for name in old_names:
+        (root / name).unlink()
+    for name in new_names:
+        (root / name).write_text(content, encoding="utf-8")
+
+    outcome = scan("william")
+    entries = outcome.inventory["entries"]
+    assert outcome.report["renamed_since_last_scan"] == 0
+    assert all(entries[doc_id]["present"] is False for doc_id in old_ids)
+    new = {doc_id: entry for doc_id, entry in entries.items() if entry["present"]}
+    assert set(new).isdisjoint(old_ids)
+    assert {entry["relative_path"] for entry in new.values()} == set(new_names)
+    assert store.load_decisions() == {owner_id: decision}
+
+
+@pytest.mark.parametrize("move", [False, True], ids=["copy", "move"])
+def test_occupied_path_preserves_edit_reconciliation(env, tmp_path, move):
+    root = tmp_path / "drive"
+    root.mkdir()
+    original = root / "a.md"
+    renamed = root / "b.md"
+    original.write_text(author_a(1), encoding="utf-8")
+    first = scan("william", sources=[str(root)])
+    (doc_id,) = first.inventory["entries"]
+    store = IdentityStore("william")
+    review.attest(store, doc_id, "h")
+
+    if move:
+        original.rename(renamed)
+    else:
+        renamed.write_bytes(original.read_bytes())
+    original.write_text(author_b(1), encoding="utf-8")
+    outcome = scan("william")
+    entries = outcome.inventory["entries"]
+    assert outcome.report["renamed_since_last_scan"] == 0
+    assert entries[doc_id]["relative_path"] == original.name
+    assert entries[doc_id]["present"] is True
+    assert entries[doc_id]["change"] == "modified"
+    (added,) = [entry for other_id, entry in entries.items() if other_id != doc_id]
+    assert added["relative_path"] == renamed.name
+    assert added["present"] is True
+    assert added["change"] == "added"
+    assert store.load_decisions().keys() == {doc_id}
+    assert store.load_decisions()[doc_id].status == "reopened"
+
+
+def test_removal_is_only_counted_in_the_scan_that_detects_it(env, tmp_path):
+    root = tmp_path / "drive"
+    root.mkdir()
+    target = root / "a.md"
+    target.write_text(author_a(1), encoding="utf-8")
+    (root / "b.md").write_text(author_b(1), encoding="utf-8")
+    first = scan("william", sources=[str(root)])
+    assert first.report["removed_since_last_scan"] == 0
+    doc_id = next(
+        doc_id for doc_id, entry in first.inventory["entries"].items()
+        if entry["relative_path"] == target.name
+    )
+
+    target.unlink()
+    after_removal = scan("william")
+    assert after_removal.report["removed_since_last_scan"] == 1
+    tombstone = after_removal.inventory["entries"][doc_id]
+    assert tombstone["present"] is False
+    assert tombstone["removed_at"]
+
+    unchanged = scan("william")
+    assert unchanged.report["removed_since_last_scan"] == 0
+    assert unchanged.inventory["entries"][doc_id] == tombstone
+
+
 def test_unavailable_mount_raises_and_leaves_inventory(env, drive, tmp_path):
     scan("william", sources=[str(drive)])
     path = IdentityStore("william").directory / "inventory.json"
@@ -106,6 +227,43 @@ def test_unavailable_mount_raises_and_leaves_inventory(env, drive, tmp_path):
     with pytest.raises(MountUnavailableError):
         scan("william")
     assert path.read_text(encoding="utf-8") == before
+
+
+def test_unlistable_subtree_reports_partial_coverage_and_preserves_known_files(
+    env, tmp_path, monkeypatch
+):
+    root = tmp_path / "drive"
+    blocked = root / "blocked"
+    blocked.mkdir(parents=True)
+    (blocked / "a.md").write_text(author_a(1), encoding="utf-8")
+    (root / "b.md").write_text(author_b(1), encoding="utf-8")
+    real_scandir = os.scandir
+
+    def deny_subtree(path):
+        if path == str(blocked):
+            raise PermissionError(errno.EACCES, "Permission denied")
+        return real_scandir(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "scandir", deny_subtree)
+        partial = scan("william", sources=[str(root)])
+    assert partial.report["files_inventoried"] == 1
+    assert partial.report["walk"]["unlistable_directories"] == 1
+    assert partial.report["coverage"]["complete"] is False
+
+    complete = scan("william")
+    assert complete.report["files_inventoried"] == 2
+    assert complete.report["coverage"]["complete"] is True
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "scandir", deny_subtree)
+        with pytest.raises(MountUnavailableError, match="could not be listed"):
+            scan("william")
+    assert IdentityStore("william").load_inventory() == complete.inventory
+    recovered = scan("william")
+    assert recovered.report["read_this_scan"] == 0
+    assert recovered.report["removed_since_last_scan"] == 0
+    assert recovered.report["walk"]["unlistable_directories"] == 0
+    assert recovered.report["coverage"]["complete"] is True
 
 
 def test_empty_mount_point_raises_instead_of_removing_everything(env, drive, tmp_path):
@@ -278,6 +436,72 @@ def test_interrupted_scan_resumes_from_checkpoint(env, drive, monkeypatch):
     assert report["extracted_documents"] == 24
 
 
+def test_interrupted_rename_preserves_inventory_and_resumes_reads(env, tmp_path, monkeypatch):
+    root = tmp_path / "drive"
+    root.mkdir()
+    original = root / "a.md"
+    renamed = root / "b.md"
+    original.write_text(author_a(1), encoding="utf-8")
+    first = scan("william", sources=[str(root)])
+    (doc_id,) = first.inventory["entries"]
+    store = IdentityStore("william")
+    review.attest(store, doc_id, "h")
+    original.rename(renamed)
+    monkeypatch.setattr(scanner_module, "CHECKPOINT_EVERY", 1)
+
+    def interrupt_after_checkpoint(stage, _data):
+        if stage == "read":
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        scan("william", progress=interrupt_after_checkpoint)
+    assert store.load_inventory() == first.inventory
+
+    resumed = scan("william")
+    assert resumed.report["read_this_scan"] == 0
+    assert resumed.report["renamed_since_last_scan"] == 1
+    assert resumed.inventory["scans"][:-1] == first.inventory["scans"]
+    (entry,) = resumed.inventory["entries"].values()
+    assert entry["doc_id"] == doc_id
+    assert entry["relative_path"] == renamed.name
+    decision = store.load_decisions()[doc_id]
+    assert decision.status == "active"
+    assert decision.path == renamed.name
+
+
+@pytest.mark.parametrize("change", ["file", "config"])
+def test_checkpoint_is_remeasured_when_its_inputs_change(env, tmp_path, monkeypatch, change):
+    root = tmp_path / "drive"
+    root.mkdir()
+    path = root / "a.md"
+    original = author_a(1) + "\nCheckpoint privacy marker for synthetic prose.\n"
+    path.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(scanner_module, "CHECKPOINT_EVERY", 1)
+
+    def interrupt(stage, _data):
+        if stage == "read":
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        scan("william", sources=[str(root)], progress=interrupt)
+    store = IdentityStore("william")
+    checkpoint = store.directory / "scan_checkpoint.json"
+    assert stat.S_IMODE(checkpoint.stat().st_mode) == 0o600
+    assert "Checkpoint privacy marker for synthetic prose" not in checkpoint.read_text(encoding="utf-8")
+    assert store.load_inventory()["scans"] == []
+
+    options = {}
+    if change == "file":
+        path.write_text(original + "New body words.\n", encoding="utf-8")
+    else:
+        options["additional_exclusions"] = ["ignored-folder"]
+    resumed = scan("william", **options)
+    assert resumed.report["read_this_scan"] == 1
+    entry, = resumed.inventory["entries"].values()
+    assert entry["raw_sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert not checkpoint.exists()
+
+
 class _SerialExecutor:
     def __init__(self, max_workers=1):
         pass
@@ -322,6 +546,79 @@ def test_multiple_sources_are_namespaced(env, tmp_path):
     (second / "a.md").write_text(author_a(12), encoding="utf-8")
     entries = scan("william", sources=[str(first), str(second)]).inventory["entries"].values()
     assert sorted(e["relative_path"] for e in entries) == ["0:a.md", "1:a.md"]
+
+
+@pytest.mark.parametrize("edit_original", [False, True], ids=["unchanged", "edited"])
+def test_adding_a_source_preserves_same_path_identity(env, tmp_path, edit_original):
+    first, second = tmp_path / "one", tmp_path / "two"
+    first.mkdir()
+    second.mkdir()
+    name = "0:essay.md"
+    content = author_a(1)
+    (first / name).write_text(content, encoding="utf-8")
+    initial = scan("william", sources=[str(first)])
+    doc_id, = initial.inventory["entries"]
+    store = IdentityStore("william")
+    review.attest(store, doc_id, "h")
+    (second / name).write_text(content, encoding="utf-8")
+    if edit_original:
+        (first / name).write_text(author_b(1), encoding="utf-8")
+
+    expanded = scan("william", sources=[str(second)])
+    assert expanded.report["removed_since_last_scan"] == expanded.report["renamed_since_last_scan"] == 0
+    assert expanded.report["read_this_scan"] == 1 + edit_original
+    entries = expanded.inventory["entries"]
+    assert len(entries) == 2
+    assert all(entry["present"] for entry in entries.values())
+    assert entries[doc_id]["relative_path"] == f"0:{name}"
+    assert entries[doc_id]["source_path"] == name
+    assert entries[doc_id]["previous_paths"] == []
+    assert entries[doc_id]["first_seen"] == initial.inventory["entries"][doc_id]["first_seen"]
+    assert {entry["relative_path"] for entry in entries.values()} == {f"0:{name}", f"1:{name}"}
+    decision = store.load_decisions()[doc_id]
+    assert decision.path == f"0:{name}"
+    assert decision.status == ("reopened" if edit_original else "active")
+
+    rescanned = scan("william")
+    assert rescanned.report["read_this_scan"] == 0
+    assert set(rescanned.inventory["entries"]) == set(entries)
+    assert store.load_decisions() == {doc_id: decision}
+
+
+def test_adding_a_source_namespaces_legacy_tombstone_with_numeric_colon(env, tmp_path):
+    first, second = tmp_path / "one", tmp_path / "two"
+    first.mkdir()
+    second.mkdir()
+    name = "1:essay.md"
+    original = first / name
+    content = author_a(1)
+    original.write_text(content, encoding="utf-8")
+    (first / "other.md").write_text(author_b(1), encoding="utf-8")
+    initial = scan("william", sources=[str(first)])
+    doc_id = next(doc_id for doc_id, entry in initial.inventory["entries"].items()
+                  if entry["relative_path"] == name)
+    store = IdentityStore("william")
+    review.attest(store, doc_id, "h")
+    original.unlink()
+    removed = scan("william")
+    tombstone = removed.inventory["entries"][doc_id]
+    assert tombstone.pop("source_path") == name
+    store.save_inventory(removed.inventory)
+
+    expanded = scan("william", sources=[str(second)])
+    assert expanded.report["removed_since_last_scan"] == 0
+    assert expanded.inventory["entries"][doc_id] == {
+        **tombstone, "relative_path": f"0:{name}", "source_path": name,
+    }
+    original.write_text(content, encoding="utf-8")
+    (second / "essay.md").write_text(content, encoding="utf-8")
+    resumed = scan("william")
+    entries = resumed.inventory["entries"]
+    assert entries[doc_id]["relative_path"] == f"0:{name}"
+    assert entries[doc_id]["present"] is True
+    assert any(other_id != doc_id and entry["relative_path"] == "1:essay.md" and entry["present"]
+               for other_id, entry in entries.items())
+    assert store.load_decisions()[doc_id].path == f"0:{name}"
 
 
 def test_scan_report_contains_no_file_names(env, drive):

@@ -30,6 +30,7 @@ pytestmark = pytest.mark.skipif(not (REPO / ".git").exists(), reason="not a git 
         "voices/william-academic/profile.json",
         "voices/william-professional/calibration.json",
         "identities/william/inventory.json",
+        "arbitrary-output/example/scan_checkpoint.json",
         ".howlwriter/identities/william/decisions.json",
         "anywhere/review_queue.yaml",
         "chatgpt-export-2026/conversations.json",
@@ -62,6 +63,7 @@ def test_no_private_artifact_is_tracked():
     tracked = _git("ls-files").stdout.splitlines()
     forbidden = (
         "inventory.json",
+        "scan_checkpoint.json",
         "decisions.json",
         "review_queue.yaml",
         "scan_report.json",

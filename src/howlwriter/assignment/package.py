@@ -325,7 +325,10 @@ def check_package(
         report.word_count = words
 
         lo, hi = entry.get("min_words"), entry.get("max_words")
-        if (lo is not None and words < lo) or (hi is not None and words > hi):
+        if words == 0:
+            findings.append(PackageFinding(
+                LEVEL_INCOMPLETE, "DELIVERABLE_EMPTY", "The deliverable has no body words.", did))
+        elif (lo is not None and words < lo) or (hi is not None and words > hi):
             findings.append(PackageFinding(
                 LEVEL_REVISE, "WORD_COUNT",
                 f"{words} words; required {lo if lo is not None else 0}-{hi if hi is not None else 'any'}.", did))
@@ -424,7 +427,8 @@ def check_package(
                             f"{label} is required but cannot be computed.", did))
 
         _record(records, did, "word count", "howlwriter.domain.markdown.count_body_words", findings,
-                ("WORD_COUNT",), f"{words} words, required {lo if lo is not None else 0}-{hi if hi is not None else 'any'}")
+                ("WORD_COUNT", "DELIVERABLE_EMPTY"),
+                f"{words} words, required {lo if lo is not None else 0}-{hi if hi is not None else 'any'}")
         _record(records, did, "required topics", "howlwriter.assignment.package", findings, ("TOPIC_NOT_COVERED",),
                 "every required topic phrase found in the body",
                 ["Phrase presence only; it does not judge how well a topic is argued."])

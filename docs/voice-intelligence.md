@@ -546,10 +546,21 @@ applied), an outline's voice reached the spec only after the config was fixed
 
 `voice scan` and `voice sync` (scan, then rebuild) compare each file's size
 and modification time with the last scan and re-read only what changed.
-Added, modified, removed and renamed files are reported; renames are matched
-by content and keep their decisions. Scans checkpoint as they go, so an
-interrupted scan resumes. A mount that is down fails the scan and leaves the
-inventory untouched.
+Each scan reports the additions, modifications, removals and renames detected
+on that run. Previously removed files stay in the inventory as history.
+A rename keeps its authorship decision when exactly one vanished path and
+one new path have the same content. If the original path still exists, the
+scan treats changes there as edits and gives the new path a separate ID.
+A file that reuses a previously renamed document's path receives its own ID.
+Adding a source root preserves the identities and decisions of files at
+their original paths within existing roots.
+
+An interrupted scan can reuse completed measurements from its private
+checkpoint when the scan configuration and file metadata still match.
+The inventory and scan history are saved after reconciliation. An unavailable
+mount or an unlistable directory that may contain previously seen files causes
+the scan to fail and preserves the last inventory. A scan that can proceed
+with an unlistable directory reports incomplete coverage.
 
 Profiles are never overwritten by worse evidence: a build is refused (and the
 existing profile kept) when fewer than three attested documents qualify, or
