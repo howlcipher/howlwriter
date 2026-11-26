@@ -36,6 +36,7 @@ dogfood/*.json
 .howlwriter/
 identities/
 inventory.json
+scan_checkpoint.json
 decisions.json
 decisions.log.jsonl
 review_queue.yaml

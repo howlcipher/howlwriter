@@ -3,6 +3,7 @@
     ~/.howlwriter/identities/<identity>/
         identity.yaml          configuration: sources, exclusions, profiles
         inventory.json         every file seen, with derived measurements
+        scan_checkpoint.json   disposable measurements from an interrupted scan
         decisions.json         authorship attestations (the user's, never regenerated)
         decisions.log.jsonl    append-only history of every decision change
         review_queue.yaml      generated worksheet of documents awaiting review
@@ -40,6 +41,7 @@ from howlwriter.voice.identity.exclusions import WILLIAM_REQUIRED_EXCLUSIONS, Ex
 
 CONFIG_FILE = "identity.yaml"
 INVENTORY_FILE = "inventory.json"
+SCAN_CHECKPOINT_FILE = "scan_checkpoint.json"
 DECISIONS_FILE = "decisions.json"
 DECISION_LOG_FILE = "decisions.log.jsonl"
 REVIEW_QUEUE_FILE = "review_queue.yaml"
@@ -323,6 +325,21 @@ class IdentityStore:
         inventory["version"] = INVENTORY_VERSION
         with self.locked():
             privacy.write_private_json(self.directory / INVENTORY_FILE, inventory)
+
+    def load_scan_checkpoint(self) -> dict:
+        try:
+            data = json.loads((self.directory / SCAN_CHECKPOINT_FILE).read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def save_scan_checkpoint(self, checkpoint: dict) -> None:
+        with self.locked():
+            privacy.write_private_json(self.directory / SCAN_CHECKPOINT_FILE, checkpoint)
+
+    def clear_scan_checkpoint(self) -> None:
+        with self.locked():
+            (self.directory / SCAN_CHECKPOINT_FILE).unlink(missing_ok=True)
 
     # --- decisions ----------------------------------------------------
 

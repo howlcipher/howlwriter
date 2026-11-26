@@ -24,12 +24,13 @@ Order of operations, and the guarantee each step carries:
    kept, carried forward across small edits, or reopened when the text has
    materially changed.
 
-The inventory is checkpointed while the scan runs, so an interrupted scan
-resumes where it stopped instead of re-reading everything.
+Measurements are checkpointed separately from the committed inventory so an
+interrupted scan can resume without recalculating completed work.
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 import errno
@@ -94,7 +95,12 @@ class WalkResult:
     noise_directories: int = 0
     symlinks_skipped: int = 0
     escaped_root: int = 0
-    unlistable_directories: int = 0
+    unlistable_paths: list[str] = field(default_factory=list)
+    unverified_paths: list[str] = field(default_factory=list)
+
+    @property
+    def unlistable_directories(self) -> int:
+        return len(self.unlistable_paths)
 
 
 def mount_status(root: Path) -> dict[str, Any]:
@@ -159,7 +165,7 @@ def walk(root: Path, policy: ExclusionPolicy) -> WalkResult:
         try:
             entries = _retry(lambda: sorted(os.scandir(absolute_dir), key=lambda e: e.name))
         except OSError:
-            result.unlistable_directories += 1
+            result.unlistable_paths.append(relative_dir)
             continue
         result.directories_visited += 1
         for entry in entries:
@@ -170,6 +176,7 @@ def walk(root: Path, policy: ExclusionPolicy) -> WalkResult:
                     continue
                 is_dir = entry.is_dir(follow_symlinks=False)
             except OSError:
+                result.unverified_paths.append(relative)
                 result.files.append(WalkedFile(relative, entry.path, 0, 0.0, "stat_failed"))
                 continue
             if is_dir:
@@ -222,8 +229,9 @@ def _read_stable(path: str, size: int, mtime: float) -> tuple[bytes | None, str,
     return None, "changed_during_read", "file changed while it was being read; retry the scan later"
 
 
-def _doc_id(relative_path: str) -> str:
-    return hashlib.sha256(f"doc:{relative_path}".encode("utf-8")).hexdigest()[:16]
+def _doc_id(relative_path: str, attempt: int = 0) -> str:
+    namespace = "doc" if attempt == 0 else f"doc-{attempt}"
+    return hashlib.sha256(f"{namespace}:{relative_path}".encode("utf-8")).hexdigest()[:16]
 
 
 def _ownership(relative_path: str, config: IdentityConfig) -> str:
@@ -232,12 +240,14 @@ def _ownership(relative_path: str, config: IdentityConfig) -> str:
     return "shared_with_me" if first in shared else "owned"
 
 
-def _present_under_root(entries: dict[str, dict], index: int, root_count: int) -> bool:
-    """Whether the last scan saw files under source root ``index``."""
+def _present_under_root(
+    entries: dict[str, dict], index: int, root_count: int, directories: tuple[str, ...] = ("",)
+) -> bool:
+    """Whether the last scan saw files under the given directories of a source root."""
+    namespace = f"{index}:" if root_count > 1 else ""
+    prefixes = tuple(f"{namespace}{directory}/" if directory else namespace for directory in directories)
     for entry in entries.values():
-        if not entry.get("present", True):
-            continue
-        if root_count == 1 or entry["relative_path"].split(":", 1)[0] == str(index):
+        if entry.get("present", True) and entry["relative_path"].startswith(prefixes):
             return True
     return False
 
@@ -313,12 +323,30 @@ def scan(
     started = time.time()
     previous = store.load_inventory()
     previous_entries: dict[str, dict] = previous.get("entries", {})
-    # A file that comes back at a path recorded as removed keeps its history;
-    # a present entry wins when both exist.
-    by_path = {
-        e["relative_path"]: (doc_id, e)
-        for doc_id, e in sorted(previous_entries.items(), key=lambda item: item[1].get("present", True))
-    }
+    previous_sources = previous.get("sources", config.sources)
+    # Match within a source even when adding a root changes the displayed path.
+    # A returning file keeps its history, but a present entry wins at the same path.
+    by_path: dict[tuple[str, str], tuple[str, dict]] = {}
+    current_indexes = {source: index for index, source in enumerate(config.sources)}
+    namespaced_history: dict[str, dict] = {}
+    for doc_id, entry in sorted(previous_entries.items(), key=lambda item: item[1].get("present", True)):
+        relative = entry["relative_path"]
+        source_index = 0
+        source_path = entry.get("source_path")
+        if len(previous_sources) > 1:
+            prefix, separator, suffix = relative.partition(":")
+            if separator and prefix.isascii() and prefix.isdecimal() and source_path in (None, suffix):
+                source_index = int(prefix)
+                source_path = suffix
+        if source_index >= len(previous_sources):
+            continue
+        source = previous_sources[source_index]
+        source_path = source_path or relative
+        by_path[(source, source_path)] = (doc_id, entry)
+        if source in current_indexes:
+            current_path = f"{current_indexes[source]}:{source_path}" if len(config.sources) > 1 else source_path
+            if current_path != relative:
+                namespaced_history[doc_id] = dict(entry, relative_path=current_path, source_path=source_path)
     last_filesystems: dict[str, str] = (previous.get("scans") or [{}])[-1].get("filesystems", {})
 
     # --- 1. mount check (all roots must be reachable) ---
@@ -340,9 +368,6 @@ def scan(
                 "is the drive mounted? The previous inventory was left unchanged"
             )
         roots.append((root, status))
-    # Persist the configuration now, not at the end: a scan interrupted
-    # halfway must be resumable, and resuming needs to know its sources.
-    store.save_config(config)
     notify("mount", {"sources": len(roots), "filesystems": [s["filesystem"] for _, s in roots]})
 
     # --- 2. walk ---
@@ -350,11 +375,20 @@ def scan(
     walk_totals = WalkResult()
     for index, (root, _status) in enumerate(roots):
         result = walk(root, config.exclusions)
-        if not result.files and _present_under_root(previous_entries, index, len(roots)):
-            raise MountUnavailableError(
-                f"source {config.sources[index]} is empty but the last scan found files there; "
-                "is the drive mounted? The previous inventory was left unchanged"
-            )
+        source = config.sources[index]
+        if source in previous_sources:
+            previous_index = previous_sources.index(source)
+            unknown = tuple(result.unlistable_paths + result.unverified_paths)
+            if unknown and _present_under_root(previous_entries, previous_index, len(previous_sources), unknown):
+                raise MountUnavailableError(
+                    f"parts of source {source} could not be listed and may contain previously seen files; "
+                    "the previous inventory was left unchanged"
+                )
+            if not result.files and _present_under_root(previous_entries, previous_index, len(previous_sources)):
+                raise MountUnavailableError(
+                    f"source {source} is empty but the last scan found files there; "
+                    "is the drive mounted? The previous inventory was left unchanged"
+                )
         for file in result.files:
             file.source_path = file.relative_path
             if len(roots) > 1:
@@ -366,9 +400,9 @@ def scan(
             "noise_directories",
             "symlinks_skipped",
             "escaped_root",
-            "unlistable_directories",
         ):
             setattr(walk_totals, name, getattr(walk_totals, name) + getattr(result, name))
+        walk_totals.unlistable_paths.extend(result.unlistable_paths)
     notify("walk", {"files": len(walked), "excluded_directories": walk_totals.excluded_directories})
 
     # Defence in depth: nothing walked may sit under an excluded component.
@@ -377,14 +411,39 @@ def scan(
         if config.exclusions.path_is_excluded(parts):
             raise RuntimeError("internal error: walker returned a path under an excluded directory")
 
+    # A scan interrupted after work starts must be able to recover its source configuration.
+    store.save_config(config)
+
     # --- 3. decide what needs reading ---
+    checkpoint_context = {
+        "config": config.to_dict(),
+        "roots": [
+            {"path": os.path.realpath(root), "filesystem": status["filesystem"]}
+            for root, status in roots
+        ],
+        "analysis_version": analysis.ANALYSIS_VERSION,
+        "force": force,
+        "perturbations": perturbations,
+    }
+    checkpoint = store.load_scan_checkpoint()
+    cached = checkpoint.get("completed", {}) if checkpoint.get("context") == checkpoint_context else {}
+    completed: dict[str, dict] = {}
     entries: dict[str, dict] = {}
+    reserved_ids = set(previous_entries)
     to_read: list[tuple[str, WalkedFile, dict]] = []
     now = utc_now()
-    for _, file in walked:
+    for source_index, file in walked:
         family, status, reason = _format_status(file)
-        old = by_path.get(file.relative_path)
-        doc_id = old[0] if old else _doc_id(file.relative_path)
+        old = by_path.get((config.sources[source_index], file.source_path))
+        if old:
+            doc_id = old[0]
+        else:
+            attempt = 0
+            doc_id = _doc_id(file.relative_path)
+            while doc_id in reserved_ids:
+                attempt += 1
+                doc_id = _doc_id(file.relative_path, attempt)
+            reserved_ids.add(doc_id)
         prior = old[1] if old else None
         entry: dict[str, Any] = {
             "doc_id": doc_id,
@@ -417,24 +476,35 @@ def scan(
             returned = not prior.get("present", True)
             carried.pop("removed_at", None)
             change = "reappeared" if returned else "unchanged"
-            carried.update({"last_seen": now, "present": True, "change": change})
+            carried.update({
+                "relative_path": file.relative_path,
+                "source_path": file.source_path,
+                "last_seen": now,
+                "present": True,
+                "change": change,
+            })
             entries[doc_id] = carried
             continue
         entry["change"] = "modified" if prior else "added"
         entry["last_changed"] = now
         entries[doc_id] = entry
         if status == "pending":
-            to_read.append((doc_id, file, entry))
+            saved = cached.get(file.relative_path)
+            if saved and saved["size"] == file.size and saved["mtime"] == file.mtime:
+                completed[file.relative_path] = saved
+                entry.update(saved["result"])
+            else:
+                to_read.append((doc_id, file, entry))
 
     # --- 4 & 5. read and analyze, bounded concurrency, checkpointed ---
-    def process(item: tuple[str, WalkedFile, dict]) -> tuple[str, dict]:
+    def process(item: tuple[str, WalkedFile, dict]) -> tuple[str, WalkedFile, dict]:
         doc_id, file, entry = item
+        result: dict[str, Any] = {"status": entry["status"], "reason": entry["reason"]}
         data, read_status, reason = _read_stable(file.absolute_path, file.size, file.mtime)
         if data is None:
-            entry["status"] = read_status
-            entry["reason"] = reason
-            return doc_id, entry
-        entry["raw_sha256"] = hashlib.sha256(data).hexdigest()
+            result.update(status=read_status, reason=reason)
+            return doc_id, file, result
+        result["raw_sha256"] = hashlib.sha256(data).hexdigest()
         if entry["family"] == "native_cloud":
             # Readable after all, so not a placeholder the mount refuses. Some
             # clients expose native documents as small JSON link stubs; every
@@ -444,27 +514,23 @@ def scan(
             if head.startswith(b"{") and (
                 b'"url"' in head or b'"doc_id"' in head or b'"resource_id"' in head
             ):
-                entry["status"] = "native_unavailable"
-                entry["reason"] = "the mount exposes a link stub, not the document's content"
+                result["status"] = "native_unavailable"
+                result["reason"] = "the mount exposes a link stub, not the document's content"
             else:
-                entry["family"] = "nonprose"
-                entry["status"] = "nonprose_excluded"
-                entry["reason"] = "no_extension"
-            return doc_id, entry
+                result.update(family="nonprose", status="nonprose_excluded", reason="no_extension")
+            return doc_id, file, result
         # One malformed document must cost that document, never the scan.
         # The reason records the exception type only: a message could quote
         # document text into the inventory.
         try:
             extraction = extract(Path(file.absolute_path), data)
         except Exception as error:  # parser bugs on hostile input
-            entry["status"] = "extraction_failed"
-            entry["reason"] = f"parser raised {type(error).__name__}"
-            return doc_id, entry
-        entry["parser"] = extraction.parser
+            result.update(status="extraction_failed", reason=f"parser raised {type(error).__name__}")
+            return doc_id, file, result
+        result["parser"] = extraction.parser
         if not extraction.ok:
-            entry["status"] = extraction.status
-            entry["reason"] = extraction.reason
-            return doc_id, entry
+            result.update(status=extraction.status, reason=extraction.reason)
+            return doc_id, file, result
         try:
             derived = analysis.analyze(
                 text=extraction.text,
@@ -478,26 +544,23 @@ def scan(
                 perturbations=perturbations,
             )
         except Exception as error:
-            entry["status"] = "analysis_failed"
-            entry["reason"] = f"analysis raised {type(error).__name__}"
-            return doc_id, entry
-        entry.update(derived)
-        del extraction, data
-        return doc_id, entry
+            result.update(status="analysis_failed", reason=f"analysis raised {type(error).__name__}")
+            return doc_id, file, result
+        result.update(derived)
+        return doc_id, file, result
 
     processed = 0
-    inventory: dict[str, Any] = {
-        "version": previous.get("version", 1),
-        "entries": dict(previous_entries),
-    }
     workers = max(1, min(config.max_workers, 16))
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        for doc_id, entry in pool.map(process, to_read):
-            entries[doc_id] = entry
+        for doc_id, file, result in pool.map(process, to_read):
+            entries[doc_id].update(result)
+            if result.get("raw_sha256") and result["status"] not in ("extraction_failed", "analysis_failed"):
+                completed[file.relative_path] = {
+                    "size": file.size, "mtime": file.mtime, "result": result,
+                }
             processed += 1
             if processed % CHECKPOINT_EVERY == 0:
-                inventory["entries"].update({k: v for k, v in entries.items()})
-                store.save_inventory(inventory)
+                store.save_scan_checkpoint({"context": checkpoint_context, "completed": completed})
                 notify("read", {"processed": processed, "total": len(to_read)})
 
     # --- 6. reconcile: removals and renames ---
@@ -507,33 +570,37 @@ def scan(
         for doc_id, entry in previous_entries.items()
         if doc_id not in seen_ids and entry.get("present", True)
     }
-    by_hash: dict[str, str] = {}
+    removed_by_hash: dict[str, list[str]] = defaultdict(list)
     for doc_id, entry in removed.items():
         if entry.get("raw_sha256"):
-            by_hash.setdefault(entry["raw_sha256"], doc_id)
+            removed_by_hash[entry["raw_sha256"]].append(doc_id)
+    added_by_hash: dict[str, list[str]] = defaultdict(list)
+    for doc_id, entry in entries.items():
+        if entry.get("change") == "added" and entry.get("raw_sha256"):
+            added_by_hash[entry["raw_sha256"]].append(doc_id)
     renamed = 0
-    for doc_id, entry in list(entries.items()):
-        if entry.get("change") != "added" or not entry.get("raw_sha256"):
+    for content_hash, old_ids in removed_by_hash.items():
+        new_ids = added_by_hash.get(content_hash, [])
+        if len(old_ids) != 1 or len(new_ids) != 1:
             continue
-        old_id = by_hash.pop(entry["raw_sha256"], None)
-        if old_id is None:
-            continue
+        old_id, = old_ids
+        doc_id, = new_ids
         old = removed.pop(old_id)
+        entry = entries.pop(doc_id)
         entry["doc_id"] = old_id
         entry["first_seen"] = old.get("first_seen", entry["first_seen"])
         entry["previous_paths"] = [*old.get("previous_paths", []), old["relative_path"]]
         entry["change"] = "renamed"
-        entries.pop(doc_id)
         entries[old_id] = entry
         renamed += 1
     for doc_id, entry in removed.items():
-        gone = dict(entry)
+        gone = dict(namespaced_history.get(doc_id, entry))
         gone.update({"present": False, "change": "removed", "removed_at": now})
         entries[doc_id] = gone
     # Entries that were already absent before this scan stay as history.
     for doc_id, entry in previous_entries.items():
         if doc_id not in entries:
-            entries[doc_id] = entry
+            entries[doc_id] = namespaced_history.get(doc_id, entry)
 
     google_counts: dict[str, int] | None = None
     if google_api:
@@ -546,10 +613,6 @@ def scan(
         google_counts = google_fallback.fetch_native_documents(store, config, entries, **kwargs)
 
     _group_duplicates(entries)
-    with store.locked():
-        decisions = store.load_decisions()
-        reopened, carried = _reconcile_decisions(store, decisions, entries)
-
     inventory = {
         "version": previous.get("version", 1),
         "identity": store.identity,
@@ -567,8 +630,11 @@ def scan(
         ],
     }
     with store.locked():
+        decisions = store.load_decisions()
+        reopened, carried = _reconcile_decisions(store, decisions, entries)
         store.save_config(config)
         store.save_inventory(inventory)
+        store.clear_scan_checkpoint()
 
     report = build_report(
         store=store,
@@ -579,6 +645,7 @@ def scan(
         mount=[s for _, s in roots],
         read_this_scan=processed,
         renamed=renamed,
+        removed_count=len(removed),
         reopened=reopened,
         carried=carried,
         duration=time.time() - started,
@@ -735,6 +802,7 @@ def build_report(
     mount: list[dict],
     read_this_scan: int,
     renamed: int,
+    removed_count: int,
     reopened: int,
     carried: int,
     duration: float,
@@ -799,7 +867,7 @@ def build_report(
             )
             for family in sorted({e.get("family", "unknown") for e in present})
         },
-        "removed_since_last_scan": sum(1 for e in entries.values() if e.get("change") == "removed"),
+        "removed_since_last_scan": removed_count,
         "renamed_since_last_scan": renamed,
         "read_this_scan": read_this_scan,
         "eligible_prose_files": eligible,
@@ -841,7 +909,8 @@ def build_report(
         "coverage": {
             "content_read_share_of_eligible": round(readable / eligible, 3) if eligible else 0.0,
             "complete": statuses.get("native_unavailable", 0) == 0
-            and statuses.get("unreadable", 0) == 0,
+            and statuses.get("unreadable", 0) == 0
+            and walk_totals.unlistable_directories == 0,
             "note": (
                 "native cloud documents were inventoried but not read; the mount does not "
                 "expose their content"

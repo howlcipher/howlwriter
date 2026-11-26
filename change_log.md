@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+* Report deliverables with zero counted body words as `INCOMPLETE` and fail their word-count check.
+* Preserve voice document identity across unambiguous renames and keep distinct candidates with identical content separate. Resume interrupted scans, preserve entries when a scan cannot confirm their removal, and count only removals from the current scan.
 * Align discussion and peer-reply review on the same body text and assignment count. Report evaluation sample sizes separately and keep reference entries available for citation checks.
 * Extract and validate model refinement envelopes before writing. Preserve the returned Markdown and keep the source text when the provider reports a no-op.
 * Check direct-address step and question attributions against the supplied peer text. Require a substantive attribution for a grounded reply.

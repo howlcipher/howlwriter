@@ -88,6 +88,65 @@ def test_out_of_range_word_count_needs_revision(tmp_path):
     assert report.state is PackageState.NEEDS_REVISION and "WORD_COUNT" in _codes(report)
 
 
+@pytest.mark.parametrize(("role", "text", "minimum"), [
+    ("discussion", "", None),
+    ("discussion", " \t\n", None),
+    ("peer_reply", "", None),
+    ("peer_reply", " \t\n", None),
+    ("paper", "", None),
+    ("paper", " \t\n", None),
+    ("discussion", "# A title only\n", None),
+    ("discussion", "## References\n\n" + REF, None),
+    ("discussion", "", 10),
+])
+def test_deliverable_without_body_words_is_incomplete(tmp_path, role, text, minimum):
+    _write(tmp_path, "draft.md", text)
+    entry = {"id": "draft", "role": role, "path": "draft.md"}
+    if role == "peer_reply":
+        entry["source_post"] = {"text": POST.text}
+    if minimum is not None:
+        entry["min_words"] = minimum
+    report = check_package({"_base": str(tmp_path), "deliverables": [entry]}, providers=[])
+
+    deliverable, = report.deliverables
+    assert deliverable.word_count == 0
+    assert deliverable.state is PackageState.INCOMPLETE
+    assert report.state is PackageState.INCOMPLETE
+    findings = {f.code: f for f in deliverable.findings}
+    assert "WORD_COUNT" not in findings
+    finding = findings["DELIVERABLE_EMPTY"]
+    assert finding.level == "incomplete"
+    record, = [r for r in report.verification_records if r.scope == "draft" and r.check == "word count"]
+    assert record.status == "FAIL"
+    assert record.evidence == finding.message
+
+
+def test_nonempty_discussion_with_no_minimum_is_ready(tmp_path):
+    _write(tmp_path, "draft.md", "Backups help.")
+    report = check_package({"_base": str(tmp_path), "deliverables": [{"path": "draft.md"}]}, providers=[])
+
+    deliverable, = report.deliverables
+    assert deliverable.word_count == 2
+    assert deliverable.state is PackageState.READY_FOR_HUMAN_REVIEW
+    assert report.state is PackageState.READY_FOR_HUMAN_REVIEW
+    record, = [r for r in report.verification_records if r.check == "word count"]
+    assert record.status == "PASS"
+
+
+def test_cli_reports_empty_body_as_incomplete(tmp_path, capsys):
+    _write(tmp_path, "draft.md", "# Backups\n")
+    _write(tmp_path, "package.yaml", json.dumps({"deliverables": [{"path": "draft.md"}]}))
+    code = main(["assignment", "check", str(tmp_path / "package.yaml"), "--offline", "--json"])
+    report = json.loads(capsys.readouterr().out)
+
+    assert code == 3
+    assert report["state"] == "INCOMPLETE"
+    deliverable, = report["deliverables"]
+    assert deliverable["state"] == "INCOMPLETE"
+    assert deliverable["word_count"] == 0
+    assert "DELIVERABLE_EMPTY" in {f["code"] for f in deliverable["findings"]}
+
+
 def test_uncovered_topic_needs_revision(tmp_path):
     main = "Backups belong inside the risk program because recovery is a business decision. " * 6
     report = check_package(_package(tmp_path, main=main), providers=_providers(tmp_path))
