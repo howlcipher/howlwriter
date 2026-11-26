@@ -50,6 +50,9 @@ jobs:
       - name: Static correctness checks (F821, F401, F811, F841, F632, F541)
         run: flake8 src/ tests/ --select=F821,F401,F811,F841,F632,F541
 
+      - name: Install Chromium for browser and PDF tests
+        run: python -m playwright install --with-deps chromium
+
       - name: Run core test suite
         run: pytest -q -m "not contract" --ignore=tests/docs
 
