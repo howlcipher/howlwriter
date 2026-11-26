@@ -38,7 +38,7 @@ from typing import Any
 
 import yaml
 
-from howlwriter.academic.citations import AcademicCitationManager
+from howlwriter.academic.citations import AcademicCitationManager, CitationAnalysis
 from howlwriter.citations.apa7 import APA7Formatter
 from howlwriter.citations.registry import build_registry
 from howlwriter.citations.extract import extract_in_text_citations
@@ -179,25 +179,10 @@ def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
 
 
-def _reference_lines(text: str) -> list[str]:
-    m = re.search(r"(?:^|\n)(?:#{1,3}\s*|\*\*\s*)(?:References|Bibliography)(?:\s*\*\*)?\s*\n", text, re.I)
-    if not m:
-        return []
-    return [ln.strip() for ln in text[m.end():].split("\n") if ln.strip()]
-
-
-def _check_references(
-    text: str, sources: list[Source], deliverable: str, *, short_form: bool = False,
-) -> list[PackageFinding]:
+def _check_references(references: str, analysis: CitationAnalysis, deliverable: str) -> list[PackageFinding]:
     """In-text citations resolve, and the reference list matches what is cited."""
     findings: list[PackageFinding] = []
-    if short_form:
-        body, references = split_short_form_document(text)
-        raw_lines = [line.strip() for line in references.splitlines() if line.strip()]
-    else:
-        body = text
-        raw_lines = _reference_lines(text)
-    analysis = AcademicCitationManager().analyze_and_build_references(Document.parse(body, title=deliverable), sources)
+    raw_lines = [line.strip() for line in references.splitlines() if line.strip()]
     for raw in analysis.unmatched_in_text_citations:
         findings.append(PackageFinding(
             LEVEL_BLOCKED, "CITATION_UNRESOLVED",
@@ -221,13 +206,23 @@ def _check_references(
                 "formats it.", deliverable))
             continue
         # The printed identifier must be the source's own: a wrong DOI that resolves is still wrong.
-        printed = match.lower()
-        if source.doi and normalize_doi(source.doi).lower() not in printed:
+        printed = re.findall(r"(?<![\w/])(?:https?://|10\.\d{4,9}/)[^\s<>\[\]*]+", match, re.I)
+        identifiers = []
+        for value in printed:
+            value = value.rstrip(".,")
+            while value.endswith(")") and value.count(")") > value.count("("):
+                value = value[:-1]
+            identifiers.append(value)
+        if source.doi and normalize_doi(source.doi).lower() not in {
+            normalize_doi(value).lower() for value in identifiers
+        }:
             findings.append(PackageFinding(
                 LEVEL_REVISE, "REFERENCE_IDENTIFIER_DIFFERS",
                 f"The reference for '{source.title[:50]}' does not print the source's DOI "
                 f"({normalize_doi(source.doi)}).", deliverable))
-        elif not source.doi and source.url and source.url.rstrip("/").lower() not in printed:
+        elif not source.doi and source.url and source.url.rstrip("/").lower() not in {
+            value.rstrip("/").lower() for value in identifiers
+        }:
             findings.append(PackageFinding(
                 LEVEL_REVISE, "REFERENCE_IDENTIFIER_DIFFERS",
                 f"The reference for '{source.title[:50]}' does not print the source's URL.", deliverable))
@@ -324,7 +319,9 @@ def check_package(
         texts[did] = text
         short_form = is_short_form_academic(genre)
         words = count_body_words(text, short_form=short_form)
-        citation_body = split_short_form_document(text)[0] if short_form else split_body_and_references(text)[0]
+        citation_body, references = (
+            split_short_form_document(text) if short_form else split_body_and_references(text)
+        )
         report.word_count = words
 
         lo, hi = entry.get("min_words"), entry.get("max_words")
@@ -333,23 +330,27 @@ def check_package(
                 LEVEL_REVISE, "WORD_COUNT",
                 f"{words} words; required {lo if lo is not None else 0}-{hi if hi is not None else 'any'}.", did))
 
-        findings.extend(_topic_findings(text, entry.get("required_topics", []), did))
+        findings.extend(_topic_findings(citation_body, entry.get("required_topics", []), did))
 
         for f in detect_leakage(text, genre=(genre.value if genre else "")):
             findings.append(PackageFinding(LEVEL_REVISE, f.code, f"{f.message} “{f.matched_text}”", did))
         for f in check_genre_conformance(text, genre):
             findings.append(PackageFinding(LEVEL_REVISE, f.code, f.message, did))
 
+        citations = extract_in_text_citations(citation_body) if entry.get("require_citations") or not sources else []
+        if entry.get("require_citations") and not citations:
+            findings.append(PackageFinding(
+                LEVEL_INCOMPLETE, "CITATION_REQUIRED", "The deliverable requires an in-text citation in its body.", did))
+
         if sources:
-            findings.extend(_check_references(text, sources, did, short_form=short_form))
             analysis = AcademicCitationManager().analyze_and_build_references(
-                Document.parse(citation_body if short_form else text, title=did), sources
+                Document.parse(citation_body, title=did), sources
             )
+            findings.extend(_check_references(references, analysis, did))
             for s in analysis.used_sources:
                 cited_sources[s.id] = s
         else:
-            has_citations = bool([c for c in extract_in_text_citations(citation_body)
-                                  if c.source_id is None])
+            has_citations = any(c.source_id is None for c in citations)
             if entry.get("require_citations") or has_citations:
                 findings.append(PackageFinding(
                     LEVEL_INCOMPLETE if entry.get("require_citations") else LEVEL_UNAVAILABLE,
@@ -431,9 +432,9 @@ def check_package(
                 "no leaked process commentary found", ["Pattern based; novel phrasings can pass."])
         _record(records, did, "genre conventions", "howlwriter.domain.genres", findings, ("GENRE_",),
                 f"conforms to {genre.value if genre else 'no genre'}")
-        if sources:
+        if sources or entry.get("require_citations"):
             _record(records, did, "in-text citations and reference list", "howlwriter.assignment.package", findings,
-                    ("CITATION_UNRESOLVED", "REFERENCE_"),
+                    ("CITATION_REQUIRED", "CITATION_UNRESOLVED", "NO_SOURCES", "REFERENCE_"),
                     "every in-text citation resolves and the reference list matches the cited sources")
         if role == "peer_reply" and "reply_grounding" in report.scores:
             _record(records, did, "reply grounding", "howlwriter.replies.grounding", findings, ("REPLY_",),

@@ -23,7 +23,7 @@ def test_stacked_headings_preserve_depth():
 
 def test_following_section_ends_reference_styling():
     html = _markdown_to_html(
-        "## References\nCitation.\n\n## Appendix\nBody.", "Paper", RenderContext()
+        "## References\nCitation.\n## Appendix\nBody.", "Paper", RenderContext()
     )
     assert '<p class="reference-entry">Citation.</p>' in html
     assert "<p>Body.</p>" in html

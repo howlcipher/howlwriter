@@ -3,21 +3,29 @@
 from __future__ import annotations
 
 import html
+from itertools import groupby
 import re
 
 from howlwriter.domain.document import Document
 from howlwriter.integration.improvement import measured
 from howlwriter.rendering.base import DocumentRenderer, RenderContext, RenderedArtifact
+from howlwriter.rendering.blocks import is_fenced_code, markdown_blocks
+
+
+_LIST_MARKER = re.compile(r"^(?:(?P<ul>[-*•] )|(?P<ol>\d+\.\s+))")
+
+
+def _list_tag(line: str) -> str | None:
+    marker = _LIST_MARKER.match(line)
+    return marker.lastgroup if marker else None
 
 
 def _markdown_to_html(markdown_text: str, title: str, context: RenderContext) -> str:
     """Converts academic markdown prose into semantic HTML with academic print CSS."""
-    blocks = re.split(r"\n\s*\n", markdown_text.strip())
-
     html_parts: list[str] = []
     in_references = False
 
-    for block in blocks:
+    for block in markdown_blocks(markdown_text, max_heading_level=4):
         block = block.strip()
         if not block:
             continue
@@ -25,12 +33,8 @@ def _markdown_to_html(markdown_text: str, title: str, context: RenderContext) ->
         lines = block.split("\n")
         first = lines[0].strip()
 
-        # A blank line is optional after a Markdown heading.
-        consumed = 0
-        for line in lines:
-            heading = re.fullmatch(r"(#{1,4}) (.*)", line.strip())
-            if heading is None:
-                break
+        heading = re.fullmatch(r"(#{1,4}) (.*)", first)
+        if heading:
             level = len(heading[1])
             heading_text = heading[2].strip()
             references = heading_text.casefold() == "references"
@@ -38,13 +42,7 @@ def _markdown_to_html(markdown_text: str, title: str, context: RenderContext) ->
             if level in (1, 2):
                 in_references = references
             html_parts.append(f"<h{level}{css_class}>{html.escape(heading_text)}</h{level}>")
-            consumed += 1
-        if consumed:
-            lines = lines[consumed:]
-            if not lines:
-                continue
-            block = "\n".join(lines)
-            first = lines[0].strip()
+            continue
 
         if first == "<!-- pagebreak -->":
             html_parts.append('<div style="break-before:page"></div>')
@@ -71,7 +69,7 @@ def _markdown_to_html(markdown_text: str, title: str, context: RenderContext) ->
             )
             continue
 
-        if first.startswith("```") and lines[-1].strip() == "```":
+        if is_fenced_code(lines):
             html_parts.append('<pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
                               + html.escape("\n".join(lines[1:-1])) + '</pre>')
             continue
@@ -105,34 +103,18 @@ def _markdown_to_html(markdown_text: str, title: str, context: RenderContext) ->
             )
             continue
 
-        # Bullet list
-        if any(l.strip().startswith(("- ", "* ", "• ")) for l in lines):
-            items = []
-            for l in lines:
-                l = l.strip()
-                if l.startswith(("- ", "* ", "• ")):
-                    item_text = _format_inline_html(l[2:].strip())
-                    items.append(f"<li>{item_text}</li>")
-            html_parts.append(f"<ul>{''.join(items)}</ul>")
-            continue
-
-        # Numbered list
-        if any(re.match(r"^\d+\.\s+", l.strip()) for l in lines):
-            items = []
-            for l in lines:
-                l = l.strip()
-                m = re.match(r"^\d+\.\s+(.*)$", l)
-                if m:
-                    item_text = _format_inline_html(m.group(1))
-                    items.append(f"<li>{item_text}</li>")
-            html_parts.append(f"<ol>{''.join(items)}</ol>")
-            continue
-
-        # Standard paragraph or reference entry
-        joined = " ".join(l.strip() for l in lines)
-        p_text = _format_inline_html(joined)
-        css_class = ' class="reference-entry"' if in_references else ""
-        html_parts.append(f"<p{css_class}>{p_text}</p>")
+        # Render each contiguous run of prose or list items in source order.
+        for tag, run in groupby(map(str.strip, lines), key=_list_tag):
+            if tag:
+                items = [
+                    f"<li>{_format_inline_html(_LIST_MARKER.sub('', line, count=1).strip())}</li>"
+                    for line in run
+                ]
+                html_parts.append(f"<{tag}>{''.join(items)}</{tag}>")
+            else:
+                p_text = _format_inline_html(" ".join(run))
+                css_class = ' class="reference-entry"' if in_references else ""
+                html_parts.append(f"<p{css_class}>{p_text}</p>")
 
     # AI-Use Disclosure if requested
     if context.include_ai_disclosure and context.ai_disclosure_text:
