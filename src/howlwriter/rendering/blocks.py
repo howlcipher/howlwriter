@@ -1,4 +1,4 @@
-"""Block boundaries shared by the DOCX and ReportLab renderers."""
+"""Block boundaries shared by the document renderers."""
 
 from collections.abc import Iterator
 import re
@@ -18,7 +18,7 @@ def is_fenced_code(lines: list[str]) -> bool:
 
 
 def markdown_blocks(text: str, *, max_heading_level: int) -> Iterator[str]:
-    """Separate supported ATX headings while keeping fenced blocks intact."""
+    """Separate headings and page breaks while keeping fenced blocks intact."""
     heading = re.compile(rf"^#{{1,{max_heading_level}}} ")
     current: list[str] = []
     fence_width = 0
@@ -34,7 +34,7 @@ def markdown_blocks(text: str, *, max_heading_level: int) -> Iterator[str]:
                 yield "\n".join(current)
             current = [line]
             fence_width = len(opener[1])
-        elif not line.strip() or heading.match(line.strip()):
+        elif not line.strip() or line.strip() == "<!-- pagebreak -->" or heading.match(line.strip()):
             if current:
                 yield "\n".join(current)
                 current = []

@@ -342,3 +342,54 @@ def test_short_form_review_commands_share_assignment_body(tmp_path, capsys, genr
     assert any(f["rule_code"] == "GENRE_HEADINGS_IN_SHORT_FORM" for f in lint)
     report = check_package(spec, providers=_providers(tmp_path))
     assert "REFERENCE_LIST_MISSING" in _codes(report)
+
+
+@pytest.mark.parametrize(("citation", "state", "finding", "exit_code"), [
+    ("", "INCOMPLETE", "CITATION_REQUIRED", 3),
+    (" (Moreno, 2025)", "READY_FOR_HUMAN_REVIEW", None, 0),
+    (" (Unknown, 2025)", "BLOCKED", "CITATION_UNRESOLVED", 3),
+])
+def test_required_citation_is_checked_per_deliverable(tmp_path, capsys, citation, state, finding, exit_code):
+    spec = _package(tmp_path, main=MAIN.replace(" (Moreno, 2025)", citation))
+    spec["deliverables"][0]["require_citations"] = True
+    import yaml
+    _write(tmp_path, "package.yaml", yaml.safe_dump(spec))
+
+    code = main(["assignment", "check", str(tmp_path / "package.yaml"), "--offline",
+                 "--records", str(tmp_path / "records.json"), "--json"])
+    report = json.loads(capsys.readouterr().out)
+    deliverable = report["deliverables"][0]
+    record = next(r for r in report["verification_records"]
+                  if r["scope"] == "main" and r["check"] == "in-text citations and reference list")
+    assert (code, report["state"], deliverable["state"]) == (exit_code, state, state)
+    assert record["status"] == ("FAIL" if finding else "PASS")
+    if finding:
+        assert finding in {f["code"] for f in deliverable["findings"]}
+
+
+@pytest.mark.parametrize("role", ["discussion", "paper"])
+def test_required_topic_must_appear_in_body(tmp_path, role):
+    spec = _package(tmp_path)
+    spec["deliverables"][0].update(role=role, required_topics=["ransomware response"])
+    assert "TOPIC_NOT_COVERED" in _codes(check_package(spec, providers=_providers(tmp_path)))
+    _write(tmp_path, "main.md", MAIN + " This procedure guides ransomware response.\n\n## References\n\n" + REF)
+    assert "TOPIC_NOT_COVERED" not in _codes(check_package(spec, providers=_providers(tmp_path)))
+
+
+@pytest.mark.parametrize(("field", "expected", "printed", "differs"), [
+    ("doi", "10.1234/example.1", "https://doi.org/10.1234/example.10", True),
+    ("doi", "10.1234/example.1", "https://doi.org/10.1234/EXAMPLE.1.", False),
+    ("url", "https://example.org/work", "https://example.org/work-extra", True),
+    ("url", "https://example.org/work", "https://example.org/work/.", False),
+])
+def test_reference_identifier_matches_whole_value(tmp_path, field, expected, printed, differs):
+    spec = _package(tmp_path, extra={"expected_deliverables": 1, "require_citation_verification": False})
+    spec["deliverables"] = spec["deliverables"][:1]
+    source = dict(SOURCES[0])
+    source.pop("doi")
+    source[field] = expected
+    _write(tmp_path, "sources.json", json.dumps([source]))
+    _write(tmp_path, "main.md", MAIN + "\n\n## References\n\n" + REF.rsplit(" ", 1)[0] + " " + printed)
+    report = check_package(spec, providers=[])
+    assert ("REFERENCE_IDENTIFIER_DIFFERS" in _codes(report)) == differs
+    assert report.state is (PackageState.NEEDS_REVISION if differs else PackageState.READY_FOR_HUMAN_REVIEW)
